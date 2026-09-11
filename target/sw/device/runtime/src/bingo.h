@@ -260,6 +260,13 @@ inline void write_bingo_hw_manager_done_queue(uint32_t task_id){
     asm volatile("csrw 0x5ff, %0" : : "r"(task_id));
 }
 
+// Watchdog heartbeat CSR (bingo_hw_manager_csr_to_fifo CSR_HEARTBEAT = 0x5fd).
+// Busy cores must pulse this periodically so the HW watchdog does not mark them
+// dead_suspect. Idle cores need no beats (timer only runs while busy).
+inline void write_bingo_hw_manager_heartbeat(uint32_t value){
+    asm volatile("csrw 0x5fd, %0" : : "r"(value));
+}
+
 /**
  * @brief Initialize the bingo HW offload unit
  */
@@ -339,7 +346,11 @@ inline int32_t bingo_hw_offload_manager(){
                cur_global_task_id);
         // 3. Execute the function
         BINGO_TRACE_MARKER(BINGO_TRACE_MGR_RUN_KERNEL_START);
+        // Start-of-task beat: reset watchdog after dispatch into ready queue.
+        write_bingo_hw_manager_heartbeat(1);
         kernel_return_value = ((uint32_t (*)(uint32_t))cur_kernel_ptr)(cur_arg_ptr);
+        // End-of-task beat before done (covers kernels that never poll in a wait loop).
+        write_bingo_hw_manager_heartbeat(1);
         BINGO_TRACE_MARKER(BINGO_TRACE_MGR_RUN_KERNEL_END);
 
         // 4. Write the Done queue to notify the bingo hw scheduler

@@ -225,6 +225,10 @@ module ${name}_quad_ctrl
     // DVFS doorbell MSIP bit: injected here so the PM is not hardcoded (see occamy.py
     // hw_manager_ipi_idx; must match HW_MANAGER_DVFS_MSIP_BIT / occamy_soc.sv ipi_i).
     .HOST_DVFS_MSIP_BIT       (${hw_manager_ipi_idx}                     ),
+    // Watchdog: busy-core heartbeat timeout. Default in bingo is 100000 (~too
+    // tight for GEMM tiles). 10_000_000 cycles is a conservative floor for long
+    // kernels; SW must still pulse CSR 0x5fd periodically on healthy busy cores.
+    .WatchdogHeartbeatTimeoutCycles ( 10_000_000                         ),
     .HostAxiLiteAddrWidth     (${quad_ctrl_axi_lite_xbar.aw}             ),
     .HostAxiLiteDataWidth     (${quad_ctrl_axi_lite_xbar.dw}             ),
     .DeviceAxiLiteAddrWidth   (${quad_ctrl_axi_lite_narrow_mux.aw}       ),

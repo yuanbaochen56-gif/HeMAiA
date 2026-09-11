@@ -28,3 +28,12 @@ target/tapeout/tcl/*
 
 .claude
 tmp/
+# Local integration notes (do not push)
+WATCHDOG_REMAP_INTEGRATION.md
+WATCHDOG_REMAP_INTEGRATION.md.*
+SHORT_TERM_PLAN.md
+
+# Local bingo mirror for container path-pin sims (do not push)
+.local_deps/
+
+Bender.local.override

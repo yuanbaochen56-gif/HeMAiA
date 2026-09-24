@@ -13,6 +13,7 @@
 
 #include <stdbool.h>
 
+#include "bingo_hw_heartbeat.h"
 #include "snrt.h"
 #include "stdint.h"
 #include "streamer_csr_addr_map.h"
@@ -277,11 +278,11 @@ void wait_versacore_and_streamer() {
     csrw_ss(STREAMER_START_CSR, 0);
     csrw_ss(VERSACORE_START_CSR, 0);
     while (csrr_ss(VERSACORE_BUSY)) {
-        // Bingo watchdog heartbeat (CSR 0x5fd) — keep busy cores alive during GEMM tiles.
-        asm volatile("csrw 0x5fd, %0" : : "r"(1));
+        // Bingo watchdog heartbeat: keep the busy core alive during long GEMM tiles.
+        bingo_hw_manager_heartbeat(1);
     }
     while (csrr_ss(STREAMER_BUSY_CSR)) {
-        asm volatile("csrw 0x5fd, %0" : : "r"(1));
+        bingo_hw_manager_heartbeat(1);
     }
 }
 

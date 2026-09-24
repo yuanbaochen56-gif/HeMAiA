@@ -287,6 +287,12 @@
                     "description": "Width of the bingo HW manager per-edge dependency tag (DepTagWidth). Bounds the number of concurrently live producers a dependency cell can distinguish; exported to SW as BINGO_DEP_TAG_WIDTH so the task-descriptor packing matches the RTL.",
                     "minimum": 1,
                     "default": 4
+                },
+                "bingo_watchdog_timeout_cycles": {
+                    "type": "integer",
+                    "description": "Bingo HW manager watchdog timeout (WatchdogHeartbeatTimeoutCycles): quad-clock cycles a busy core may run without writing the heartbeat CSR before it is reported dead_suspect.",
+                    "minimum": 1,
+                    "default": 10000000
                 }
 
             }

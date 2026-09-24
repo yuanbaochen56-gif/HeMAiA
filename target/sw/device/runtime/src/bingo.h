@@ -4,6 +4,7 @@
 //
 // Fanchen Kong <fanchen.kong@kuleuven.be>
 
+#include "bingo_hw_heartbeat.h"
 
 #define BINGO_RET_SUCC 0
 #define BINGO_RET_EXIT 1
@@ -260,12 +261,29 @@ inline void write_bingo_hw_manager_done_queue(uint32_t task_id){
     asm volatile("csrw 0x5ff, %0" : : "r"(task_id));
 }
 
-// Watchdog heartbeat CSR (bingo_hw_manager_csr_to_fifo CSR_HEARTBEAT = 0x5fd).
+// Watchdog heartbeat (see bingo_hw_heartbeat.h: a write to CSR 0x5fe on HeMAiA).
 // Busy cores must pulse this periodically so the HW watchdog does not mark them
 // dead_suspect. Idle cores need no beats (timer only runs while busy).
 inline void write_bingo_hw_manager_heartbeat(uint32_t value){
-    asm volatile("csrw 0x5fd, %0" : : "r"(value));
+    bingo_hw_manager_heartbeat(value);
 }
+
+#ifdef BINGO_WD_FAULT_GID
+// Test-only fault injection for the bingo HW watchdog (compiled out unless
+// BINGO_WD_FAULT_GID is defined): the core that receives global task
+// BINGO_WD_FAULT_GID stalls for BINGO_WD_FAULT_STALL_CYCLES core cycles without
+// any heartbeat before it runs the kernel normally. 0 = hang forever.
+#ifndef BINGO_WD_FAULT_STALL_CYCLES
+#define BINGO_WD_FAULT_STALL_CYCLES 0
+#endif
+inline void bingo_wd_fault_stall(uint32_t cycles){
+    uint32_t start, now;
+    asm volatile("csrr %0, mcycle" : "=r"(start));
+    do {
+        asm volatile("csrr %0, mcycle" : "=r"(now));
+    } while (cycles == 0 || (now - start) < cycles);
+}
+#endif
 
 /**
  * @brief Initialize the bingo HW offload unit
@@ -346,6 +364,11 @@ inline int32_t bingo_hw_offload_manager(){
                cur_global_task_id);
         // 3. Execute the function
         BINGO_TRACE_MARKER(BINGO_TRACE_MGR_RUN_KERNEL_START);
+#ifdef BINGO_WD_FAULT_GID
+        if (cur_global_task_id == BINGO_WD_FAULT_GID) {
+            bingo_wd_fault_stall(BINGO_WD_FAULT_STALL_CYCLES);
+        }
+#endif
         // Start-of-task beat: reset watchdog after dispatch into ready queue.
         write_bingo_hw_manager_heartbeat(1);
         kernel_return_value = ((uint32_t (*)(uint32_t))cur_kernel_ptr)(cur_arg_ptr);

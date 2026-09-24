@@ -869,6 +869,10 @@ def get_quad_ctrl_kwargs(occamy_cfg, soc_wide_xbar, soc_narrow_xbar, quad_ctrl_s
         # Per-edge dependency tag width of the bingo HW manager (DepTagWidth). Exported to
         # SW as BINGO_DEP_TAG_WIDTH so the task-descriptor packing tracks the RTL width.
         "dep_tag_width": occamy_cfg["s1_quadrant"]["dep_tag_width"],
+        # Bingo HW manager watchdog timeout (WatchdogHeartbeatTimeoutCycles), in quad-clock
+        # cycles. Schema default 10M; test cfgs may lower it to exercise the watchdog quickly.
+        "bingo_watchdog_timeout_cycles":
+            occamy_cfg["s1_quadrant"].get("bingo_watchdog_timeout_cycles", 10_000_000),
         "soc_wide_xbar": soc_wide_xbar,
         "soc_narrow_xbar": soc_narrow_xbar,
         "quad_ctrl_soc_to_quad_xbar": quad_ctrl_soc_to_quad_xbar,

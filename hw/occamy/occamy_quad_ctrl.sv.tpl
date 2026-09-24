@@ -214,6 +214,10 @@ module ${name}_quad_ctrl
   csr_rsp_t [BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER-1:0][NrClustersPerQuad-1:0] bingo_hw_manager_csr_rsp;
   logic     [BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER-1:0][NrClustersPerQuad-1:0] bingo_hw_manager_csr_rsp_valid;
   logic     [BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER-1:0][NrClustersPerQuad-1:0] bingo_hw_manager_csr_rsp_ready;
+  // The watchdog monitors the Snitch cores only: the extra slot (the host in
+  // cluster 0, tied off in the other clusters) sends no heartbeats and is masked.
+  localparam logic [BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER-1:0][NrClustersPerQuad-1:0] BingoWatchdogCoreMask =
+    {{NrClustersPerQuad{1'b0}}, {((BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER-1)*NrClustersPerQuad){1'b1}}};
   bingo_hw_manager_top #(
     .READY_AND_DONE_QUEUE_INTERFACE_TYPE(1), // 1: CSR 0: AXI LITE
     .TASK_QUEUE_TYPE                    (1), // 1: AXI Lite Master 0: Default AXI Lite Slave 
@@ -225,10 +229,18 @@ module ${name}_quad_ctrl
     // DVFS doorbell MSIP bit: injected here so the PM is not hardcoded (see occamy.py
     // hw_manager_ipi_idx; must match HW_MANAGER_DVFS_MSIP_BIT / occamy_soc.sv ipi_i).
     .HOST_DVFS_MSIP_BIT       (${hw_manager_ipi_idx}                     ),
-    // Watchdog: busy-core heartbeat timeout. Default in bingo is 100000 (~too
-    // tight for GEMM tiles). 10_000_000 cycles is a conservative floor for long
-    // kernels; SW must still pulse CSR 0x5fd periodically on healthy busy cores.
-    .WatchdogHeartbeatTimeoutCycles ( 10_000_000                         ),
+    // Watchdog: busy-core heartbeat timeout in quad-clock cycles
+    // (s1_quadrant.bingo_watchdog_timeout_cycles, default 10_000_000). Healthy busy
+    // cores write the heartbeat CSR periodically (sw/device/runtime/src/bingo_hw_heartbeat.h).
+    .WatchdogHeartbeatTimeoutCycles ( ${bingo_watchdog_timeout_cycles}  ),
+    .WatchdogCoreMask         (BingoWatchdogCoreMask                     ),
+    // The cores of a cluster are heterogeneous (VersaCore / DM / host) and kernels
+    // check their core type, so a dead core's tasks cannot run elsewhere:
+    // watchdog detection only, no remap.
+    .CoreRemapAllowMask       ('0                                        ),
+    // snax_intf_translator only forwards CSR 0x5fe/0x5ff to this port (0x5fd would
+    // reach the accelerator CSRs), so the heartbeat is a write to the ready CSR.
+    .CsrHeartbeatAddr         (csr_snax_def::CSR_SNAX_READ_TASK_READY_QUEUE),
     .HostAxiLiteAddrWidth     (${quad_ctrl_axi_lite_xbar.aw}             ),
     .HostAxiLiteDataWidth     (${quad_ctrl_axi_lite_xbar.dw}             ),
     .DeviceAxiLiteAddrWidth   (${quad_ctrl_axi_lite_narrow_mux.aw}       ),
@@ -322,10 +334,14 @@ module ${name}_quad_ctrl
     .csr_rsp_valid_i(host_ready_done_csr_rsp_valid),
     .csr_rsp_ready_o(host_ready_done_csr_rsp_ready)
   );
+  // snax_intf_translator subtracts CSR_SNAX_BEGIN from the CSR number; restore the
+  // architectural CSR number (0x5fe ready / 0x5ff done) that bingo_hw_manager decodes.
   %for cluster in range(num_clusters):
     %for core in range(num_cores_per_cluster):
     // Connect Normal Core${core} Cluster${cluster}
-  assign bingo_hw_manager_csr_req[${core}][${cluster}] = csr_req_i[${cluster}][${core}];
+  assign bingo_hw_manager_csr_req[${core}][${cluster}].addr  = csr_req_i[${cluster}][${core}].addr + addr_t'(csr_snax_def::CSR_SNAX_BEGIN);// CSR request from the core
+  assign bingo_hw_manager_csr_req[${core}][${cluster}].data  = csr_req_i[${cluster}][${core}].data;
+  assign bingo_hw_manager_csr_req[${core}][${cluster}].write = csr_req_i[${cluster}][${core}].write;
   assign bingo_hw_manager_csr_req_valid[${core}][${cluster}] = csr_req_valid_i[${cluster}][${core}];
   assign csr_req_ready_o[${cluster}][${core}] = bingo_hw_manager_csr_req_ready[${core}][${cluster}];
   assign csr_rsp_o[${cluster}][${core}] = bingo_hw_manager_csr_rsp[${core}][${cluster}];
@@ -337,8 +353,14 @@ module ${name}_quad_ctrl
   // Special treat to host simd core
   %for cluster in range(num_clusters):
       %if cluster == 0:
-  // Connect the host to cluster 0 ports
-  assign bingo_hw_manager_csr_req[${num_cores_per_cluster}][${cluster}] = host_ready_done_csr_req;
+  // Connect the host to cluster 0 ports. The host reads the ready queue and writes
+  // the done queue at one MMIO word (axi_lite_to_csr forwards the raw MMIO address),
+  // so map the access direction to the ready/done CSR numbers.
+  assign bingo_hw_manager_csr_req[${num_cores_per_cluster}][${cluster}].addr  = host_ready_done_csr_req.write ?
+                                                                               addr_t'(csr_snax_def::CSR_SNAX_WRITE_TASK_DONE_QUEUE) :
+                                                                               addr_t'(csr_snax_def::CSR_SNAX_READ_TASK_READY_QUEUE);
+  assign bingo_hw_manager_csr_req[${num_cores_per_cluster}][${cluster}].data  = host_ready_done_csr_req.data;
+  assign bingo_hw_manager_csr_req[${num_cores_per_cluster}][${cluster}].write = host_ready_done_csr_req.write;
   assign bingo_hw_manager_csr_req_valid[${num_cores_per_cluster}][${cluster}] = host_ready_done_csr_req_valid;
   assign host_ready_done_csr_req_ready = bingo_hw_manager_csr_req_ready[${num_cores_per_cluster}][${cluster}];
   assign host_ready_done_csr_rsp = bingo_hw_manager_csr_rsp[${num_cores_per_cluster}][${cluster}];

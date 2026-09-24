@@ -300,26 +300,30 @@ def run_in_container(
     docker_image: str,
     working_dir: Path,
     command: List[str],
+    extra_mounts: Optional[List[Path]] = None,
 ) -> None:
     """Run *command* inside *docker_image*, mounting *repo_root* at the same path.
 
+    *extra_mounts* are additional host directories mounted at the same path, e.g.
+    a Bender ``path:`` dependency that lives outside the repo.
+
     Prefers ``podman`` when available; otherwise falls back to ``apptainer exec``.
     """
+    mounts = [repo_root] + list(extra_mounts or [])
     if shutil.which("podman") is not None:
-        runner_cmd: List[str] = [
-            "podman", "run", "--rm",
-            "-v", f"{repo_root}:{repo_root}",
-            "-w", str(working_dir),
-            docker_image,
-        ]
+        runner_cmd: List[str] = ["podman", "run", "--rm"]
+        for mount in mounts:
+            runner_cmd += ["-v", f"{mount}:{mount}"]
+        runner_cmd += ["-w", str(working_dir), docker_image]
     elif shutil.which("apptainer") is not None:
         runner_cmd = [
             "apptainer", "exec",
             "--writable-tmpfs",
             "--pwd", str(working_dir),
-            "-B", f"{repo_root}:{repo_root}",
-            f"docker://{docker_image}",
         ]
+        for mount in mounts:
+            runner_cmd += ["-B", f"{mount}:{mount}"]
+        runner_cmd.append(f"docker://{docker_image}")
     else:
         raise RuntimeError(
             "Neither 'podman' nor 'apptainer' is available on PATH; "
@@ -550,6 +554,7 @@ def parse_workload_args(
     default_dev_app: str,
     default_engine: str = "vsim",
     default_waveform: int = 1,
+    default_skip_setup: bool = False,
     description: Optional[str] = None,
 ) -> argparse.Namespace:
     """Parse CLI overrides for the SW workload-selection knobs (test drivers).
@@ -559,6 +564,11 @@ def parse_workload_args(
     workload from the command line.  The ``--engine`` / ``--waveform`` knobs are
     also exposed so any flow can be flipped (e.g. debug a CI failure under
     vsim+waveform), defaulting to the test convention (vsim, waveform on).
+
+    ``--skip-setup`` / ``--no-skip-setup`` controls Step 1 (``make clean``
+    + private-repo git pulls).  It defaults to ``False`` so the canonical CI
+    behaviour is preserved, but test drivers that do not need the private
+    vendor modules can flip it on to skip the SSH handshake.
     """
     parser = argparse.ArgumentParser(
         description=description,
@@ -583,6 +593,14 @@ def parse_workload_args(
     parser.add_argument(
         "--waveform", type=int, choices=(0, 1), default=default_waveform,
         help="SIM_WITH_WAVEFORM: record a waveform/log (default: %(default)s)")
+    parser.add_argument(
+        "--skip-setup", dest="skip_setup", action="store_true",
+        default=default_skip_setup,
+        help="skip ``make clean`` and the private-repo git pulls "
+             "(default: %(default)s)")
+    parser.add_argument(
+        "--no-skip-setup", dest="skip_setup", action="store_false",
+        help="run ``make clean`` and pull the private vendor repos")
     return parser.parse_args()
 
 
@@ -617,6 +635,7 @@ class HeMAiASimRunner:
         task_yaml: Optional[Path] = None,
         fail_on_task_failure: bool = False,
         timeout_seconds: int = SIM_TIMEOUT_SECONDS,
+        extra_mounts: Optional[List[Path]] = None,
     ) -> None:
         if engine not in ENGINES:
             raise ValueError(f"Unknown engine {engine!r}; choose from {sorted(ENGINES)}")
@@ -665,6 +684,9 @@ class HeMAiASimRunner:
         if timeout_seconds < 1:
             raise ValueError("timeout_seconds must be >= 1")
         self.timeout_seconds = timeout_seconds
+        # Host directories outside the repo that the build container must see
+        # (e.g. a Bender path dependency such as ../bingo_hw_manager).
+        self.extra_mounts = [Path(p).resolve() for p in (extra_mounts or [])]
 
     # -- helpers -----------------------------------------------------------
 
@@ -685,7 +707,8 @@ class HeMAiASimRunner:
         if self.in_container:
             subprocess.run(command, cwd=self.repo_root, check=True)
         else:
-            run_in_container(self.repo_root, self.docker_image, self.repo_root, command)
+            run_in_container(self.repo_root, self.docker_image, self.repo_root, command,
+                             extra_mounts=self.extra_mounts)
 
     def _repo_path(self, path: str | Path) -> Path:
         candidate = Path(path)
@@ -1167,6 +1190,10 @@ class HeMAiASimRunner:
                     make_cmd.append(f"{var}={val}")
             make_cmd.append(f"CFG_OVERRIDE={self.effective_cfg}")
             make_cmd.append("DEBUG_LEVEL=0")
+            # Optional per-task compile flags (e.g. test-only fault injection),
+            # appended to the default USER_FLAGS by the root Makefile.
+            if task.get("extra_user_flags"):
+                make_cmd.append(f"EXTRA_USER_FLAGS={task['extra_user_flags']}")
             self._container(make_cmd)
 
             generated_apps = {

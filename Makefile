@@ -86,6 +86,8 @@ USER_FLAGS = -DBINGO_DEBUG_LEVEL=$(DEBUG_LEVEL)
 ifeq ($(PERF_TRACING), 1)
     USER_FLAGS += -DBINGO_PERF_TRACING
 endif
+# Extra flags on top of the defaults (e.g. make apps EXTRA_USER_FLAGS="-DFOO=1")
+USER_FLAGS += $(EXTRA_USER_FLAGS)
 
 # `sw` is the one build that is safe to run in parallel (the RTL gen and the sim
 # compile are not), and it is the slow one, so it builds with -j by default. SW_JOBS

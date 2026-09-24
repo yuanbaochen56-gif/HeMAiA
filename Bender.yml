@@ -41,8 +41,8 @@ dependencies:
   hemaia_d2d_link:            { git:  https://github.com/KULeuven-MICAS/hemaia_d2d_link.git,            rev:     main    }
   hemaia_clk_rst_controller:  { git:  https://github.com/KULeuven-MICAS/hemaia_clk_rst_controller.git,  rev:     main    }
   floo_noc:                   { git:  https://github.com/KULeuven-MICAS/FlooNoC.git,                    rev:     main    }
-  # Watchdog/remap on yuanbao fork (ensure branch pushed before bender update)
-  bingo_hw_manager:           { git: "https://github.com/yuanbaochen56-gif/bingo_hw_manager.git", rev: "3510ae070feeac3cfe22a6b224f8555d27caee23" }
+  # Watchdog/remap on yuanbao fork
+  bingo_hw_manager:           { git: "https://github.com/yuanbaochen56-gif/bingo_hw_manager.git", rev: "5bf88b427f93f2b72c3d46ae86fcbf9a43904d32" }
 
 workspace:
   package_links:

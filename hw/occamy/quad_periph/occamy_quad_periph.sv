@@ -36,7 +36,13 @@ module occamy_quad_periph import occamy_quad_periph_reg_pkg::*; #(
   output reg_data_t   bingo_hw_manager_pm_mode_o,
   output logic [47:0] bingo_hw_manager_dvfs_clint_msip_addr_o,
   output reg_data_t   bingo_hw_manager_dvfs_ack_o,
-  input  reg_data_t   bingo_hw_manager_dvfs_request_i
+  input  reg_data_t   bingo_hw_manager_dvfs_request_i,
+  // Bingo status (read-only registers)
+  input  logic        bingo_hw_manager_replay_stuck_i,
+  input  logic        bingo_hw_manager_remote_done_mismatch_i,
+  input  logic [4:0]  bingo_hw_manager_remote_link_error_i,
+  input  logic [BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER-1:0][BINGO_HW_MANAGER_NR_CLUSTER-1:0] bingo_hw_manager_core_dead_suspect_i,
+  input  logic [BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER-1:0][BINGO_HW_MANAGER_NR_CLUSTER-1:0] bingo_hw_manager_core_fenced_i
 );
 
   occamy_quad_periph_hw2reg_t hw2reg;
@@ -78,6 +84,33 @@ module occamy_quad_periph import occamy_quad_periph_reg_pkg::*; #(
   // DVFS_REQUEST: HW publishes the request for SW read-back (always update)
   assign hw2reg.dvfs_request.d  = bingo_hw_manager_dvfs_request_i;
   assign hw2reg.dvfs_request.de = 1'b1;
+  // Bingo status: always update. Core bitmaps use the CORE_POWER_DOMAIN order
+  // (bit core + cluster * BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER).
+  if (BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER * BINGO_HW_MANAGER_NR_CLUSTER > REG_WIDTH) begin : gen_bingo_status_check
+    $error("BINGO_CORE_DEAD_SUSPECT / BINGO_CORE_FENCED hold at most %0d bingo slots", REG_WIDTH);
+  end
+  assign hw2reg.bingo_status.replay_stuck.d          = bingo_hw_manager_replay_stuck_i;
+  assign hw2reg.bingo_status.replay_stuck.de         = 1'b1;
+  assign hw2reg.bingo_status.remote_done_mismatch.d  = bingo_hw_manager_remote_done_mismatch_i;
+  assign hw2reg.bingo_status.remote_done_mismatch.de = 1'b1;
+  assign hw2reg.bingo_status.remote_link_error.d     = bingo_hw_manager_remote_link_error_i;
+  assign hw2reg.bingo_status.remote_link_error.de    = 1'b1;
+  always_comb begin
+    hw2reg.bingo_core_dead_suspect.d = '0;
+    hw2reg.bingo_core_fenced.d       = '0;
+    for (int core = 0; core < BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER; core++) begin
+      for (int cluster = 0; cluster < BINGO_HW_MANAGER_NR_CLUSTER; cluster++) begin
+        if (core + cluster*BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER < REG_WIDTH) begin
+          hw2reg.bingo_core_dead_suspect.d[core + cluster*BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER] =
+            bingo_hw_manager_core_dead_suspect_i[core][cluster];
+          hw2reg.bingo_core_fenced.d[core + cluster*BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER] =
+            bingo_hw_manager_core_fenced_i[core][cluster];
+        end
+      end
+    end
+  end
+  assign hw2reg.bingo_core_dead_suspect.de = 1'b1;
+  assign hw2reg.bingo_core_fenced.de       = 1'b1;
   occamy_quad_periph_reg_top #(
     .reg_req_t ( reg_req_t ),
     .reg_rsp_t ( reg_rsp_t  )

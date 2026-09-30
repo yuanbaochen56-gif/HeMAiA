@@ -354,5 +354,42 @@
         }
       ]
     },
+    // Bingo HW manager watchdog / replay / level-3 remote link status
+    { name: "BINGO_STATUS",
+      desc: "Bingo HW manager status (read-only, live; the sticky bits clear only on reset).",
+      swaccess: "ro",
+      hwaccess: "hwo",
+      fields: [
+        { bits: "0", resval: "0", name: "REPLAY_STUCK",
+          desc: '''A fenced core holds a task that no live core may run (replay_stuck_o).'''
+        },
+        { bits: "1", resval: "0", name: "REMOTE_DONE_MISMATCH",
+          desc: '''Sticky: a remote done did not belong to the exported head task of its proxy slot (remote_done_mismatch_o).'''
+        },
+        { bits: "6:2", resval: "0", name: "REMOTE_LINK_ERROR",
+          desc: '''Sticky bingo_hw_manager_remote_link error_o: [0] SLVERR on a sent packet, [1] unknown packet kind, [2] sequence error, [3] packet from an unknown peer, [4] credit overflow.'''
+        }
+      ]
+    },
+    { name: "BINGO_CORE_DEAD_SUSPECT",
+      desc: "Bingo watchdog: busy cores without heartbeat (bit core + cluster * cores per cluster, host slot included).",
+      swaccess: "ro",
+      hwaccess: "hwo",
+      fields: [
+        { bits: "31:0", resval: "0", name: "BINGO_CORE_DEAD_SUSPECT",
+          desc: '''Bit i: bingo slot i is dead_suspect (not sticky).'''
+        }
+      ]
+    },
+    { name: "BINGO_CORE_FENCED",
+      desc: "Bingo watchdog: fenced (confirmed dead, sticky) cores (bit core + cluster * cores per cluster, host slot included).",
+      swaccess: "ro",
+      hwaccess: "hwo",
+      fields: [
+        { bits: "31:0", resval: "0", name: "BINGO_CORE_FENCED",
+          desc: '''Bit i: bingo slot i is fenced.'''
+        }
+      ]
+    },
   ]
 }

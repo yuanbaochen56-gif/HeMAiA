@@ -73,6 +73,41 @@ module ${name}_quad_ctrl
   logic [31:0] cerf_write_data;
   logic [31:0] cerf_state;
 
+  //  Bingo level-3 remote dispatch and status (see i_bingo_remote_link)
+  // bingo_hw_manager_top TaskIdWidth (its default)
+  localparam int unsigned BingoTaskIdWidth = 12;
+  localparam int unsigned BingoRemoteSlotIdWidth =
+    cf_math_pkg::idx_width(BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER * NrClustersPerQuad);
+  localparam int unsigned BingoRemoteNumPeers = ${bingo_remote_num_peers};
+  localparam logic [BingoRemoteNumPeers-1:0][${chip_id_width-1}:0] BingoRemotePeerChipId = {${bingo_remote_peer_chips}};
+  // [core type] = {valid, target chip}
+  localparam logic [2**${bingo_core_type_id_width}-1:0][${chip_id_width}:0] BingoRemoteTargetChip = {
+    ${bingo_remote_target_chip}
+  };
+  logic                                  bingo_rd_export_valid, bingo_rd_export_ready;
+  logic [${quad_ctrl_axi_lite_xbar.dw-1}:0]                           bingo_rd_export_desc;
+  logic [${bingo_core_type_id_width-1}:0]                            bingo_rd_export_core_type;
+  chip_id_t                              bingo_rd_export_origin_chip;
+  logic [BingoRemoteSlotIdWidth-1:0]     bingo_rd_export_proxy_slot;
+  logic                                  bingo_rd_import_valid, bingo_rd_import_ready;
+  logic [${quad_ctrl_axi_lite_xbar.dw-1}:0]                           bingo_rd_import_desc;
+  logic [${bingo_core_type_id_width-1}:0]                            bingo_rd_import_core_type;
+  chip_id_t                              bingo_rd_import_origin_chip;
+  logic [BingoRemoteSlotIdWidth-1:0]     bingo_rd_import_proxy_slot;
+  logic                                  bingo_rdn_out_valid, bingo_rdn_out_ready;
+  chip_id_t                              bingo_rdn_out_chip;
+  logic [BingoRemoteSlotIdWidth-1:0]     bingo_rdn_out_proxy_slot;
+  logic [BingoTaskIdWidth-1:0]           bingo_rdn_out_task_id;
+  logic                                  bingo_rdn_in_valid, bingo_rdn_in_ready;
+  logic [BingoRemoteSlotIdWidth-1:0]     bingo_rdn_in_proxy_slot;
+  logic [BingoTaskIdWidth-1:0]           bingo_rdn_in_task_id;
+  logic [4:0]                            bingo_remote_link_error;
+  logic                                  bingo_remote_done_mismatch;
+  logic                                  bingo_replay_stuck;
+  logic [BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER-1:0][NrClustersPerQuad-1:0] bingo_core_fenced;
+  logic [BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER-1:0][NrClustersPerQuad-1:0] bingo_core_dead_suspect;
+
+
   // Quadrant Lite xbar
   // Here we have the host to cluster mailboxes
   // There is 4kB space at the beginning of the quad cfg mux
@@ -168,7 +203,13 @@ module ${name}_quad_ctrl
     // DARTS CERF
     .cerf_write_en_o                        (cerf_write_en                       ),
     .cerf_write_data_o                      (cerf_write_data                     ),
-    .cerf_state_i                           (cerf_state                          )
+    .cerf_state_i                           (cerf_state                          ),
+    // Bingo status (read-only): BINGO_STATUS, BINGO_CORE_DEAD_SUSPECT, BINGO_CORE_FENCED
+    .bingo_hw_manager_replay_stuck_i          (bingo_replay_stuck                  ),
+    .bingo_hw_manager_remote_done_mismatch_i  (bingo_remote_done_mismatch          ),
+    .bingo_hw_manager_remote_link_error_i     (bingo_remote_link_error             ),
+    .bingo_hw_manager_core_dead_suspect_i     (bingo_core_dead_suspect             ),
+    .bingo_hw_manager_core_fenced_i           (bingo_core_fenced                   )
   );
 
 
@@ -245,6 +286,7 @@ module ${name}_quad_ctrl
     // Per-edge dependency tag width (s1_quadrant.dep_tag_width). Must match the SW
     // descriptor packing: BINGO_DEP_TAG_WIDTH (occamy.h) / DEP_TAG_WIDTH (bingo_utils.h).
     .DepTagWidth              (${dep_tag_width}                          ),
+    .TaskIdWidth              (BingoTaskIdWidth                          ),
     // DVFS doorbell MSIP bit: injected here so the PM is not hardcoded (see occamy.py
     // hw_manager_ipi_idx; must match HW_MANAGER_DVFS_MSIP_BIT / occamy_soc.sv ipi_i).
     .HOST_DVFS_MSIP_BIT       (${hw_manager_ipi_idx}                     ),
@@ -258,6 +300,12 @@ module ${name}_quad_ctrl
     // (replay_stuck_o).
     .WatchdogConfirmTimeoutCycles ( ${bingo_watchdog_confirm_timeout_cycles} ),
     .WatchdogCoreMask         (BingoWatchdogCoreMask                     ),
+    // Substitute levels (s1_quadrant.bingo_substitute_level_mask, default 1 =
+    // same cluster only; bit 2 = remote chiplet through i_bingo_remote_link) and
+    // the levels of an imported task's stand-in
+    // (s1_quadrant.bingo_import_substitute_level_mask, default mask & 3)
+    .SubstituteLevelMask       (3'd${bingo_substitute_level_mask}                   ),
+    .ImportSubstituteLevelMask (3'd${bingo_import_substitute_level_mask}                   ),
     .CoreTypeIdWidth          (${bingo_core_type_id_width}                                        ),
     .CoreTypeId               (BingoCoreTypeId                           ),
     // snax_intf_translator only forwards CSR 0x5fe/0x5ff to this port (0x5fd would
@@ -328,15 +376,129 @@ module ${name}_quad_ctrl
     .cerf_state_o                              (cerf_state                          ),
     // DARTS: Load Monitor (not connected yet)
     .load_total_pending_o                      (/* unused */                         ),
-    // Watchdog fence / replay status (not connected yet)
-    .core_fenced_o                             (/* unused */                         ),
-    .replay_stuck_o                            (/* unused */                         )
+    // Watchdog / replay status (quad periph BINGO_* status registers)
+    .core_fenced_o                             (bingo_core_fenced                    ),
+    .core_dead_suspect_o                       (bingo_core_dead_suspect              ),
+    .replay_stuck_o                            (bingo_replay_stuck                   ),
+    // Level 3 remote dispatch (i_bingo_remote_link)
+    .remote_dispatch_valid_o                   (bingo_rd_export_valid                ),
+    .remote_dispatch_ready_i                   (bingo_rd_export_ready                ),
+    .remote_dispatch_desc_o                    (bingo_rd_export_desc                 ),
+    .remote_dispatch_core_type_o               (bingo_rd_export_core_type            ),
+    .remote_dispatch_origin_chip_o             (bingo_rd_export_origin_chip          ),
+    .remote_dispatch_proxy_slot_o              (bingo_rd_export_proxy_slot           ),
+    .remote_dispatch_valid_i                   (bingo_rd_import_valid                ),
+    .remote_dispatch_ready_o                   (bingo_rd_import_ready                ),
+    .remote_dispatch_desc_i                    (bingo_rd_import_desc                 ),
+    .remote_dispatch_core_type_i               (bingo_rd_import_core_type            ),
+    .remote_dispatch_origin_chip_i             (bingo_rd_import_origin_chip          ),
+    .remote_dispatch_proxy_slot_i              (bingo_rd_import_proxy_slot           ),
+    .remote_done_valid_o                       (bingo_rdn_out_valid                  ),
+    .remote_done_ready_i                       (bingo_rdn_out_ready                  ),
+    .remote_done_chip_o                        (bingo_rdn_out_chip                   ),
+    .remote_done_proxy_slot_o                  (bingo_rdn_out_proxy_slot             ),
+    .remote_done_task_id_o                     (bingo_rdn_out_task_id                ),
+    .remote_done_valid_i                       (bingo_rdn_in_valid                   ),
+    .remote_done_ready_o                       (bingo_rdn_in_ready                   ),
+    .remote_done_proxy_slot_i                  (bingo_rdn_in_proxy_slot              ),
+    .remote_done_task_id_i                     (bingo_rdn_in_task_id                 ),
+    .remote_done_mismatch_o                    (bingo_remote_done_mismatch           )
   );
 
-  // Bingo level-3 remote link mailboxes (BingoRemoteLinkBaseAddr, 8 KiB):
-  // not connected yet
-  assign ${quad_ctrl_axi_lite_xbar.in_bingo_remote_link.req_name()} = '0;
-  assign ${quad_ctrl_axi_lite_xbar.out_bingo_remote_link.rsp_name()} = '0;
+  //////////////////////////////////////////////////////////////////
+  //  Bingo level-3 remote dispatch: bingo_hw_manager_remote_link  //
+  //////////////////////////////////////////////////////////////////
+  // Carries the exports / imports and dones of bingo_hw_manager_top as one
+  // 64-bit AXI-Lite write per packet: master -> quad AXI-Lite xbar ->
+  // {target chip, BingoRemoteDispatchMboxAddr / BingoRemoteDoneMboxAddr}. The
+  // own chip id hits this quadrant's mailbox leaf (loopback), other chip ids
+  // leave through quad_to_soc (default port). Off unless
+  // s1_quadrant.bingo_substitute_level_mask[2] and a bingo_remote_target_chip
+  // entry are set; otherwise nothing is exported and the link stays idle.
+  bingo_hw_manager_remote_link #(
+    .ChipIdWidth       ( ${chip_id_width}                    ),
+    .CoreTypeIdWidth   ( ${bingo_core_type_id_width}                    ),
+    .RemoteSlotIdWidth ( BingoRemoteSlotIdWidth     ),
+    .TaskIdWidth       ( BingoTaskIdWidth           ),
+    .AxiAddrWidth      ( ${quad_ctrl_axi_lite_xbar.aw}                   ),
+    .AxiDataWidth      ( ${quad_ctrl_axi_lite_xbar.dw}                   ),
+    .NumPeers          ( BingoRemoteNumPeers        ),
+    .PeerChipId        ( BingoRemotePeerChipId      ),
+    .RemoteTargetChip  ( BingoRemoteTargetChip      ),
+    .DispatchCredits   ( ${bingo_remote_dispatch_credits}                    ),
+    .req_t             ( ${quad_ctrl_axi_lite_xbar.in_bingo_remote_link.req_type()} ),
+    .resp_t            ( ${quad_ctrl_axi_lite_xbar.in_bingo_remote_link.rsp_type()} )
+  ) i_bingo_remote_link (
+    .clk_i                 ( ${quad_ctrl_axi_lite_xbar.clk}                       ),
+    .rst_ni                ( ${quad_ctrl_axi_lite_xbar.rst}                      ),
+    .chip_id_i             ( chip_id_i                   ),
+    .base_addr_i           ( BingoRemoteLinkBaseAddr     ),
+    .export_valid_i        ( bingo_rd_export_valid       ),
+    .export_ready_o        ( bingo_rd_export_ready       ),
+    .export_desc_i         ( bingo_rd_export_desc        ),
+    .export_core_type_i    ( bingo_rd_export_core_type   ),
+    .export_origin_chip_i  ( bingo_rd_export_origin_chip ),
+    .export_proxy_slot_i   ( bingo_rd_export_proxy_slot  ),
+    .done_out_valid_i      ( bingo_rdn_out_valid         ),
+    .done_out_ready_o      ( bingo_rdn_out_ready         ),
+    .done_out_chip_i       ( bingo_rdn_out_chip          ),
+    .done_out_proxy_slot_i ( bingo_rdn_out_proxy_slot    ),
+    .done_out_task_id_i    ( bingo_rdn_out_task_id       ),
+    .import_valid_o        ( bingo_rd_import_valid       ),
+    .import_ready_i        ( bingo_rd_import_ready       ),
+    .import_desc_o         ( bingo_rd_import_desc        ),
+    .import_core_type_o    ( bingo_rd_import_core_type   ),
+    .import_origin_chip_o  ( bingo_rd_import_origin_chip ),
+    .import_proxy_slot_o   ( bingo_rd_import_proxy_slot  ),
+    .done_in_valid_o       ( bingo_rdn_in_valid          ),
+    .done_in_ready_i       ( bingo_rdn_in_ready          ),
+    .done_in_proxy_slot_o  ( bingo_rdn_in_proxy_slot     ),
+    .done_in_task_id_o     ( bingo_rdn_in_task_id        ),
+    .mst_req_o             ( ${quad_ctrl_axi_lite_xbar.in_bingo_remote_link.req_name()} ),
+    .mst_resp_i            ( ${quad_ctrl_axi_lite_xbar.in_bingo_remote_link.rsp_name()} ),
+    .slv_req_i             ( ${quad_ctrl_axi_lite_xbar.out_bingo_remote_link.req_name()} ),
+    .slv_resp_o            ( ${quad_ctrl_axi_lite_xbar.out_bingo_remote_link.rsp_name()} ),
+    .error_o               ( bingo_remote_link_error     ),
+    .credits_o             ( /* unused */                )
+  );
+
+`ifndef SYNTHESIS
+  // Simulation-only packet log of the remote link (address and 64-bit packet of
+  // every AXI-Lite write it sends and receives, and the write responses).
+  always @(posedge ${quad_ctrl_axi_lite_xbar.clk}) begin : bingo_remote_link_log
+    if (${quad_ctrl_axi_lite_xbar.rst}) begin
+      if (${quad_ctrl_axi_lite_xbar.in_bingo_remote_link.req_name()}.aw_valid && ${quad_ctrl_axi_lite_xbar.in_bingo_remote_link.rsp_name()}.aw_ready)
+        $display("[BINGO_RLINK_TX_AW] %0t chip=%0d addr=0x%012h", $time, chip_id_i, ${quad_ctrl_axi_lite_xbar.in_bingo_remote_link.req_name()}.aw.addr);
+      if (${quad_ctrl_axi_lite_xbar.in_bingo_remote_link.req_name()}.w_valid && ${quad_ctrl_axi_lite_xbar.in_bingo_remote_link.rsp_name()}.w_ready)
+        $display("[BINGO_RLINK_TX_W] %0t chip=%0d data=0x%016h", $time, chip_id_i, ${quad_ctrl_axi_lite_xbar.in_bingo_remote_link.req_name()}.w.data);
+      if (${quad_ctrl_axi_lite_xbar.in_bingo_remote_link.rsp_name()}.b_valid && ${quad_ctrl_axi_lite_xbar.in_bingo_remote_link.req_name()}.b_ready)
+        $display("[BINGO_RLINK_TX_B] %0t chip=%0d resp=%0d", $time, chip_id_i, ${quad_ctrl_axi_lite_xbar.in_bingo_remote_link.rsp_name()}.b.resp);
+      if (${quad_ctrl_axi_lite_xbar.out_bingo_remote_link.req_name()}.aw_valid && ${quad_ctrl_axi_lite_xbar.out_bingo_remote_link.rsp_name()}.aw_ready)
+        $display("[BINGO_RLINK_RX_AW] %0t chip=%0d addr=0x%012h", $time, chip_id_i, ${quad_ctrl_axi_lite_xbar.out_bingo_remote_link.req_name()}.aw.addr);
+      if (${quad_ctrl_axi_lite_xbar.out_bingo_remote_link.req_name()}.w_valid && ${quad_ctrl_axi_lite_xbar.out_bingo_remote_link.rsp_name()}.w_ready)
+        $display("[BINGO_RLINK_RX_W] %0t chip=%0d data=0x%016h", $time, chip_id_i, ${quad_ctrl_axi_lite_xbar.out_bingo_remote_link.req_name()}.w.data);
+    end
+  end
+  // The status that the quad periph BINGO_* registers show, on every change
+  logic [6:0] bingo_status_log_q;
+  logic [BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER-1:0][NrClustersPerQuad-1:0] bingo_fenced_log_q, bingo_suspect_log_q;
+  always @(posedge ${quad_ctrl_axi_lite_xbar.clk} or negedge ${quad_ctrl_axi_lite_xbar.rst}) begin : bingo_status_log
+    if (!${quad_ctrl_axi_lite_xbar.rst}) begin
+      bingo_status_log_q  <= '0;
+      bingo_fenced_log_q  <= '0;
+      bingo_suspect_log_q <= '0;
+    end else begin
+      bingo_status_log_q  <= {bingo_remote_link_error, bingo_remote_done_mismatch, bingo_replay_stuck};
+      bingo_fenced_log_q  <= bingo_core_fenced;
+      bingo_suspect_log_q <= bingo_core_dead_suspect;
+      if (({bingo_remote_link_error, bingo_remote_done_mismatch, bingo_replay_stuck} != bingo_status_log_q) ||
+          (bingo_core_fenced != bingo_fenced_log_q) || (bingo_core_dead_suspect != bingo_suspect_log_q))
+        $display("[BINGO_STATUS] %0t chip=%0d replay_stuck=%0b remote_done_mismatch=%0b link_error=%0d fenced=0x%0h dead_suspect=0x%0h",
+                 $time, chip_id_i, bingo_replay_stuck, bingo_remote_done_mismatch, bingo_remote_link_error,
+                 bingo_core_fenced, bingo_core_dead_suspect);
+    end
+  end
+`endif
 
   // We need an extra work here to connect the host master port to the csr
   csr_req_t host_ready_done_csr_req;

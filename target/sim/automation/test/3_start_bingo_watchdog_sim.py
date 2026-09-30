@@ -41,6 +41,10 @@ s10     as s7, but level 3 forced through a loopback      EOC success, check PAS
 s11     as s6, but the DM core (global task 0) hangs, with no EOC; DM core fenced, [BINGO_REPLAY_STUCK],
         level 3 on (mask 5) and a remote target for the    nothing exported, imported or sent over
         plain type only                                    the remote link (its type has no target)
+s12     as s5, but with level 2 (substitute mask 3):       EOC success, both host checks PASS; the
+        the cluster-0 DM core hangs on task 0 and the      victim is fenced, task 0 replayed on the
+        cluster-1 DM core (same type) takes over           cluster-1 DM core, the victim retired,
+                                                           its exit task remapped there as well
 ======  =================================================  ==========================================
 
 The bingo manager may only move a dead core's tasks to a core of the same type
@@ -69,6 +73,7 @@ Run it
     python3 3_start_bingo_watchdog_sim.py --scenario s2         # 1-cluster build
     python3 3_start_bingo_watchdog_sim.py --scenario s6 s7 s8 s9  # 1-cluster, 2 plain cores
     python3 3_start_bingo_watchdog_sim.py --scenario s10 s11      # same, level 3 (remote link)
+    python3 3_start_bingo_watchdog_sim.py --scenario s12          # hemaia_ci, level 2 (cross-cluster)
 
 Results: ``<out-root>/<scenario>/result.md`` and the runner's task directory.
 """
@@ -133,6 +138,10 @@ NO_TARGET_CFG_KEYS = {
     "bingo_substitute_level_mask": "5",
     "bingo_remote_target_chip": f'{{"{TWO_PLAIN_CORE_TYPE}": {LOOPBACK_CHIP}}}',
 }
+# s12: levels 1 and 2. The DM cores of the two hemaia_ci clusters share a type,
+# so the cluster-1 DM core may run the cluster-0 DM core's tasks (the iDMA copy
+# uses 64-bit global addresses, the task tables are chip-wide copies).
+L2_CFG_KEYS = {"bingo_substitute_level_mask": "3"}
 # In int32_add_2plain_1cluster, global task 0 is the first iDMA load on the DM core.
 TWO_PLAIN_DM_FAULT_GID = 0
 TWO_PLAIN_DM_VICTIM = (0, 3, 0)
@@ -233,6 +242,16 @@ SCENARIOS: Dict[str, dict] = {
         # healthy runs of this workload end after ~3 min of wall time
         expect_eoc=False, expect_fence=True, sim_timeout_s=1800,
     ),
+    "s12": dict(
+        desc="cluster-0 DM core hangs, level 2: its tasks run on the cluster-1 DM core, run completes",
+        cfg=HEMAIA_CI_CFG, timeout_cycles=TIGHT_TIMEOUT_CYCLES,
+        confirm_timeout_cycles=CONFIRM_TIMEOUT_CYCLES,
+        extra_cfg=L2_CFG_KEYS, cfg_suffix="_l2",
+        workload="dummy_2cluster", fault_stall_cycles=0,
+        fault_gid=FAULT_GID, victim=VICTIM, substitute=1, substitute_cluster=1,
+        expect_takeover=True,
+        expect_eoc=True, expect_fence=True, sim_timeout_s=3600,
+    ),
 }
 
 # fenced= only exists since the replay support; older RTL prints dead_suspect only.
@@ -241,7 +260,7 @@ REMAP_RE = re.compile(r"\[BINGO_REMAP\].*")
 REPLAY_RE = re.compile(r"\[BINGO_REPLAY\].*")
 # Parsed forms of the remap / replay / retire / fence-drop lines
 REMAP_FIELDS_RE = re.compile(r"\[BINGO_REMAP\] \d+ chip=(\d+) task=(\d+) logical_core=(\d+) -> physical_core=(\d+) cluster=(\d+)")
-REPLAY_FIELDS_RE = re.compile(r"\[BINGO_REPLAY\] \d+ chip=(\d+) task=(\d+) type=\d+ logical_core=(\d+) from=(\d+) to=(\d+) cluster=(\d+)")
+REPLAY_FIELDS_RE = re.compile(r"\[BINGO_REPLAY\] \d+ chip=(\d+) task=(\d+) type=\d+ logical_core=(\d+) from=(\d+) to=(\d+) cluster=(\d+) to_cluster=(\d+)")
 RETIRED_RE = re.compile(r"\[BINGO_RETIRED\] \d+ chip=(\d+) core=(\d+) cluster=(\d+)")
 FENCE_DROP_RE = re.compile(r"\[BINGO_FENCE\] \d+ chip=(\d+) core=(\d+) cluster=(\d+) dropped done task=(\d+)")
 STUCK_RE = re.compile(r"\[BINGO_REPLAY_STUCK\].*")
@@ -462,17 +481,27 @@ def evaluate(name: str, sc: dict, log_text: str, uart_text: str) -> List[str]:
             problems.append(f"{len(replays)} unexpected [BINGO_REPLAY] event(s): {replays[:3]}")
     else:
         # Everything the victim held or gets later moves to the substitute only
+        # (substitute_cluster: level 2, another cluster of the chip)
         chip, core, cluster = victim
+        sub_cluster = sc.get("substitute_cluster", cluster)
+        # (chip, task, logical_core, from, to, cluster, to_cluster)
         moved = [tuple(int(x) for x in m.groups()) for m in REPLAY_FIELDS_RE.finditer(log_text)]
-        if not any(task == sc["fault_gid"] for _, task, _, _, _, _ in moved):
+        if not any(r[1] == sc["fault_gid"] for r in moved):
             problems.append(f"task {sc['fault_gid']} was not replayed: {replays[:3]}")
-        wrong = [r for r in moved if (r[0], r[3], r[4], r[5]) != (chip, core, substitute, cluster)]
+        wrong = [r for r in moved
+                 if (r[0], r[3], r[4], r[5], r[6]) != (chip, core, substitute, cluster, sub_cluster)]
         if wrong or len(moved) != len(replays):
-            problems.append(f"replay other than core {core} -> {substitute}: {replays[:3]}")
+            problems.append(f"replay other than core {core} -> {substitute} (cluster {cluster} -> "
+                            f"{sub_cluster}): {replays[:3]}")
+        # (chip, task, logical_core, physical_core, physical cluster)
         routed = [tuple(int(x) for x in m.groups()) for m in REMAP_FIELDS_RE.finditer(log_text)]
-        wrong = [r for r in routed if (r[0], r[2], r[3], r[4]) != (chip, core, substitute, cluster)]
+        wrong = [r for r in routed if (r[0], r[2], r[3], r[4]) != (chip, core, substitute, sub_cluster)]
         if wrong or len(routed) != len(remaps):
-            problems.append(f"remap other than logical core {core} -> {substitute}: {remaps[:3]}")
+            problems.append(f"remap other than logical core {core} -> {substitute} "
+                            f"(cluster {sub_cluster}): {remaps[:3]}")
+        if sc.get("expect_takeover", False) and \
+                f"Exit task of cluster {cluster} core {core} taken over" not in uart_text:
+            problems.append(f"no 'Exit task of cluster {cluster} core {core} taken over' in the UART log")
         retired = [tuple(int(x) for x in m.groups()) for m in RETIRED_RE.finditer(log_text)]
         if retired != [victim]:
             problems.append(f"[BINGO_RETIRED] expected only {victim}, got {retired}")

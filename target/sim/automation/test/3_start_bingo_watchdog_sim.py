@@ -38,6 +38,9 @@ s10     as s7, but level 3 forced through a loopback      EOC success, check PAS
                                                            xbar, imported on plain core 2, dones
                                                            back via {chip, 0x0a003000}; packets
                                                            decoded and checked, no link error
+s11     as s6, but the DM core (global task 0) hangs, with no EOC; DM core fenced, [BINGO_REPLAY_STUCK],
+        level 3 on (mask 5) and a remote target for the    nothing exported, imported or sent over
+        plain type only                                    the remote link (its type has no target)
 ======  =================================================  ==========================================
 
 The bingo manager may only move a dead core's tasks to a core of the same type
@@ -65,6 +68,7 @@ Run it
     python3 3_start_bingo_watchdog_sim.py --scenario s1 s3 s4 s5  # hemaia_ci build
     python3 3_start_bingo_watchdog_sim.py --scenario s2         # 1-cluster build
     python3 3_start_bingo_watchdog_sim.py --scenario s6 s7 s8 s9  # 1-cluster, 2 plain cores
+    python3 3_start_bingo_watchdog_sim.py --scenario s10 s11      # same, level 3 (remote link)
 
 Results: ``<out-root>/<scenario>/result.md`` and the runner's task directory.
 """
@@ -123,6 +127,19 @@ LOOPBACK_CFG_KEYS = {
     "bingo_import_substitute_level_mask": "1",  # an import may use a same-cluster core
     "bingo_remote_target_chip": f'{{"{TWO_PLAIN_CORE_TYPE}": {LOOPBACK_CHIP}}}',
 }
+# s11: levels 1 and 3, a remote target for the plain type only. The DM core has
+# no same-type core in the cluster and its type has no target, so it is stuck.
+NO_TARGET_CFG_KEYS = {
+    "bingo_substitute_level_mask": "5",
+    "bingo_remote_target_chip": f'{{"{TWO_PLAIN_CORE_TYPE}": {LOOPBACK_CHIP}}}',
+}
+# In int32_add_2plain_1cluster, global task 0 is the first iDMA load on the DM core.
+TWO_PLAIN_DM_FAULT_GID = 0
+TWO_PLAIN_DM_VICTIM = (0, 3, 0)
+# Generated BingoCoreTypeId of snax_versacore_2plain_to_cluster, checked against
+# the generated RTL by the level-3 scenarios (their cfg keys use these ids)
+TWO_PLAIN_CORE_TYPES = {0: 1, 1: TWO_PLAIN_CORE_TYPE, 2: TWO_PLAIN_CORE_TYPE, 3: 3, 4: 0}
+QUAD_CTRL_RTL = "target/rtl/src/occamy_quad_ctrl.sv"
 
 SCENARIOS: Dict[str, dict] = {
     "s1": dict(
@@ -202,8 +219,19 @@ SCENARIOS: Dict[str, dict] = {
         extra_cfg=LOOPBACK_CFG_KEYS, cfg_suffix="_rlink_loopback",
         workload="int32_add_2plain_1cluster", fault_stall_cycles=0,
         fault_gid=TWO_PLAIN_FAULT_GID, victim=TWO_PLAIN_VICTIM, substitute=TWO_PLAIN_SUBSTITUTE,
-        remote_loopback=True,
+        remote_loopback=True, expect_core_types=TWO_PLAIN_CORE_TYPES,
         expect_eoc=True, expect_fence=True, sim_timeout_s=3600,
+    ),
+    "s11": dict(
+        desc="DM core hangs, level 3 on but no remote target for its type: fenced, stuck, nothing exported",
+        cfg=ONE_CLUSTER_CFG, cluster_swap=TWO_PLAIN_CLUSTER_SWAP,
+        timeout_cycles=TIGHT_TIMEOUT_CYCLES, confirm_timeout_cycles=CONFIRM_TIMEOUT_CYCLES,
+        extra_cfg=NO_TARGET_CFG_KEYS, cfg_suffix="_rlink_notarget",
+        workload="int32_add_2plain_1cluster", fault_stall_cycles=0,
+        fault_gid=TWO_PLAIN_DM_FAULT_GID, victim=TWO_PLAIN_DM_VICTIM,
+        expect_core_types=TWO_PLAIN_CORE_TYPES,
+        # healthy runs of this workload end after ~3 min of wall time
+        expect_eoc=False, expect_fence=True, sim_timeout_s=1800,
     ),
 }
 
@@ -369,15 +397,28 @@ def evaluate_remote_loopback(sc: dict, log_text: str) -> List[str]:
             problems.append(f"unexpected packet addr=0x{addr:012x} data=0x{data:016x}")
     if dispatch_ids != exp_tasks or done_ids != exp_tasks:
         problems.append(f"packet task ids: dispatch {dispatch_ids}, done {done_ids}, exports {exp_tasks}")
-    seqs = [decode_packet(d)["seq"] for a, d in tx if a == chip_base]
-    if seqs != [i % 256 for i in range(len(seqs))] and seqs != [(i + 1) % 256 for i in range(len(seqs))]:
-        problems.append(f"dispatch sequence numbers {seqs}")
+    # Sequence numbers start at 0 after reset, per stream (dispatch / done)
+    for page, what in ((chip_base, "dispatch"), (chip_base + 0x1000, "done")):
+        seqs = [decode_packet(d)["seq"] for a, d in tx if a == page]
+        if seqs != [i % 256 for i in range(len(seqs))]:
+            problems.append(f"{what} sequence numbers {seqs}")
     status = re.findall(r"\[BINGO_STATUS\] \d+ chip=\d+ (.*)", log_text)
-    if status and "link_error=0 " not in status[-1] + " ":
-        problems.append(f"final [BINGO_STATUS] {status[-1]}")
+    if not status:
+        problems.append("no [BINGO_STATUS] line (the fence must change it)")
     print(f"[remote_loopback] exports={exports} imports={imports} tx_packets="
           f"{[(hex(a), hex(d)) for a, d in tx]} status={status[-1:] if status else None}")
     return problems
+
+
+def check_core_types(expected: Dict[int, int]) -> List[str]:
+    """Compare the generated BingoCoreTypeId (one cluster) with {core: type}."""
+    rtl = _REPO_ROOT / QUAD_CTRL_RTL
+    text = rtl.read_text(errors="replace") if rtl.exists() else ""
+    found = {int(core): int(t) for t, core in
+             re.findall(r"^\s*\d+'d(\d+),?\s*// core (\d+), clusters 0\.\.0$", text, flags=re.M)}
+    if found != expected:
+        return [f"generated BingoCoreTypeId {found} in {QUAD_CTRL_RTL}, the scenario assumes {expected}"]
+    return []
 
 
 def evaluate(name: str, sc: dict, log_text: str, uart_text: str) -> List[str]:
@@ -401,6 +442,18 @@ def evaluate(name: str, sc: dict, log_text: str, uart_text: str) -> List[str]:
     substitute = sc.get("substitute")
     if sc.get("remote_loopback", False):
         problems += evaluate_remote_loopback(sc, log_text)
+    else:
+        # Level 3 stays idle: nothing exported, imported or sent over the link
+        l3 = [l for l in log_text.splitlines()
+              if re.search(r"\[BINGO_(EXPORT|IMPORT|REMOTE_DONE_OUT|REMOTE_DONE_IN|RLINK_\w+)\]", l)]
+        if l3:
+            problems.append(f"{len(l3)} unexpected level-3 event(s): {l3[:3]}")
+    # The sticky link / remote-done error flags stay clear in every scenario
+    status = re.findall(r"\[BINGO_STATUS\] \d+ chip=\d+ (.*)", log_text)
+    if status and not ("remote_done_mismatch=0 " in status[-1] and "link_error=0 " in status[-1] + " "):
+        problems.append(f"final [BINGO_STATUS] {status[-1]}")
+    if sc.get("remote_loopback", False):
+        pass
     elif substitute is None:
         # No core may take over the victim's tasks: nothing moves
         if remaps:
@@ -506,6 +559,8 @@ def run_scenario(name: str, args: argparse.Namespace) -> bool:
     log_text = log_path.read_text(errors="replace") if log_path.exists() else ""
     uart_text = uart_path.read_text(errors="replace") if uart_path.exists() else ""
     problems = evaluate(name, sc, log_text, uart_text)
+    if sc.get("expect_core_types"):
+        problems += check_core_types(sc["expect_core_types"])
     if not log_text:
         problems.append(f"missing {log_path}")
 

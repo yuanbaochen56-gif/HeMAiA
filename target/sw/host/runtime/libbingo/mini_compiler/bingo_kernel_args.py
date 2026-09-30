@@ -180,6 +180,29 @@ class SnaxBingoKernelDummyArgs(BingoKernelArgs):
     def get_c_field_assignments(self, handle_name_map: Dict[BingoMemAlloc, str]) -> Dict[str, str]:
         return {"dummy_input": str(self.dummy_input)}
 
+# BINGO int32 add: C = A + B on the core itself (any core; L1 buffers)
+class SnaxBingoKernelInt32AddArgs(BingoKernelArgs):
+    KERNEL_NAME = "__snax_bingo_kernel_int32_add"
+
+    def __init__(self, a_addr: Union[BingoMemAlloc, int], b_addr: Union[BingoMemAlloc, int],
+                 c_addr: Union[BingoMemAlloc, int], num_elements: int):
+        self.a_addr = a_addr
+        self.b_addr = b_addr
+        self.c_addr = c_addr
+        self.num_elements = num_elements
+
+    def get_struct_name(self) -> str:
+        return "__snax_bingo_kernel_int32_add_args_t"
+
+    def get_c_field_assignments(self, handle_name_map: Dict[BingoMemAlloc, str]) -> Dict[str, str]:
+        assignments = {}
+        # The core uses 32-bit pointers
+        self._process_addr(self.a_addr, "a_addr", assignments, handle_name_map, split_64bit=False)
+        self._process_addr(self.b_addr, "b_addr", assignments, handle_name_map, split_64bit=False)
+        self._process_addr(self.c_addr, "c_addr", assignments, handle_name_map, split_64bit=False)
+        assignments["num_elements"] = str(self.num_elements)
+        return assignments
+
 # BINGO IDMA 1D Copy
 class SnaxBingoKernelIdma1dCopyArgs(BingoKernelArgs):
     def __init__(self, src_addr: Union[BingoMemAlloc, int], dst_addr: Union[BingoMemAlloc, int], size: int):

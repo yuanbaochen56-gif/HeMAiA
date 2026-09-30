@@ -58,6 +58,7 @@ SNAX_SYMTAB_SECTION const snax_symbol_t __snax_symtab[] = {
     /// Used for bingo hw  ///
     SNAX_EXPORT_FUNC(__snax_bingo_kernel_dummy),
     SNAX_EXPORT_FUNC(__snax_bingo_kernel_exit),
+    SNAX_EXPORT_FUNC(__snax_bingo_kernel_int32_add),
     SNAX_EXPORT_FUNC(__snax_bingo_kernel_idma_1d_copy),
     SNAX_EXPORT_FUNC(__snax_bingo_kernel_idma_broadcast),
     SNAX_EXPORT_FUNC(__snax_bingo_kernel_idma_pairwise_swap),

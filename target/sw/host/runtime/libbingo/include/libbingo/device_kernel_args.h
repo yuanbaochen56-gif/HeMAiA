@@ -186,13 +186,21 @@ __SNAX_KERNEL_ARGS_DEFINE __snax_bingo_kernel_entry_args {
 } __snax_bingo_kernel_entry_args_t;
 // BINGO Exit kernel args
 __SNAX_KERNEL_ARGS_DEFINE __snax_bingo_kernel_exit_args {
-  uint32_t exit_code;            
+  uint32_t exit_code;
   // Core the exit task was compiled for. When a core dies, the HW manager may
   // run its exit task on a substitute core; only this core leaves its loop.
   uint32_t assigned_cluster_id;
   uint32_t assigned_core_id;
   BINGO_KERNEL_ARGS_TRAILER;
 } __snax_bingo_kernel_exit_args_t;
+// BINGO int32 add kernel args (C = A + B, computed by the core; L1 buffers)
+__SNAX_KERNEL_ARGS_DEFINE __snax_bingo_kernel_int32_add_args {
+  uint32_t a_addr;
+  uint32_t b_addr;
+  uint32_t c_addr;
+  uint32_t num_elements;
+  BINGO_KERNEL_ARGS_TRAILER;
+} __snax_bingo_kernel_int32_add_args_t;
 
 // BINGO IDMA 1D Copy kernel args
 __SNAX_KERNEL_ARGS_DEFINE __snax_bingo_kernel_idma_1d_copy_args {

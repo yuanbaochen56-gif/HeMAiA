@@ -4,12 +4,14 @@
 //
 // Fanchen Kong <fanchen.kong@kuleuven.be>
 //
-// Core-level bingo kernels: dummy, entry_point, exit. These are the minimal
-// control kernels the bingo-hw scheduler uses to mark task boundaries.
+// Core-level bingo kernels that run on any core: dummy, entry_point, exit (the
+// minimal control kernels the bingo-hw scheduler uses to mark task boundaries)
+// and int32_add (a small compute kernel on the core itself).
 
 #pragma once
 
 #include "../macros.h"
+#include "bingo_hw_heartbeat.h"
 
 SNAX_LIB_DEFINE uint32_t __snax_bingo_kernel_dummy(void *arg){
     BINGO_TRACE_MARKER(BINGO_TRACE_KERNEL_ARG_PARSE_START);
@@ -60,4 +62,25 @@ SNAX_LIB_DEFINE uint32_t __snax_bingo_kernel_exit(void *arg){
     sp->return_value = BINGO_RET_EXIT;
     sp->num_return_values = 0;
     return BINGO_RET_EXIT;
+}
+
+// C[i] = A[i] + B[i] for num_elements int32 values, computed by the core itself,
+// so any core can run it. The buffers must be addressable by the core (L1).
+SNAX_LIB_DEFINE uint32_t __snax_bingo_kernel_int32_add(void *arg){
+    BINGO_SW_GUARD_CHECK(arg, __snax_bingo_kernel_int32_add_args_t);
+    BINGO_TRACE_MARKER(BINGO_TRACE_KERNEL_ARG_PARSE_START);
+    const __snax_bingo_kernel_int32_add_args_t *a = (const __snax_bingo_kernel_int32_add_args_t *)arg;
+    const int32_t *in_a = (const int32_t *)(uintptr_t)a->a_addr;
+    const int32_t *in_b = (const int32_t *)(uintptr_t)a->b_addr;
+    int32_t *out_c = (int32_t *)(uintptr_t)a->c_addr;
+    bingo_kernel_scratchpad_t* sp = BINGO_GET_SP(arg, __snax_bingo_kernel_int32_add_args_t);
+    BINGO_TRACE_MARKER(BINGO_TRACE_KERNEL_ARG_PARSE_END);
+    for (uint32_t i = 0; i < a->num_elements; i++) {
+        out_c[i] = in_a[i] + in_b[i];
+        // Keep the watchdog quiet on long vectors
+        if ((i & 0xff) == 0xff) bingo_hw_manager_heartbeat(1);
+    }
+    sp->return_value = a->c_addr;
+    sp->num_return_values = a->num_elements;
+    return BINGO_RET_SUCC;
 }

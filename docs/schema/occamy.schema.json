@@ -299,6 +299,43 @@
                     "description": "Bingo HW manager confirm timeout (WatchdogConfirmTimeoutCycles): quad-clock cycles without heartbeat after which a busy core is fenced (sticky) and its outstanding tasks are replayed on an allowed live core. Must exceed bingo_watchdog_timeout_cycles; 0 disables fencing and replay (detection only).",
                     "minimum": 0,
                     "default": 0
+                },
+                "bingo_substitute_level_mask": {
+                    "type": "integer",
+                    "description": "Bingo HW manager SubstituteLevelMask: where a fenced core's tasks may go. Bit 0: a core of the same cluster, bit 1: a core of another cluster, bit 2: another chiplet through bingo_hw_manager_remote_link (level 3). Default 1 (level 1 only).",
+                    "minimum": 0,
+                    "maximum": 7,
+                    "default": 1
+                },
+                "bingo_import_substitute_level_mask": {
+                    "type": "integer",
+                    "description": "Bingo HW manager ImportSubstituteLevelMask: levels (bits 0-1) an imported level-3 task may use to find a live stand-in for its home slot. Default: bingo_substitute_level_mask & 3. Differing from it is a debug aid (e.g. mask 4 with import mask 1 forces every task of a fenced core through the remote link, and a loopback target runs it on a same-cluster core).",
+                    "minimum": 0,
+                    "maximum": 7
+                },
+                "bingo_remote_target_chip": {
+                    "type": "object",
+                    "description": "Level-3 remote target per bingo core type: {\"<core type id>\": <chip id>}. Types not listed are never exported. The own chip id is a loopback (the packets go through the quad AXI-Lite xbar back to this chiplet's remote link mailboxes). Default: none.",
+                    "additionalProperties": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "default": {}
+                },
+                "bingo_remote_peer_chips": {
+                    "type": "array",
+                    "description": "Chip ids that may send level-3 packets to this chiplet (dispatches to run or dones of its exports). The targets of bingo_remote_target_chip are always included.",
+                    "items": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "default": []
+                },
+                "bingo_remote_dispatch_credits": {
+                    "type": "integer",
+                    "description": "Level-3 dispatch credits per peer chiplet (bingo_hw_manager_remote_link DispatchCredits).",
+                    "minimum": 1,
+                    "default": 2
                 }
 
             }

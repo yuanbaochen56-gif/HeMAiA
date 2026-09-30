@@ -333,6 +333,11 @@ module ${name}_quad_ctrl
     .replay_stuck_o                            (/* unused */                         )
   );
 
+  // Bingo level-3 remote link mailboxes (BingoRemoteLinkBaseAddr, 8 KiB):
+  // not connected yet
+  assign ${quad_ctrl_axi_lite_xbar.in_bingo_remote_link.req_name()} = '0;
+  assign ${quad_ctrl_axi_lite_xbar.out_bingo_remote_link.rsp_name()} = '0;
+
   // We need an extra work here to connect the host master port to the csr
   csr_req_t host_ready_done_csr_req;
   logic host_ready_done_csr_req_valid;

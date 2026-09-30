@@ -529,6 +529,13 @@ def am_connect_soc_lite_narrow_periph_xbar(am, am_soc_axi_lite_narrow_periph_xba
         occamy_cfg["peripherals"]["clint"]["address"]).attach_to(am_soc_axi_lite_narrow_periph_xbar)
     return am_soc_axi_lite_narrow_peripherals, am_bootrom, am_clint
 
+# Bingo remote link mailbox region in the quad AXI-Lite space (offset from
+# s1_quadrant.quad_axi_lite_base_addr): 8 KiB, 8 KiB aligned, after the chiplet
+# done queue (page 0) and the host ready/done interface (page 1).
+BINGO_REMOTE_LINK_OFFSET = 2 * 4096
+BINGO_REMOTE_LINK_SIZE = 2 * 4096
+
+
 def am_connect_quad_axi_lite_xbar(am, am_quad_axi_lite_xbar, occamy_cfg):
     ##############################
     # AM: Quadrant AXI Lite XBar #
@@ -553,6 +560,19 @@ def am_connect_quad_axi_lite_xbar(am, am_quad_axi_lite_xbar, occamy_cfg):
         (occamy_cfg["s1_quadrant"]["quad_axi_lite_base_addr"] + 4096, occamy_cfg["s1_quadrant"]["quad_axi_lite_base_addr"] + 2 * 4096)
     )
     am_quad_axi_lite_peripherals.append(am_quad_host_ready_done_intf)
+
+    # Bingo level-3 remote link mailboxes (bingo_hw_manager_remote_link slave):
+    # one 8 KiB leaf, page 0 = REMOTE_DISPATCH_MBOX, page 1 = REMOTE_DONE_MBOX.
+    # Remote chiplets write it at {their target chip id, this address}.
+    remote_link_base = occamy_cfg["s1_quadrant"]["quad_axi_lite_base_addr"] + BINGO_REMOTE_LINK_OFFSET
+    am_quad_bingo_remote_link = am.new_leaf("quad_bingo_remote_link",
+                                            BINGO_REMOTE_LINK_SIZE,
+                                            remote_link_base
+    ).attach_to(am_quad_axi_lite_xbar)
+    addrs_quad_axi_lite_peripherals.append(
+        (remote_link_base, remote_link_base + BINGO_REMOTE_LINK_SIZE)
+    )
+    am_quad_axi_lite_peripherals.append(am_quad_bingo_remote_link)
     return am_quad_axi_lite_peripherals, addrs_quad_axi_lite_peripherals
 
 
@@ -863,6 +883,50 @@ def get_soc_kwargs(occamy_cfg, cluster_generators, soc_narrow_xbar, soc_wide_xba
 BINGO_CORE_TYPE_ID_WIDTH = 4
 
 
+def get_bingo_remote_kwargs(occamy_cfg):
+    """Bingo substitute levels and level-3 remote link parameters (s1_quadrant).
+
+    Defaults keep the pre-remote behaviour: SubstituteLevelMask = 3'b001 (level 1
+    only), no remote target for any core type, one dummy peer.
+    """
+    quad = occamy_cfg["s1_quadrant"]
+    chip_id_width = occamy_cfg["hemaia_multichip"]["chip_id_width"]
+    nr_core_types = 1 << BINGO_CORE_TYPE_ID_WIDTH
+    level_mask = quad.get("bingo_substitute_level_mask", 1)
+    import_mask = quad.get("bingo_import_substitute_level_mask", level_mask & 3)
+    if not (0 <= level_mask < 8 and 0 <= import_mask < 8):
+        raise ValueError("bingo_substitute_level_mask / bingo_import_substitute_level_mask are 3-bit masks")
+    # {core type id (string or int): target chip id}
+    targets = [None] * nr_core_types
+    for core_type, chip in quad.get("bingo_remote_target_chip", {}).items():
+        core_type = int(core_type, 0) if isinstance(core_type, str) else int(core_type)
+        if not 0 < core_type < nr_core_types:
+            raise ValueError(f"bingo_remote_target_chip: core type {core_type} out of range")
+        if not 0 <= chip < (1 << chip_id_width):
+            raise ValueError(f"bingo_remote_target_chip: chip {chip} does not fit {chip_id_width} bits")
+        targets[core_type] = chip
+    peers = list(quad.get("bingo_remote_peer_chips", []))
+    for chip in targets:
+        if chip is not None and chip not in peers:
+            peers.append(chip)
+    if not peers:
+        peers = [0]  # unused: nothing is exported without a target
+    # packed [NumCoreTypes-1:0][ChipIdWidth:0], MSB of an entry = valid
+    target_entries = []
+    for core_type in reversed(range(nr_core_types)):
+        chip = targets[core_type]
+        target_entries.append(f"{{1'b1, {chip_id_width}'d{chip}}}" if chip is not None
+                              else f"{{1'b0, {chip_id_width}'d0}}")
+    return {
+        "bingo_substitute_level_mask": level_mask,
+        "bingo_import_substitute_level_mask": import_mask,
+        "bingo_remote_target_chip": ", ".join(target_entries),
+        "bingo_remote_peer_chips": ", ".join(f"{chip_id_width}'d{c}" for c in reversed(peers)),
+        "bingo_remote_num_peers": len(peers),
+        "bingo_remote_dispatch_credits": quad.get("bingo_remote_dispatch_credits", 2),
+    }
+
+
 def get_bingo_core_type_ids(cluster_generators):
     """Bingo HW manager CoreTypeId, as [cluster][core] lists (Snitch cores only).
 
@@ -917,6 +981,9 @@ def get_quad_ctrl_kwargs(occamy_cfg, soc_wide_xbar, soc_narrow_xbar, quad_ctrl_s
         # which Snitch cores may take over each other's tasks.
         "bingo_core_type_ids": get_bingo_core_type_ids(cluster_generators),
         "bingo_core_type_id_width": BINGO_CORE_TYPE_ID_WIDTH,
+        # Bingo level-3 remote dispatch (bingo_hw_manager_remote_link); all off by
+        # default, see get_bingo_remote_kwargs.
+        **get_bingo_remote_kwargs(occamy_cfg),
         "soc_wide_xbar": soc_wide_xbar,
         "soc_narrow_xbar": soc_narrow_xbar,
         "quad_ctrl_soc_to_quad_xbar": quad_ctrl_soc_to_quad_xbar,
@@ -1058,7 +1125,8 @@ def get_pkg_kwargs(occamy_cfg, cluster_generators, util, name):
         "hemaia_multichip": occamy_cfg["hemaia_multichip"],
         "h2c_mailbox_length": util.to_sv_hex(4096),
         "quad_axi_lite_base_addr": util.to_sv_hex(occamy_cfg["s1_quadrant"]["quad_axi_lite_base_addr"]),
-        "quad_axi_lite_base_offset": util.to_sv_hex(occamy_cfg["s1_quadrant"]["quad_axi_lite_base_offset"])
+        "quad_axi_lite_base_offset": util.to_sv_hex(occamy_cfg["s1_quadrant"]["quad_axi_lite_base_offset"]),
+        "bingo_remote_link_offset": util.to_sv_hex(BINGO_REMOTE_LINK_OFFSET)
     }
     return pkg_kwargs
 

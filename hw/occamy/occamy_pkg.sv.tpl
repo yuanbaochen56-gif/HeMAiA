@@ -132,6 +132,12 @@ package ${name}_pkg;
   localparam addr_t QuadAXILiteBaseAddr = ${quad_axi_lite_base_addr};
   /// The address space for quad axi lite 
   localparam addr_t QuadAXILiteAddressSpace = ${quad_axi_lite_base_offset};
+  /// Bingo level-3 remote link mailboxes (8 KiB, bingo_hw_manager_remote_link):
+  /// page 0 receives dispatch packets, page 1 done packets. Remote chiplets
+  /// address them as {target chip id, local address}.
+  localparam addr_t BingoRemoteLinkBaseAddr     = QuadAXILiteBaseAddr + ${bingo_remote_link_offset};
+  localparam addr_t BingoRemoteDispatchMboxAddr = BingoRemoteLinkBaseAddr;
+  localparam addr_t BingoRemoteDoneMboxAddr     = BingoRemoteLinkBaseAddr + 'h1000;
 
 
   typedef struct packed {

@@ -293,6 +293,12 @@
                     "description": "Bingo HW manager watchdog timeout (WatchdogHeartbeatTimeoutCycles): quad-clock cycles a busy core may run without writing the heartbeat CSR before it is reported dead_suspect.",
                     "minimum": 1,
                     "default": 10000000
+                },
+                "bingo_watchdog_confirm_timeout_cycles": {
+                    "type": "integer",
+                    "description": "Bingo HW manager confirm timeout (WatchdogConfirmTimeoutCycles): quad-clock cycles without heartbeat after which a busy core is fenced (sticky) and its outstanding tasks are replayed on an allowed live core. Must exceed bingo_watchdog_timeout_cycles; 0 disables fencing and replay (detection only).",
+                    "minimum": 0,
+                    "default": 0
                 }
 
             }

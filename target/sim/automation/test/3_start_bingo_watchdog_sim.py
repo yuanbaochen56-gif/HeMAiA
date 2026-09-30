@@ -17,10 +17,15 @@ s3      as s1, but global task 0 (cluster 0 DM core)       EOC success, exactly 
         stalls 1M core cycles without heartbeat            =0 on that core, no remap, no other event
 s4      as s1, but global task 0 hangs forever             no EOC (bounded run), dead_suspect=1 on
                                                            that core only, never cleared, no remap
+s5      as s4, plus confirm timeout 200k cycles            no EOC, that core dead_suspect then
+        (fencing enabled)                                  fenced, [BINGO_REPLAY_STUCK], no replay,
+                                                           no remap, no other event
 ======  =================================================  ==========================================
 
 HeMAiA configures the bingo manager with CoreRemapAllowMask = '0 (the cores of a
-cluster are heterogeneous), so the watchdog only detects; nothing is remapped.
+cluster are heterogeneous), so the watchdog only detects; nothing is remapped. With
+a confirm timeout (s5) the dead core is fenced, but its tasks have no substitute:
+the manager reports replay_stuck and replays nothing.
 
 The watchdog events are printed by bingo_hw_manager_top in simulation
 ([BINGO_WD] / [BINGO_REMAP] / [BINGO_CSR]) and parsed from the task's
@@ -37,7 +42,7 @@ Prerequisites
 
 Run it
 ------
-    python3 3_start_bingo_watchdog_sim.py --scenario s1 s3 s4   # hemaia_ci build
+    python3 3_start_bingo_watchdog_sim.py --scenario s1 s3 s4 s5  # hemaia_ci build
     python3 3_start_bingo_watchdog_sim.py --scenario s2         # 1-cluster build
 
 Results: ``<out-root>/<scenario>/result.md`` and the runner's task directory.
@@ -72,6 +77,7 @@ HEMAIA_CI_CFG = "target/rtl/cfg/hemaia_ci.hjson"
 ONE_CLUSTER_CFG = "target/rtl/cfg/hemaia_singlechiplet_16MB_1cluster.hjson"
 VERSACORE_CLUSTER_SWAP = ("snax_versacore_to_simd_cluster", "snax_versacore_to_cluster")
 TIGHT_TIMEOUT_CYCLES = 100_000
+CONFIRM_TIMEOUT_CYCLES = 2 * TIGHT_TIMEOUT_CYCLES
 
 # In dummy_2cluster, global task 0 is the cluster-0 iDMA copy on the DM core,
 # i.e. bingo slot (chip 0, core 1, cluster 0). Its host check depends on it.
@@ -107,18 +113,30 @@ SCENARIOS: Dict[str, dict] = {
         workload="dummy_2cluster", fault_stall_cycles=0,
         expect_eoc=False, sim_timeout_s=900,
     ),
+    "s5": dict(
+        desc="task 0 hangs forever, fencing on: core fenced, no substitute (replay_stuck)",
+        cfg=HEMAIA_CI_CFG, timeout_cycles=TIGHT_TIMEOUT_CYCLES,
+        confirm_timeout_cycles=CONFIRM_TIMEOUT_CYCLES,
+        workload="dummy_2cluster", fault_stall_cycles=0,
+        expect_eoc=False, expect_fence=True, sim_timeout_s=3600,
+    ),
 }
 
-WD_RE = re.compile(r"\[BINGO_WD\] (\d+) chip=(\d+) core=(\d+) cluster=(\d+) dead_suspect=(\d)")
+# fenced= only exists since the replay support; older RTL prints dead_suspect only.
+WD_RE = re.compile(r"\[BINGO_WD\] (\d+) chip=(\d+) core=(\d+) cluster=(\d+) dead_suspect=(\d)(?: fenced=(\d))?")
 REMAP_RE = re.compile(r"\[BINGO_REMAP\].*")
+REPLAY_RE = re.compile(r"\[BINGO_REPLAY\].*")
+STUCK_RE = re.compile(r"\[BINGO_REPLAY_STUCK\].*")
+ASSERT_RE = re.compile(r"\[BINGO_ASSERT\].*")
 CSR_RE = re.compile(r"\[BINGO_CSR\].*")
 CHECK_RE = re.compile(r"Check \[([^\]]*)\]: (PASS|FAIL)")
 
 
 def make_cfg(base_cfg: str, timeout_cycles: Optional[int],
-             cluster_swap: Optional[Tuple[str, str]] = None) -> str:
+             cluster_swap: Optional[Tuple[str, str]] = None,
+             confirm_timeout_cycles: Optional[int] = None) -> str:
     """Return a repo-relative cfg; write a patched copy if anything is overridden."""
-    if timeout_cycles is None and cluster_swap is None:
+    if timeout_cycles is None and cluster_swap is None and confirm_timeout_cycles is None:
         return base_cfg
     src = _REPO_ROOT / base_cfg
     new_text = src.read_text()
@@ -139,6 +157,15 @@ def make_cfg(base_cfg: str, timeout_cycles: Optional[int],
         if n != 1:
             raise ValueError(f"could not find dep_tag_width in {base_cfg}")
         suffix += f"_wd{timeout_cycles}"
+    if confirm_timeout_cycles is not None:
+        key = "bingo_watchdog_confirm_timeout_cycles"
+        if key in new_text:
+            raise ValueError(f"{base_cfg} already sets {key}")
+        new_text, n = re.subn(r"^(\s*)(dep_tag_width:[^\n]*)$",
+                              rf"\1\2\n\1{key}: {confirm_timeout_cycles}", new_text, count=1, flags=re.M)
+        if n != 1:
+            raise ValueError(f"could not find dep_tag_width in {base_cfg}")
+        suffix += f"_cf{confirm_timeout_cycles}"
     dst = _REPO_ROOT / "target/rtl/cfg/generated" / f"{src.stem}{suffix}.hjson"
     dst.parent.mkdir(parents=True, exist_ok=True)
     dst.write_text(new_text)
@@ -165,8 +192,12 @@ def evaluate(name: str, sc: dict, log_text: str, uart_text: str) -> List[str]:
     """Return the list of failed expectations (empty = pass)."""
     problems: List[str] = []
     eoc_ok = SIM_OK_MARKER in log_text and SIM_ERR_MARKER not in log_text
-    events = [tuple(int(x) for x in m.groups()) for m in WD_RE.finditer(log_text)]
+    # (time, chip, core, cluster, dead_suspect, fenced)
+    events = [tuple(int(x) if x is not None else 0 for x in m.groups()) for m in WD_RE.finditer(log_text)]
     remaps = REMAP_RE.findall(log_text)
+    replays = REPLAY_RE.findall(log_text)
+    stuck = STUCK_RE.findall(log_text)
+    asserts = ASSERT_RE.findall(log_text)
     csr = CSR_RE.findall(log_text)
     checks = CHECK_RE.findall(uart_text)
 
@@ -176,6 +207,12 @@ def evaluate(name: str, sc: dict, log_text: str, uart_text: str) -> List[str]:
         problems.append("run finished although the victim task hangs forever")
     if remaps:
         problems.append(f"{len(remaps)} unexpected [BINGO_REMAP] event(s): {remaps[:3]}")
+    if replays:
+        problems.append(f"{len(replays)} unexpected [BINGO_REPLAY] event(s): {replays[:3]}")
+    if asserts:
+        problems.append(f"{len(asserts)} [BINGO_ASSERT] violation(s): {asserts[:3]}")
+    if sc.get("expect_fence", False) != bool(stuck):
+        problems.append(f"[BINGO_REPLAY_STUCK] expected {sc.get('expect_fence', False)}, got {stuck[:1]}")
     if csr:
         problems.append(f"{len(csr)} [BINGO_CSR] unknown-address event(s): {csr[:3]}")
     failed_checks = [c for c in checks if c[1] == "FAIL"]
@@ -184,7 +221,7 @@ def evaluate(name: str, sc: dict, log_text: str, uart_text: str) -> List[str]:
     if sc["expect_eoc"] and not checks:
         problems.append("no host 'Check [...]: PASS' line in the UART log")
 
-    victim_events = [(e[4]) for e in events if (e[1], e[2], e[3]) == VICTIM]
+    victim_events = [(e[4], e[5]) for e in events if (e[1], e[2], e[3]) == VICTIM]
     other_events = [e for e in events if (e[1], e[2], e[3]) != VICTIM]
     stall = sc["fault_stall_cycles"]
     if stall is None:
@@ -193,9 +230,13 @@ def evaluate(name: str, sc: dict, log_text: str, uart_text: str) -> List[str]:
     else:
         if other_events:
             problems.append(f"[BINGO_WD] events on non-victim cores: {other_events}")
-        expected = [1, 0] if stall > 0 else [1]
+        # (dead_suspect, fenced) per [BINGO_WD] line of the victim
+        if sc.get("expect_fence", False):
+            expected = [(1, 0), (1, 1)]
+        else:
+            expected = [(1, 0), (0, 0)] if stall > 0 else [(1, 0)]
         if victim_events != expected:
-            problems.append(f"victim {VICTIM} dead_suspect sequence {victim_events}, expected {expected}")
+            problems.append(f"victim {VICTIM} (dead_suspect, fenced) sequence {victim_events}, expected {expected}")
 
     print(f"[{name}] eoc_ok={eoc_ok} wd_events={events} remaps={len(remaps)} "
           f"csr_unknown={len(csr)} checks={checks}")
@@ -206,7 +247,8 @@ def run_scenario(name: str, args: argparse.Namespace) -> bool:
     sc = SCENARIOS[name]
     out_dir = Path(args.out_root) / name
     print(f"\n===== {name}: {sc['desc']} =====")
-    cfg = make_cfg(sc["cfg"], sc["timeout_cycles"], sc.get("cluster_swap"))
+    cfg = make_cfg(sc["cfg"], sc["timeout_cycles"], sc.get("cluster_swap"),
+                   sc.get("confirm_timeout_cycles"))
     clean_app_builds(sc["workload"])
 
     task = make_task(host_app_type="offload_bingo_hw", chip_type="single_chip",

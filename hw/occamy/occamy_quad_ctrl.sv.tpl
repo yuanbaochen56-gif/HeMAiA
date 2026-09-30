@@ -233,6 +233,10 @@ module ${name}_quad_ctrl
     // (s1_quadrant.bingo_watchdog_timeout_cycles, default 10_000_000). Healthy busy
     // cores write the heartbeat CSR periodically (sw/device/runtime/src/bingo_hw_heartbeat.h).
     .WatchdogHeartbeatTimeoutCycles ( ${bingo_watchdog_timeout_cycles}  ),
+    // Fence (confirmed dead) timeout (s1_quadrant.bingo_watchdog_confirm_timeout_cycles,
+    // default 0 = detection only). With CoreRemapAllowMask = '0 below, a fenced core's
+    // tasks cannot be replayed elsewhere: the manager only isolates it (replay_stuck_o).
+    .WatchdogConfirmTimeoutCycles ( ${bingo_watchdog_confirm_timeout_cycles} ),
     .WatchdogCoreMask         (BingoWatchdogCoreMask                     ),
     // The cores of a cluster are heterogeneous (VersaCore / DM / host) and kernels
     // check their core type, so a dead core's tasks cannot run elsewhere:
@@ -305,7 +309,10 @@ module ${name}_quad_ctrl
     .cerf_write_data_i                         (cerf_write_data                     ),
     .cerf_state_o                              (cerf_state                          ),
     // DARTS: Load Monitor (not connected yet)
-    .load_total_pending_o                      (/* unused */                         )
+    .load_total_pending_o                      (/* unused */                         ),
+    // Watchdog fence / replay status (not connected yet)
+    .core_fenced_o                             (/* unused */                         ),
+    .replay_stuck_o                            (/* unused */                         )
   );
 
   // We need an extra work here to connect the host master port to the csr

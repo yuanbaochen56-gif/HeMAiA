@@ -873,6 +873,10 @@ def get_quad_ctrl_kwargs(occamy_cfg, soc_wide_xbar, soc_narrow_xbar, quad_ctrl_s
         # cycles. Schema default 10M; test cfgs may lower it to exercise the watchdog quickly.
         "bingo_watchdog_timeout_cycles":
             occamy_cfg["s1_quadrant"].get("bingo_watchdog_timeout_cycles", 10_000_000),
+        # Bingo HW manager confirm timeout (WatchdogConfirmTimeoutCycles): a busy core
+        # without heartbeat for this long is fenced. 0 (default) = detection only.
+        "bingo_watchdog_confirm_timeout_cycles":
+            occamy_cfg["s1_quadrant"].get("bingo_watchdog_confirm_timeout_cycles", 0),
         "soc_wide_xbar": soc_wide_xbar,
         "soc_narrow_xbar": soc_narrow_xbar,
         "quad_ctrl_soc_to_quad_xbar": quad_ctrl_soc_to_quad_xbar,

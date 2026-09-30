@@ -84,6 +84,8 @@ module ${name}_quad_ctrl
   localparam logic [2**${bingo_core_type_id_width}-1:0][${chip_id_width}:0] BingoRemoteTargetChip = {
     ${bingo_remote_target_chip}
   };
+  // core types the link has a target for (the others are never exported)
+  logic [2**${bingo_core_type_id_width}-1:0]                         bingo_rd_export_type_en;
   logic                                  bingo_rd_export_valid, bingo_rd_export_ready;
   logic [${quad_ctrl_axi_lite_xbar.dw-1}:0]                           bingo_rd_export_desc;
   logic [${bingo_core_type_id_width-1}:0]                            bingo_rd_export_core_type;
@@ -402,6 +404,7 @@ module ${name}_quad_ctrl
     .remote_done_ready_o                       (bingo_rdn_in_ready                   ),
     .remote_done_proxy_slot_i                  (bingo_rdn_in_proxy_slot              ),
     .remote_done_task_id_i                     (bingo_rdn_in_task_id                 ),
+    .remote_export_type_en_i                   (bingo_rd_export_type_en              ),
     .remote_done_mismatch_o                    (bingo_remote_done_mismatch           )
   );
 
@@ -458,6 +461,7 @@ module ${name}_quad_ctrl
     .mst_resp_i            ( ${quad_ctrl_axi_lite_xbar.in_bingo_remote_link.rsp_name()} ),
     .slv_req_i             ( ${quad_ctrl_axi_lite_xbar.out_bingo_remote_link.req_name()} ),
     .slv_resp_o            ( ${quad_ctrl_axi_lite_xbar.out_bingo_remote_link.rsp_name()} ),
+    .target_valid_o        ( bingo_rd_export_type_en     ),
     .error_o               ( bingo_remote_link_error     ),
     .credits_o             ( /* unused */                )
   );

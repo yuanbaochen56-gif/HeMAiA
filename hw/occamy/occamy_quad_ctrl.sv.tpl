@@ -100,9 +100,11 @@ module ${name}_quad_ctrl
   chip_id_t                              bingo_rdn_out_chip;
   logic [BingoRemoteSlotIdWidth-1:0]     bingo_rdn_out_proxy_slot;
   logic [BingoTaskIdWidth-1:0]           bingo_rdn_out_task_id;
+  logic                                  bingo_rdn_out_reject;
   logic                                  bingo_rdn_in_valid, bingo_rdn_in_ready;
   logic [BingoRemoteSlotIdWidth-1:0]     bingo_rdn_in_proxy_slot;
   logic [BingoTaskIdWidth-1:0]           bingo_rdn_in_task_id;
+  logic                                  bingo_rdn_in_reject;
   logic [4:0]                            bingo_remote_link_error;
   logic                                  bingo_remote_done_mismatch;
   logic                                  bingo_replay_stuck;
@@ -400,10 +402,12 @@ module ${name}_quad_ctrl
     .remote_done_chip_o                        (bingo_rdn_out_chip                   ),
     .remote_done_proxy_slot_o                  (bingo_rdn_out_proxy_slot             ),
     .remote_done_task_id_o                     (bingo_rdn_out_task_id                ),
+    .remote_done_reject_o                      (bingo_rdn_out_reject                 ),
     .remote_done_valid_i                       (bingo_rdn_in_valid                   ),
     .remote_done_ready_o                       (bingo_rdn_in_ready                   ),
     .remote_done_proxy_slot_i                  (bingo_rdn_in_proxy_slot              ),
     .remote_done_task_id_i                     (bingo_rdn_in_task_id                 ),
+    .remote_done_reject_i                      (bingo_rdn_in_reject                  ),
     .remote_export_type_en_i                   (bingo_rd_export_type_en              ),
     .remote_done_mismatch_o                    (bingo_remote_done_mismatch           )
   );
@@ -447,6 +451,7 @@ module ${name}_quad_ctrl
     .done_out_chip_i       ( bingo_rdn_out_chip          ),
     .done_out_proxy_slot_i ( bingo_rdn_out_proxy_slot    ),
     .done_out_task_id_i    ( bingo_rdn_out_task_id       ),
+    .done_out_reject_i     ( bingo_rdn_out_reject        ),
     .import_valid_o        ( bingo_rd_import_valid       ),
     .import_ready_i        ( bingo_rd_import_ready       ),
     .import_desc_o         ( bingo_rd_import_desc        ),
@@ -457,6 +462,7 @@ module ${name}_quad_ctrl
     .done_in_ready_i       ( bingo_rdn_in_ready          ),
     .done_in_proxy_slot_o  ( bingo_rdn_in_proxy_slot     ),
     .done_in_task_id_o     ( bingo_rdn_in_task_id        ),
+    .done_in_reject_o      ( bingo_rdn_in_reject         ),
     .mst_req_o             ( ${quad_ctrl_axi_lite_xbar.in_bingo_remote_link.req_name()} ),
     .mst_resp_i            ( ${quad_ctrl_axi_lite_xbar.in_bingo_remote_link.rsp_name()} ),
     .slv_req_i             ( ${quad_ctrl_axi_lite_xbar.out_bingo_remote_link.req_name()} ),

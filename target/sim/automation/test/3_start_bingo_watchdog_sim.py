@@ -41,6 +41,11 @@ s10     as s7, but level 3 forced through a loopback      EOC success, check PAS
 s11     as s6, but the DM core (global task 0) hangs, with no EOC; DM core fenced, [BINGO_REPLAY_STUCK],
         level 3 on (mask 5) and a remote target for the    nothing exported, imported or sent over
         plain type only                                    the remote link (its type has no target)
+s13     as s10, but the import may only use its home   no EOC; core 1 fenced, task 2 exported,
+        slot (import mask 0), which is the dead core 1:    the import rejected back over the link
+        nothing can run the task                           (REJECT packet on the done page), the
+                                                           proxy stuck (replay_stuck=1), its exit
+                                                           task never exported, no link error
 s12     as s5, but with level 2 (substitute mask 3):       EOC success, both host checks PASS; the
         the cluster-0 DM core hangs on task 0 and the      victim is fenced, task 0 replayed on the
         cluster-1 DM core (same type) takes over           cluster-1 DM core, the victim retired,
@@ -72,7 +77,7 @@ Run it
     python3 3_start_bingo_watchdog_sim.py --scenario s1 s3 s4 s5  # hemaia_ci build
     python3 3_start_bingo_watchdog_sim.py --scenario s2         # 1-cluster build
     python3 3_start_bingo_watchdog_sim.py --scenario s6 s7 s8 s9  # 1-cluster, 2 plain cores
-    python3 3_start_bingo_watchdog_sim.py --scenario s10 s11      # same, level 3 (remote link)
+    python3 3_start_bingo_watchdog_sim.py --scenario s10 s11 s13  # same, level 3 (remote link)
     python3 3_start_bingo_watchdog_sim.py --scenario s12          # hemaia_ci, level 2 (cross-cluster)
 
 Results: ``<out-root>/<scenario>/result.md`` and the runner's task directory.
@@ -136,6 +141,13 @@ LOOPBACK_CFG_KEYS = {
 # no same-type core in the cluster and its type has no target, so it is stuck.
 NO_TARGET_CFG_KEYS = {
     "bingo_substitute_level_mask": "5",
+    "bingo_remote_target_chip": f'{{"{TWO_PLAIN_CORE_TYPE}": {LOOPBACK_CHIP}}}',
+}
+# s13: as s10, but an import may only use its home slot, the dead core 1: the
+# loopback import is rejected and the proxy becomes stuck.
+REJECT_CFG_KEYS = {
+    "bingo_substitute_level_mask": "4",
+    "bingo_import_substitute_level_mask": "0",
     "bingo_remote_target_chip": f'{{"{TWO_PLAIN_CORE_TYPE}": {LOOPBACK_CHIP}}}',
 }
 # s12: levels 1 and 2. The DM cores of the two hemaia_ci clusters share a type,
@@ -242,6 +254,16 @@ SCENARIOS: Dict[str, dict] = {
         # healthy runs of this workload end after ~3 min of wall time
         expect_eoc=False, expect_fence=True, sim_timeout_s=1800,
     ),
+    "s13": dict(
+        desc="plain core 1 hangs, level 3 over the loopback link, but no core may run the import: rejected, stuck",
+        cfg=ONE_CLUSTER_CFG, cluster_swap=TWO_PLAIN_CLUSTER_SWAP,
+        timeout_cycles=TIGHT_TIMEOUT_CYCLES, confirm_timeout_cycles=CONFIRM_TIMEOUT_CYCLES,
+        extra_cfg=REJECT_CFG_KEYS, cfg_suffix="_rlink_reject",
+        workload="int32_add_2plain_1cluster", fault_stall_cycles=0,
+        fault_gid=TWO_PLAIN_FAULT_GID, victim=TWO_PLAIN_VICTIM,
+        remote_reject=True, expect_core_types=TWO_PLAIN_CORE_TYPES,
+        expect_eoc=False, expect_fence=True, sim_timeout_s=1800,
+    ),
     "s12": dict(
         desc="cluster-0 DM core hangs, level 2: its tasks run on the cluster-1 DM core, run completes",
         cfg=HEMAIA_CI_CFG, timeout_cycles=TIGHT_TIMEOUT_CYCLES,
@@ -272,6 +294,8 @@ EXPORT_RE = re.compile(r"\[BINGO_EXPORT\] \d+ chip=(\d+) task=(\d+) type_id=(\d+
 IMPORT_RE = re.compile(r"\[BINGO_IMPORT\] \d+ chip=(\d+) task=(\d+) from chip=(\d+) proxy_slot=(\d+) -> core=(\d+) cluster=(\d+)")
 RDONE_OUT_RE = re.compile(r"\[BINGO_REMOTE_DONE_OUT\] \d+ chip=(\d+) task=(\d+) -> chip=(\d+) proxy_slot=(\d+)")
 RDONE_IN_RE = re.compile(r"\[BINGO_REMOTE_DONE_IN\] \d+ chip=(\d+) task=(\d+) proxy_slot=(\d+)")
+REJECT_OUT_RE = re.compile(r"\[BINGO_REMOTE_REJECT_OUT\] \d+ chip=(\d+) task=(\d+) -> chip=(\d+) proxy_slot=(\d+)")
+REJECT_IN_RE = re.compile(r"\[BINGO_REMOTE_REJECT_IN\] \d+ chip=(\d+) task=(\d+) proxy_slot=(\d+)")
 RLINK_RE = re.compile(r"\[BINGO_RLINK_(TX|RX)_(AW|W|B)\] \d+ chip=(\d+) (addr|data|resp)=(0x[0-9a-fA-F]+|\d+)")
 
 
@@ -429,6 +453,46 @@ def evaluate_remote_loopback(sc: dict, log_text: str) -> List[str]:
     return problems
 
 
+def evaluate_remote_reject(sc: dict, log_text: str) -> List[str]:
+    """Level 3 over the loopback link, import rejected: the proxy is stuck."""
+    problems: List[str] = []
+    chip, core, cluster = sc["victim"]
+    proxy_slot = core  # one cluster
+    task = sc["fault_gid"]
+    exports = [tuple(int(x) for x in m.groups()) for m in EXPORT_RE.finditer(log_text)]
+    if exports != [(chip, task, TWO_PLAIN_CORE_TYPE, proxy_slot)]:
+        problems.append(f"exports {exports}, expected only task {task} (the exit task stays held)")
+    for name, rx in (("[BINGO_IMPORT]", IMPORT_RE), ("[BINGO_REMOTE_DONE_OUT]", RDONE_OUT_RE),
+                     ("[BINGO_REMOTE_DONE_IN]", RDONE_IN_RE)):
+        if rx.findall(log_text):
+            problems.append(f"unexpected {name}: {rx.findall(log_text)[:3]}")
+    rej_out = [tuple(int(x) for x in m.groups()) for m in REJECT_OUT_RE.finditer(log_text)]
+    rej_in = [tuple(int(x) for x in m.groups()) for m in REJECT_IN_RE.finditer(log_text)]
+    if rej_out != [(chip, task, chip, proxy_slot)] or rej_in != [(chip, task, proxy_slot)]:
+        problems.append(f"rejects out {rej_out} / in {rej_in}, expected task {task} to slot {proxy_slot}")
+    moved = [tuple(int(x) for x in m.groups()) for m in REPLAY_FIELDS_RE.finditer(log_text)]
+    if any((r[3], r[4]) != (core, core) for r in moved):
+        problems.append(f"local replay although level 3 is forced: {moved[:3]}")
+    # Link: the dispatch, then the reject (kind 0xC) on the done page
+    ev = {(d, c): [] for d in ("TX", "RX") for c in ("AW", "W", "B")}
+    for m in RLINK_RE.finditer(log_text):
+        direction, channel, _, _, value = m.groups()
+        ev[(direction, channel)].append(int(value, 0))
+    tx = list(zip(ev[("TX", "AW")], ev[("TX", "W")]))
+    rx = list(zip(ev[("RX", "AW")], ev[("RX", "W")]))
+    chip_base = (chip << 40) | REMOTE_LINK_BASE
+    kinds = [(a - chip_base, decode_packet(d)["kind"], decode_packet(d)["task_id"]) for a, d in tx]
+    if kinds != [(0, 0x5, task), (0x1000, 0xC, task)]:
+        problems.append(f"link packets {[(hex(a), hex(d)) for a, d in tx]}, expected dispatch + reject of task {task}")
+    if rx != tx or any(ev[("TX", "B")]):
+        problems.append(f"RX {rx} / TX {tx} / B {ev[('TX', 'B')]}")
+    status = re.findall(r"\[BINGO_STATUS\] \d+ chip=\d+ (.*)", log_text)
+    if not status or "replay_stuck=1 " not in status[-1]:
+        problems.append(f"final [BINGO_STATUS] {status[-1:]}: expected replay_stuck=1")
+    print(f"[remote_reject] exports={exports} rejects={rej_out}/{rej_in} packets={[(hex(a), hex(d)) for a, d in tx]}")
+    return problems
+
+
 def check_core_types(expected: Dict[int, int]) -> List[str]:
     """Compare the generated BingoCoreTypeId (one cluster) with {core: type}."""
     rtl = _REPO_ROOT / QUAD_CTRL_RTL
@@ -461,6 +525,8 @@ def evaluate(name: str, sc: dict, log_text: str, uart_text: str) -> List[str]:
     substitute = sc.get("substitute")
     if sc.get("remote_loopback", False):
         problems += evaluate_remote_loopback(sc, log_text)
+    elif sc.get("remote_reject", False):
+        problems += evaluate_remote_reject(sc, log_text)
     else:
         # Level 3 stays idle: nothing exported, imported or sent over the link
         l3 = [l for l in log_text.splitlines()
@@ -471,7 +537,7 @@ def evaluate(name: str, sc: dict, log_text: str, uart_text: str) -> List[str]:
     status = re.findall(r"\[BINGO_STATUS\] \d+ chip=\d+ (.*)", log_text)
     if status and not ("remote_done_mismatch=0 " in status[-1] and "link_error=0 " in status[-1] + " "):
         problems.append(f"final [BINGO_STATUS] {status[-1]}")
-    if sc.get("remote_loopback", False):
+    if sc.get("remote_loopback", False) or sc.get("remote_reject", False):
         pass
     elif substitute is None:
         # No core may take over the victim's tasks: nothing moves
@@ -512,7 +578,8 @@ def evaluate(name: str, sc: dict, log_text: str, uart_text: str) -> List[str]:
                             f"on {victim}, got {drops}")
     if asserts:
         problems.append(f"{len(asserts)} [BINGO_ASSERT] violation(s): {asserts[:3]}")
-    expect_stuck = sc.get("expect_fence", False) and substitute is None
+    # (s13: stuck through the remote reject, not a local [BINGO_REPLAY_STUCK])
+    expect_stuck = sc.get("expect_fence", False) and substitute is None and not sc.get("remote_reject", False)
     if expect_stuck != bool(stuck):
         problems.append(f"[BINGO_REPLAY_STUCK] expected {expect_stuck}, got {stuck[:1]}")
     if csr:

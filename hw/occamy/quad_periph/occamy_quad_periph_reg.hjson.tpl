@@ -361,7 +361,7 @@
       hwaccess: "hwo",
       fields: [
         { bits: "0", resval: "0", name: "REPLAY_STUCK",
-          desc: '''A fenced core holds a task that no live core may run (replay_stuck_o).'''
+          desc: '''A fenced core holds a task that no live core may run (replay_stuck_o), on this chiplet or, for a level-3 export, on the chiplet that rejected it.'''
         },
         { bits: "1", resval: "0", name: "REMOTE_DONE_MISMATCH",
           desc: '''Sticky: a remote done did not belong to the exported head task of its proxy slot (remote_done_mismatch_o).'''

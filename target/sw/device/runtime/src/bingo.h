@@ -273,8 +273,16 @@ inline void write_bingo_hw_manager_heartbeat(uint32_t value){
 // BINGO_WD_FAULT_GID is defined): the core that receives global task
 // BINGO_WD_FAULT_GID stalls for BINGO_WD_FAULT_STALL_CYCLES core cycles without
 // any heartbeat before it runs the kernel normally. 0 = hang forever.
+// BINGO_WD_FAULT_CLUSTER / BINGO_WD_FAULT_CORE (default -1: any) restrict the
+// fault to one core, so a substitute that gets the task replayed runs it normally.
 #ifndef BINGO_WD_FAULT_STALL_CYCLES
 #define BINGO_WD_FAULT_STALL_CYCLES 0
+#endif
+#ifndef BINGO_WD_FAULT_CLUSTER
+#define BINGO_WD_FAULT_CLUSTER -1
+#endif
+#ifndef BINGO_WD_FAULT_CORE
+#define BINGO_WD_FAULT_CORE -1
 #endif
 inline void bingo_wd_fault_stall(uint32_t cycles){
     uint32_t start, now;
@@ -365,7 +373,9 @@ inline int32_t bingo_hw_offload_manager(){
         // 3. Execute the function
         BINGO_TRACE_MARKER(BINGO_TRACE_MGR_RUN_KERNEL_START);
 #ifdef BINGO_WD_FAULT_GID
-        if (cur_global_task_id == BINGO_WD_FAULT_GID) {
+        if ((cur_global_task_id == BINGO_WD_FAULT_GID) &&
+            ((BINGO_WD_FAULT_CLUSTER < 0) || (snrt_cluster_idx() == (uint32_t)BINGO_WD_FAULT_CLUSTER)) &&
+            ((BINGO_WD_FAULT_CORE < 0) || (snrt_cluster_core_idx() == (uint32_t)BINGO_WD_FAULT_CORE))) {
             bingo_wd_fault_stall(BINGO_WD_FAULT_STALL_CYCLES);
         }
 #endif

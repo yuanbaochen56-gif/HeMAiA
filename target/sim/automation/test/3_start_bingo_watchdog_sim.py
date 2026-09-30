@@ -20,6 +20,17 @@ s4      as s1, but global task 0 hangs forever             no EOC (bounded run),
 s5      as s4, plus confirm timeout 200k cycles            no EOC, that core dead_suspect then
         (fencing enabled)                                  fenced, [BINGO_REPLAY_STUCK], no replay,
                                                            no remap, no other event
+s6      healthy int32_add_2plain_1cluster on one           EOC success, host check PASS, no
+        snax_versacore_2plain_to_cluster, fencing on       [BINGO_*] event at all
+s7      as s6, but the add on plain core 1 (global task    EOC success, check PASS; core 1
+        2) hangs forever                                   fenced, task 2 replayed on plain core
+                                                           2, core 1 retired, its later tasks
+                                                           remapped to core 2 only
+s8      as s7, but core 1 comes back after the fence,      as s7, plus the late done of core 1
+        before the run ends (zombie)                       is dropped ([BINGO_FENCE])
+s9      as s7, but core 1 is only slow: silent longer      EOC success, check PASS; core 1
+        than the heartbeat timeout, shorter than the       dead_suspect set and cleared, no
+        confirm timeout                                    fence, no replay, no remap
 ======  =================================================  ==========================================
 
 The bingo manager may only move a dead core's tasks to a core of the same type
@@ -46,6 +57,7 @@ Run it
 ------
     python3 3_start_bingo_watchdog_sim.py --scenario s1 s3 s4 s5  # hemaia_ci build
     python3 3_start_bingo_watchdog_sim.py --scenario s2         # 1-cluster build
+    python3 3_start_bingo_watchdog_sim.py --scenario s6 s7 s8 s9  # 1-cluster, 2 plain cores
 
 Results: ``<out-root>/<scenario>/result.md`` and the runner's task directory.
 """
@@ -78,6 +90,9 @@ HEMAIA_CI_CFG = "target/rtl/cfg/hemaia_ci.hjson"
 # does not have.
 ONE_CLUSTER_CFG = "target/rtl/cfg/hemaia_singlechiplet_16MB_1cluster.hjson"
 VERSACORE_CLUSTER_SWAP = ("snax_versacore_to_simd_cluster", "snax_versacore_to_cluster")
+# Same 1-cluster cfg with the HeMAiA cluster that has two plain compute cores
+# (target/rtl/cfg/cluster/snax_versacore_2plain_to_cluster.hjson)
+TWO_PLAIN_CLUSTER_SWAP = ("snax_versacore_to_simd_cluster", "snax_versacore_2plain_to_cluster")
 TIGHT_TIMEOUT_CYCLES = 100_000
 CONFIRM_TIMEOUT_CYCLES = 2 * TIGHT_TIMEOUT_CYCLES
 
@@ -85,6 +100,11 @@ CONFIRM_TIMEOUT_CYCLES = 2 * TIGHT_TIMEOUT_CYCLES
 # i.e. bingo slot (chip 0, core 1, cluster 0). Its host check depends on it.
 FAULT_GID = 0
 VICTIM = (0, 1, 0)  # (chip, core, cluster)
+# In int32_add_2plain_1cluster, global task 2 is the add on plain core 1; plain
+# core 2 (same type) is the only core that may take over its tasks.
+TWO_PLAIN_FAULT_GID = 2
+TWO_PLAIN_VICTIM = (0, 1, 0)
+TWO_PLAIN_SUBSTITUTE = 2
 
 SCENARIOS: Dict[str, dict] = {
     "s1": dict(
@@ -122,12 +142,52 @@ SCENARIOS: Dict[str, dict] = {
         workload="dummy_2cluster", fault_stall_cycles=0,
         expect_eoc=False, expect_fence=True, sim_timeout_s=3600,
     ),
+    "s6": dict(
+        desc="healthy int32 add on two plain cores, fencing on: no false positive",
+        cfg=ONE_CLUSTER_CFG, cluster_swap=TWO_PLAIN_CLUSTER_SWAP,
+        timeout_cycles=TIGHT_TIMEOUT_CYCLES, confirm_timeout_cycles=CONFIRM_TIMEOUT_CYCLES,
+        workload="int32_add_2plain_1cluster", fault_stall_cycles=None,
+        expect_eoc=True, sim_timeout_s=3600,
+    ),
+    "s7": dict(
+        desc="plain core 1 hangs on its add: fenced, task replayed on plain core 2, run completes",
+        cfg=ONE_CLUSTER_CFG, cluster_swap=TWO_PLAIN_CLUSTER_SWAP,
+        timeout_cycles=TIGHT_TIMEOUT_CYCLES, confirm_timeout_cycles=CONFIRM_TIMEOUT_CYCLES,
+        workload="int32_add_2plain_1cluster", fault_stall_cycles=0,
+        fault_gid=TWO_PLAIN_FAULT_GID, victim=TWO_PLAIN_VICTIM, substitute=TWO_PLAIN_SUBSTITUTE,
+        expect_eoc=True, expect_fence=True, sim_timeout_s=3600,
+    ),
+    # The zombie must come back after the fence (confirm timeout: ~5.6 ms after the
+    # dispatch at 28 ns per quad-ctrl cycle) but before the run ends (~4.8 ms after
+    # the replay, measured in s6/s7). 600k core cycles at ~12.6 ns are ~7.6 ms.
+    "s8": dict(
+        desc="plain core 1 comes back after the fence (zombie): replayed on core 2, late done dropped",
+        cfg=ONE_CLUSTER_CFG, cluster_swap=TWO_PLAIN_CLUSTER_SWAP,
+        timeout_cycles=TIGHT_TIMEOUT_CYCLES, confirm_timeout_cycles=CONFIRM_TIMEOUT_CYCLES,
+        workload="int32_add_2plain_1cluster", fault_stall_cycles=3 * CONFIRM_TIMEOUT_CYCLES,
+        fault_gid=TWO_PLAIN_FAULT_GID, victim=TWO_PLAIN_VICTIM, substitute=TWO_PLAIN_SUBSTITUTE,
+        expect_eoc=True, expect_fence=True, expect_fence_drop=True, sim_timeout_s=3600,
+    ),
+    # Between the two timeouts: 330k core cycles are ~4.2 ms (~150k quad cycles).
+    "s9": dict(
+        desc="plain core 1 only slow (between the timeouts): no fence, no replay",
+        cfg=ONE_CLUSTER_CFG, cluster_swap=TWO_PLAIN_CLUSTER_SWAP,
+        timeout_cycles=TIGHT_TIMEOUT_CYCLES, confirm_timeout_cycles=CONFIRM_TIMEOUT_CYCLES,
+        workload="int32_add_2plain_1cluster", fault_stall_cycles=330_000,
+        fault_gid=TWO_PLAIN_FAULT_GID, victim=TWO_PLAIN_VICTIM,
+        expect_eoc=True, sim_timeout_s=3600,
+    ),
 }
 
 # fenced= only exists since the replay support; older RTL prints dead_suspect only.
 WD_RE = re.compile(r"\[BINGO_WD\] (\d+) chip=(\d+) core=(\d+) cluster=(\d+) dead_suspect=(\d)(?: fenced=(\d))?")
 REMAP_RE = re.compile(r"\[BINGO_REMAP\].*")
 REPLAY_RE = re.compile(r"\[BINGO_REPLAY\].*")
+# Parsed forms of the remap / replay / retire / fence-drop lines
+REMAP_FIELDS_RE = re.compile(r"\[BINGO_REMAP\] \d+ chip=(\d+) task=(\d+) logical_core=(\d+) -> physical_core=(\d+) cluster=(\d+)")
+REPLAY_FIELDS_RE = re.compile(r"\[BINGO_REPLAY\] \d+ chip=(\d+) task=(\d+) type=\d+ logical_core=(\d+) from=(\d+) to=(\d+) cluster=(\d+)")
+RETIRED_RE = re.compile(r"\[BINGO_RETIRED\] \d+ chip=(\d+) core=(\d+) cluster=(\d+)")
+FENCE_DROP_RE = re.compile(r"\[BINGO_FENCE\] \d+ chip=(\d+) core=(\d+) cluster=(\d+) dropped done task=(\d+)")
 STUCK_RE = re.compile(r"\[BINGO_REPLAY_STUCK\].*")
 ASSERT_RE = re.compile(r"\[BINGO_ASSERT\].*")
 CSR_RE = re.compile(r"\[BINGO_CSR\].*")
@@ -207,14 +267,40 @@ def evaluate(name: str, sc: dict, log_text: str, uart_text: str) -> List[str]:
         problems.append(f"expected '{SIM_OK_MARKER}' without errors")
     if not sc["expect_eoc"] and eoc_ok:
         problems.append("run finished although the victim task hangs forever")
-    if remaps:
-        problems.append(f"{len(remaps)} unexpected [BINGO_REMAP] event(s): {remaps[:3]}")
-    if replays:
-        problems.append(f"{len(replays)} unexpected [BINGO_REPLAY] event(s): {replays[:3]}")
+    victim = sc.get("victim", VICTIM)
+    substitute = sc.get("substitute")
+    if substitute is None:
+        # No core may take over the victim's tasks: nothing moves
+        if remaps:
+            problems.append(f"{len(remaps)} unexpected [BINGO_REMAP] event(s): {remaps[:3]}")
+        if replays:
+            problems.append(f"{len(replays)} unexpected [BINGO_REPLAY] event(s): {replays[:3]}")
+    else:
+        # Everything the victim held or gets later moves to the substitute only
+        chip, core, cluster = victim
+        moved = [tuple(int(x) for x in m.groups()) for m in REPLAY_FIELDS_RE.finditer(log_text)]
+        if not any(task == sc["fault_gid"] for _, task, _, _, _, _ in moved):
+            problems.append(f"task {sc['fault_gid']} was not replayed: {replays[:3]}")
+        wrong = [r for r in moved if (r[0], r[3], r[4], r[5]) != (chip, core, substitute, cluster)]
+        if wrong or len(moved) != len(replays):
+            problems.append(f"replay other than core {core} -> {substitute}: {replays[:3]}")
+        routed = [tuple(int(x) for x in m.groups()) for m in REMAP_FIELDS_RE.finditer(log_text)]
+        wrong = [r for r in routed if (r[0], r[2], r[3], r[4]) != (chip, core, substitute, cluster)]
+        if wrong or len(routed) != len(remaps):
+            problems.append(f"remap other than logical core {core} -> {substitute}: {remaps[:3]}")
+        retired = [tuple(int(x) for x in m.groups()) for m in RETIRED_RE.finditer(log_text)]
+        if retired != [victim]:
+            problems.append(f"[BINGO_RETIRED] expected only {victim}, got {retired}")
+    if sc.get("expect_fence_drop", False):
+        drops = [tuple(int(x) for x in m.groups()) for m in FENCE_DROP_RE.finditer(log_text)]
+        if drops != [(*victim, sc["fault_gid"])]:
+            problems.append(f"[BINGO_FENCE] expected one dropped done of task {sc['fault_gid']} "
+                            f"on {victim}, got {drops}")
     if asserts:
         problems.append(f"{len(asserts)} [BINGO_ASSERT] violation(s): {asserts[:3]}")
-    if sc.get("expect_fence", False) != bool(stuck):
-        problems.append(f"[BINGO_REPLAY_STUCK] expected {sc.get('expect_fence', False)}, got {stuck[:1]}")
+    expect_stuck = sc.get("expect_fence", False) and substitute is None
+    if expect_stuck != bool(stuck):
+        problems.append(f"[BINGO_REPLAY_STUCK] expected {expect_stuck}, got {stuck[:1]}")
     if csr:
         problems.append(f"{len(csr)} [BINGO_CSR] unknown-address event(s): {csr[:3]}")
     failed_checks = [c for c in checks if c[1] == "FAIL"]
@@ -223,8 +309,8 @@ def evaluate(name: str, sc: dict, log_text: str, uart_text: str) -> List[str]:
     if sc["expect_eoc"] and not checks:
         problems.append("no host 'Check [...]: PASS' line in the UART log")
 
-    victim_events = [(e[4], e[5]) for e in events if (e[1], e[2], e[3]) == VICTIM]
-    other_events = [e for e in events if (e[1], e[2], e[3]) != VICTIM]
+    victim_events = [(e[4], e[5]) for e in events if (e[1], e[2], e[3]) == victim]
+    other_events = [e for e in events if (e[1], e[2], e[3]) != victim]
     stall = sc["fault_stall_cycles"]
     if stall is None:
         if events:
@@ -238,10 +324,10 @@ def evaluate(name: str, sc: dict, log_text: str, uart_text: str) -> List[str]:
         else:
             expected = [(1, 0), (0, 0)] if stall > 0 else [(1, 0)]
         if victim_events != expected:
-            problems.append(f"victim {VICTIM} (dead_suspect, fenced) sequence {victim_events}, expected {expected}")
+            problems.append(f"victim {victim} (dead_suspect, fenced) sequence {victim_events}, expected {expected}")
 
     print(f"[{name}] eoc_ok={eoc_ok} wd_events={events} remaps={len(remaps)} "
-          f"csr_unknown={len(csr)} checks={checks}")
+          f"replays={len(replays)} csr_unknown={len(csr)} checks={checks}")
     return problems
 
 
@@ -256,8 +342,12 @@ def run_scenario(name: str, args: argparse.Namespace) -> bool:
     task = make_task(host_app_type="offload_bingo_hw", chip_type="single_chip",
                      workload=sc["workload"], dev_app="snax-bingo-offload")
     if sc["fault_stall_cycles"] is not None:
-        task["extra_user_flags"] = (f"-DBINGO_WD_FAULT_GID={FAULT_GID} "
+        task["extra_user_flags"] = (f"-DBINGO_WD_FAULT_GID={sc.get('fault_gid', FAULT_GID)} "
                                     f"-DBINGO_WD_FAULT_STALL_CYCLES={sc['fault_stall_cycles']}")
+        if sc.get("substitute") is not None:
+            # The substitute gets the same task replayed: only the victim misbehaves
+            _, core, cluster = sc["victim"]
+            task["extra_user_flags"] += f" -DBINGO_WD_FAULT_CLUSTER={cluster} -DBINGO_WD_FAULT_CORE={core}"
 
     runner = HeMAiASimRunner(
         repo_root=_REPO_ROOT,

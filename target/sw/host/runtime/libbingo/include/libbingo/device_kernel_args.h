@@ -188,7 +188,9 @@ __SNAX_KERNEL_ARGS_DEFINE __snax_bingo_kernel_entry_args {
 __SNAX_KERNEL_ARGS_DEFINE __snax_bingo_kernel_exit_args {
   uint32_t exit_code;
   // Core the exit task was compiled for. When a core dies, the HW manager may
-  // run its exit task on a substitute core; only this core leaves its loop.
+  // run its exit task on a substitute core (or, level 3, on another chiplet);
+  // only this core leaves its loop.
+  uint32_t assigned_chiplet_id;
   uint32_t assigned_cluster_id;
   uint32_t assigned_core_id;
   BINGO_KERNEL_ARGS_TRAILER;

@@ -1909,6 +1909,7 @@ class BingoDFG(DiGraphWrapper[BingoNode]):
                     if "exit" in kernel_name:
                         f.write(f"        __snax_bingo_kernel_exit_args_t* {args_var} = (__snax_bingo_kernel_exit_args_t*)bingo_l1_alloc(0x{chiplet_id:02x}, {node.assigned_cluster_id}, sizeof(__snax_bingo_kernel_exit_args_t));\n")
                         f.write(f"        {args_var}->exit_code = 0;\n")
+                        f.write(f"        {args_var}->assigned_chiplet_id = 0x{chiplet_id:02x};\n")
                         f.write(f"        {args_var}->assigned_cluster_id = {node.assigned_cluster_id};\n")
                         f.write(f"        {args_var}->assigned_core_id = {node.assigned_core_id};\n")
                         f.write(f"        {args_var}->scratchpad_ptr = {sp_cast};\n")

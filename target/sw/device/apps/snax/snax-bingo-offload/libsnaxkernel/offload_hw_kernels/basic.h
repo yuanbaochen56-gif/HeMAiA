@@ -45,13 +45,15 @@ SNAX_LIB_DEFINE uint32_t __snax_bingo_kernel_exit(void *arg){
     bingo_kernel_scratchpad_t* sp = BINGO_GET_SP(arg, __snax_bingo_kernel_exit_args_t);
     BINGO_TRACE_MARKER(BINGO_TRACE_KERNEL_ARG_PARSE_END);
     // After a core died, the HW manager may run its exit task on a substitute
-    // core (replay / remap). Only the core the task was compiled for leaves its
-    // loop; the substitute completes it and keeps serving its own tasks.
-    if ((a->assigned_cluster_id != snrt_cluster_idx()) ||
+    // core (replay / remap, or level 3 on another chiplet). Only the core the
+    // task was compiled for leaves its loop; the substitute completes it and
+    // keeps serving its own tasks.
+    if ((a->assigned_chiplet_id != get_current_chip_id()) ||
+        (a->assigned_cluster_id != snrt_cluster_idx()) ||
         (a->assigned_core_id != snrt_cluster_core_idx())) {
-        printf_safe("[Cluster %d Core %d]: Exit task of cluster %d core %d taken over, not exiting\r\n",
+        printf_safe("[Cluster %d Core %d]: Exit task of cluster %d core %d taken over, not exiting (chip %d)\r\n",
                     snrt_cluster_idx(), snrt_cluster_core_idx(),
-                    a->assigned_cluster_id, a->assigned_core_id);
+                    a->assigned_cluster_id, a->assigned_core_id, a->assigned_chiplet_id);
         sp->return_value = BINGO_RET_SUCC;
         sp->num_return_values = 0;
         return BINGO_RET_SUCC;

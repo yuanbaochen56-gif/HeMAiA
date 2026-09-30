@@ -74,9 +74,14 @@ def hemaia_util():
         clusters = occamy_cfg['clusters']
         cluster_cfgs = []
         cluster_cfg_paths = []
+        # HeMAiA-specific cluster cfgs (target/rtl/cfg/cluster) come before the
+        # snitch_cluster ones
+        local_cluster_cfg_dir = pathlib.Path(__file__).resolve().parents[2] / "target/rtl/cfg/cluster"
         for cluster in clusters:
             cluster_cfg_path = os.path.dirname(parsed_args.cfg_path) + \
                 "/../../../deps/snitch_cluster/target/snitch_cluster/cfg/" + cluster + ".hjson"
+            if (local_cluster_cfg_dir / f"{cluster}.hjson").exists():
+                cluster_cfg_path = str(local_cluster_cfg_dir / f"{cluster}.hjson")
             cluster_cfg_paths.append(cluster_cfg_path)
             cluster_cfgs.append(get_config(cluster_cfg_path))
     else:

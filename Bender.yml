@@ -82,6 +82,15 @@ sources:
     files:
       - deps/snitch_cluster/target/snitch_cluster/generated/snax_minimal_cluster_wrapper.sv
 
+  # HeMAiA-specific clusters (cfg in target/rtl/cfg/cluster), generated into the snax repo
+  - target: snax_versacore_2plain_to_cluster_xdma
+    files:
+      - deps/snitch_cluster/target/snitch_cluster/generated/snax_versacore_2plain_to_cluster_xdma/snax_versacore_2plain_to_cluster_xdma.sv
+      - deps/snitch_cluster/target/snitch_cluster/generated/snax_versacore_2plain_to_cluster_xdma/snax_versacore_2plain_to_cluster_xdma_wrapper.sv
+  - target: snax_versacore_2plain_to_cluster
+    files:
+      - deps/snitch_cluster/target/snitch_cluster/generated/snax_versacore_2plain_to_cluster_wrapper.sv
+
   # Targets for the occamy NoC
   - target: occamy_noc
     files:

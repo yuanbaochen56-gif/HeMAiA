@@ -190,12 +190,21 @@ def unify_xdma_max_mem_size(occamy_cfg, cluster_cfg_paths):
     return max_mem_size_kiB
 
 
+# HeMAiA-specific cluster cfgs, looked up before the snitch_cluster ones
+LOCAL_CLUSTER_CFG_DIR = Path(__file__).resolve().parents[2] / "target/rtl/cfg/cluster"
+
+
+def get_cluster_cfg_path(cluster_cfg_dir, cluster_name):
+    local_cfg = LOCAL_CLUSTER_CFG_DIR / f"{cluster_name}.hjson"
+    return local_cfg if local_cfg.exists() else cluster_cfg_dir / f"{cluster_name}.hjson"
+
+
 def get_cluster_generators(occamy_cfg, cluster_cfg_dir):
     cluster_generators = list()
     pma_cfg = generate_pma_cfg(occamy_cfg)
     cluster_name_list = occamy_cfg["clusters"]
     for cluster_name in cluster_name_list:
-        cluster_cfg_path = cluster_cfg_dir / f"{cluster_name}.hjson"
+        cluster_cfg_path = get_cluster_cfg_path(cluster_cfg_dir, cluster_name)
         with open(cluster_cfg_path, 'r') as file:
             cluster_cfg = read_json_file(file)
         # Now cluster_cfg has three field
@@ -256,7 +265,7 @@ def get_cluster_cfg_list(occamy_cfg, cluster_cfg_dir):
     cluster_name_list = occamy_cfg["clusters"]
     get_cluster_cfg_list = list()
     for cluster_name in cluster_name_list:
-        get_cluster_cfg_list.append(cluster_cfg_dir / f"{cluster_name}.hjson")
+        get_cluster_cfg_list.append(get_cluster_cfg_path(cluster_cfg_dir, cluster_name))
     return get_cluster_cfg_list
 
 

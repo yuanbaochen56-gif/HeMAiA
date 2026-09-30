@@ -8,6 +8,7 @@ import sys
 import math
 import tempfile
 import importlib.util
+import json
 from pathlib import Path
 import hjson
 from enum import Enum
@@ -850,8 +851,34 @@ def get_soc_kwargs(occamy_cfg, cluster_generators, soc_narrow_xbar, soc_wide_xba
     return soc_kwargs
 
 
+BINGO_CORE_TYPE_ID_WIDTH = 4
+
+
+def get_bingo_core_type_ids(cluster_generators):
+    """Bingo HW manager CoreTypeId, as [cluster][core] lists (Snitch cores only).
+
+    A dead core's tasks may only run on a core with the same type id. Cores whose
+    configuration is identical run the same kernels and get the same id; the
+    hive index is placement, not capability, and is ignored. Ids start at 1 and
+    are shared by all clusters of the quadrant.
+    """
+    type_ids = {}
+    per_cluster = []
+    for cluster_generator in cluster_generators:
+        ids = []
+        for core in cluster_generator.cfg["cores"]:
+            key = json.dumps({k: v for k, v in core.items() if k != "hive"},
+                             sort_keys=True, default=str)
+            ids.append(type_ids.setdefault(key, len(type_ids) + 1))
+        per_cluster.append(ids)
+    if len(type_ids) >= 2 ** BINGO_CORE_TYPE_ID_WIDTH:
+        raise ValueError(f"{len(type_ids)} core types do not fit in "
+                         f"{BINGO_CORE_TYPE_ID_WIDTH}-bit bingo CoreTypeId")
+    return per_cluster
+
+
 def get_quad_ctrl_kwargs(occamy_cfg, soc_wide_xbar, soc_narrow_xbar, quad_ctrl_soc_to_quad_xbar, quad_ctrl_quad_to_soc_xbar, quad_ctrl_axi_lite_narrow_mux, quad_ctrl_axi_lite_xbar, cluster_generators, name):
-    
+
 
     num_clusters = len(occamy_cfg["clusters"])
     nr_cores_per_cluster = cluster_generators[0].cfg["nr_cores"]
@@ -877,6 +904,10 @@ def get_quad_ctrl_kwargs(occamy_cfg, soc_wide_xbar, soc_narrow_xbar, quad_ctrl_s
         # without heartbeat for this long is fenced. 0 (default) = detection only.
         "bingo_watchdog_confirm_timeout_cycles":
             occamy_cfg["s1_quadrant"].get("bingo_watchdog_confirm_timeout_cycles", 0),
+        # Bingo HW manager CoreTypeId ([cluster][core], host slot not included):
+        # which Snitch cores may take over each other's tasks.
+        "bingo_core_type_ids": get_bingo_core_type_ids(cluster_generators),
+        "bingo_core_type_id_width": BINGO_CORE_TYPE_ID_WIDTH,
         "soc_wide_xbar": soc_wide_xbar,
         "soc_narrow_xbar": soc_narrow_xbar,
         "quad_ctrl_soc_to_quad_xbar": quad_ctrl_soc_to_quad_xbar,

@@ -22,10 +22,12 @@ s5      as s4, plus confirm timeout 200k cycles            no EOC, that core dea
                                                            no remap, no other event
 ======  =================================================  ==========================================
 
-HeMAiA configures the bingo manager with CoreRemapAllowMask = '0 (the cores of a
-cluster are heterogeneous), so the watchdog only detects; nothing is remapped. With
-a confirm timeout (s5) the dead core is fenced, but its tasks have no substitute:
-the manager reports replay_stuck and replays nothing.
+The bingo manager may only move a dead core's tasks to a core of the same type
+(CoreTypeId, generated from the cluster cfgs). In the snax_versacore_to_cluster
+clusters of hemaia_ci no two cores of a cluster share a type, so the watchdog
+only detects; nothing is remapped. With a confirm timeout (s5) the dead core is
+fenced, but its tasks have no substitute: the manager reports replay_stuck and
+replays nothing.
 
 The watchdog events are printed by bingo_hw_manager_top in simulation
 ([BINGO_WD] / [BINGO_REMAP] / [BINGO_CSR]) and parsed from the task's

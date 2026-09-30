@@ -218,6 +218,25 @@ module ${name}_quad_ctrl
   // cluster 0, tied off in the other clusters) sends no heartbeats and is masked.
   localparam logic [BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER-1:0][NrClustersPerQuad-1:0] BingoWatchdogCoreMask =
     {{NrClustersPerQuad{1'b0}}, {((BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER-1)*NrClustersPerQuad){1'b1}}};
+  // Remap / replay: a fenced core's tasks may only run on a live core of the
+  // same cluster with the same type. Generated from the cluster cfgs (occamygen
+  // get_bingo_core_type_ids): cores with identical configs share a type, the
+  // extra (host / tied-off) slot is 0.
+<%
+  nr_bingo_slots = num_cores_per_cluster + 1
+  type_rows = []
+  for core in reversed(range(nr_bingo_slots)):
+    row = []
+    for cluster in reversed(range(num_clusters)):
+      ids = bingo_core_type_ids[cluster]
+      row.append(f"{bingo_core_type_id_width}'d{ids[core] if core < len(ids) else 0}")
+    type_rows.append((core, ", ".join(row)))
+%>\
+  localparam logic [BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER-1:0][NrClustersPerQuad-1:0][${bingo_core_type_id_width-1}:0] BingoCoreTypeId = {
+% for core, row in type_rows:
+    ${row}${"," if core != 0 else ""}  // core ${core}, clusters ${num_clusters-1}..0
+% endfor
+  };
   bingo_hw_manager_top #(
     .READY_AND_DONE_QUEUE_INTERFACE_TYPE(1), // 1: CSR 0: AXI LITE
     .TASK_QUEUE_TYPE                    (1), // 1: AXI Lite Master 0: Default AXI Lite Slave 
@@ -234,14 +253,13 @@ module ${name}_quad_ctrl
     // cores write the heartbeat CSR periodically (sw/device/runtime/src/bingo_hw_heartbeat.h).
     .WatchdogHeartbeatTimeoutCycles ( ${bingo_watchdog_timeout_cycles}  ),
     // Fence (confirmed dead) timeout (s1_quadrant.bingo_watchdog_confirm_timeout_cycles,
-    // default 0 = detection only). With CoreRemapAllowMask = '0 below, a fenced core's
-    // tasks cannot be replayed elsewhere: the manager only isolates it (replay_stuck_o).
+    // default 0 = detection only). A fenced core's tasks are replayed on a live core of
+    // the same type (BingoCoreTypeId); without one the manager only isolates it
+    // (replay_stuck_o).
     .WatchdogConfirmTimeoutCycles ( ${bingo_watchdog_confirm_timeout_cycles} ),
     .WatchdogCoreMask         (BingoWatchdogCoreMask                     ),
-    // The cores of a cluster are heterogeneous (VersaCore / DM / host) and kernels
-    // check their core type, so a dead core's tasks cannot run elsewhere:
-    // watchdog detection only, no remap.
-    .CoreRemapAllowMask       ('0                                        ),
+    .CoreTypeIdWidth          (${bingo_core_type_id_width}                                        ),
+    .CoreTypeId               (BingoCoreTypeId                           ),
     // snax_intf_translator only forwards CSR 0x5fe/0x5ff to this port (0x5fd would
     // reach the accelerator CSRs), so the heartbeat is a write to the ready CSR.
     .CsrHeartbeatAddr         (csr_snax_def::CSR_SNAX_READ_TASK_READY_QUEUE),

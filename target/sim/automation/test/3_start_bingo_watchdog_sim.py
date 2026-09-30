@@ -31,6 +31,13 @@ s8      as s7, but core 1 comes back after the fence,      as s7, plus the late 
 s9      as s7, but core 1 is only slow: silent longer      EOC success, check PASS; core 1
         than the heartbeat timeout, shorter than the       dead_suspect set and cleared, no
         confirm timeout                                    fence, no replay, no remap
+s10     as s7, but level 3 forced through a loopback      EOC success, check PASS; core 1 fenced
+        remote link: substitute mask 4 (remote only),      and retired, its tasks exported (proxy
+        import mask 1, plain type -> own chip              slot 1), sent as AXI-Lite packets to
+                                                           {chip, 0x0a002000} through the quad
+                                                           xbar, imported on plain core 2, dones
+                                                           back via {chip, 0x0a003000}; packets
+                                                           decoded and checked, no link error
 ======  =================================================  ==========================================
 
 The bingo manager may only move a dead core's tasks to a core of the same type
@@ -105,6 +112,17 @@ VICTIM = (0, 1, 0)  # (chip, core, cluster)
 TWO_PLAIN_FAULT_GID = 2
 TWO_PLAIN_VICTIM = (0, 1, 0)
 TWO_PLAIN_SUBSTITUTE = 2
+# Level-3 loopback (s10): bingo core type of the plain cores in
+# snax_versacore_2plain_to_cluster (generated BingoCoreTypeId: core 0 -> 1,
+# plain cores 1, 2 -> 2, DM core 3 -> 3) and the chip id of the single-chip sim.
+TWO_PLAIN_CORE_TYPE = 2
+LOOPBACK_CHIP = 0
+REMOTE_LINK_BASE = 0x0A002000  # BingoRemoteLinkBaseAddr: dispatch page, done page +0x1000
+LOOPBACK_CFG_KEYS = {
+    "bingo_substitute_level_mask": "4",         # level 3 only: force remote
+    "bingo_import_substitute_level_mask": "1",  # an import may use a same-cluster core
+    "bingo_remote_target_chip": f'{{"{TWO_PLAIN_CORE_TYPE}": {LOOPBACK_CHIP}}}',
+}
 
 SCENARIOS: Dict[str, dict] = {
     "s1": dict(
@@ -177,6 +195,16 @@ SCENARIOS: Dict[str, dict] = {
         fault_gid=TWO_PLAIN_FAULT_GID, victim=TWO_PLAIN_VICTIM,
         expect_eoc=True, sim_timeout_s=3600,
     ),
+    "s10": dict(
+        desc="plain core 1 hangs, level 3 forced over a loopback remote link: run on core 2 via import",
+        cfg=ONE_CLUSTER_CFG, cluster_swap=TWO_PLAIN_CLUSTER_SWAP,
+        timeout_cycles=TIGHT_TIMEOUT_CYCLES, confirm_timeout_cycles=CONFIRM_TIMEOUT_CYCLES,
+        extra_cfg=LOOPBACK_CFG_KEYS, cfg_suffix="_rlink_loopback",
+        workload="int32_add_2plain_1cluster", fault_stall_cycles=0,
+        fault_gid=TWO_PLAIN_FAULT_GID, victim=TWO_PLAIN_VICTIM, substitute=TWO_PLAIN_SUBSTITUTE,
+        remote_loopback=True,
+        expect_eoc=True, expect_fence=True, sim_timeout_s=3600,
+    ),
 }
 
 # fenced= only exists since the replay support; older RTL prints dead_suspect only.
@@ -192,13 +220,25 @@ STUCK_RE = re.compile(r"\[BINGO_REPLAY_STUCK\].*")
 ASSERT_RE = re.compile(r"\[BINGO_ASSERT\].*")
 CSR_RE = re.compile(r"\[BINGO_CSR\].*")
 CHECK_RE = re.compile(r"Check \[([^\]]*)\]: (PASS|FAIL)")
+# Level 3 (bingo_hw_manager_top / occamy_quad_ctrl remote link logs)
+EXPORT_RE = re.compile(r"\[BINGO_EXPORT\] \d+ chip=(\d+) task=(\d+) type_id=(\d+) proxy_slot=(\d+)")
+IMPORT_RE = re.compile(r"\[BINGO_IMPORT\] \d+ chip=(\d+) task=(\d+) from chip=(\d+) proxy_slot=(\d+) -> core=(\d+) cluster=(\d+)")
+RDONE_OUT_RE = re.compile(r"\[BINGO_REMOTE_DONE_OUT\] \d+ chip=(\d+) task=(\d+) -> chip=(\d+) proxy_slot=(\d+)")
+RDONE_IN_RE = re.compile(r"\[BINGO_REMOTE_DONE_IN\] \d+ chip=(\d+) task=(\d+) proxy_slot=(\d+)")
+RLINK_RE = re.compile(r"\[BINGO_RLINK_(TX|RX)_(AW|W|B)\] \d+ chip=(\d+) (addr|data|resp)=(0x[0-9a-fA-F]+|\d+)")
 
 
 def make_cfg(base_cfg: str, timeout_cycles: Optional[int],
              cluster_swap: Optional[Tuple[str, str]] = None,
-             confirm_timeout_cycles: Optional[int] = None) -> str:
-    """Return a repo-relative cfg; write a patched copy if anything is overridden."""
-    if timeout_cycles is None and cluster_swap is None and confirm_timeout_cycles is None:
+             confirm_timeout_cycles: Optional[int] = None,
+             extra_cfg: Optional[Dict[str, str]] = None, cfg_suffix: str = "") -> str:
+    """Return a repo-relative cfg; write a patched copy if anything is overridden.
+
+    extra_cfg: further s1_quadrant keys (hjson literals), added next to
+    dep_tag_width; cfg_suffix names that variant.
+    """
+    if timeout_cycles is None and cluster_swap is None and confirm_timeout_cycles is None \
+            and not extra_cfg:
         return base_cfg
     src = _REPO_ROOT / base_cfg
     new_text = src.read_text()
@@ -228,6 +268,15 @@ def make_cfg(base_cfg: str, timeout_cycles: Optional[int],
         if n != 1:
             raise ValueError(f"could not find dep_tag_width in {base_cfg}")
         suffix += f"_cf{confirm_timeout_cycles}"
+    for key, value in (extra_cfg or {}).items():
+        if re.search(rf"^\s*{key}\s*:", new_text, flags=re.M):
+            raise ValueError(f"{base_cfg} already sets {key}")
+        new_text, n = re.subn(r"^(\s*)(dep_tag_width:[^\n]*)$",
+                              lambda m: f"{m.group(1)}{m.group(2)}\n{m.group(1)}{key}: {value}",
+                              new_text, count=1, flags=re.M)
+        if n != 1:
+            raise ValueError(f"could not find dep_tag_width in {base_cfg}")
+    suffix += cfg_suffix
     dst = _REPO_ROOT / "target/rtl/cfg/generated" / f"{src.stem}{suffix}.hjson"
     dst.parent.mkdir(parents=True, exist_ok=True)
     dst.write_text(new_text)
@@ -250,6 +299,87 @@ def clean_app_builds(workload: str) -> None:
             shutil.rmtree(build_dir)
 
 
+def decode_packet(word: int) -> dict:
+    """bingo_hw_manager_remote_link packet (one 64-bit AXI-Lite write)."""
+    return dict(kind=(word >> 60) & 0xF, chip=(word >> 52) & 0xFF, slot=(word >> 44) & 0xFF,
+                core_type=(word >> 40) & 0xF, seq=(word >> 32) & 0xFF,
+                task_type=(word >> 30) & 0x3, task_id=word & 0x3FFFFFFF)
+
+
+def evaluate_remote_loopback(sc: dict, log_text: str) -> List[str]:
+    """Level 3 over the loopback remote link: bingo events and the link packets."""
+    problems: List[str] = []
+    chip, core, cluster = victim = sc["victim"]
+    substitute = sc["substitute"]
+    proxy_slot = core  # one cluster: flat slot = core + cluster * cores per cluster
+    # The victim's entries are rotated (kept on the proxy), never moved locally
+    moved = [tuple(int(x) for x in m.groups()) for m in REPLAY_FIELDS_RE.finditer(log_text)]
+    if any((r[3], r[4]) != (core, core) for r in moved):
+        problems.append(f"local replay although level 3 is forced: {moved[:3]}")
+    if REMAP_RE.findall(log_text):
+        problems.append(f"local remap although level 3 is forced: {REMAP_RE.findall(log_text)[:3]}")
+    retired = [tuple(int(x) for x in m.groups()) for m in RETIRED_RE.finditer(log_text)]
+    if retired != [victim]:
+        problems.append(f"[BINGO_RETIRED] expected only {victim}, got {retired}")
+    exports = [tuple(int(x) for x in m.groups()) for m in EXPORT_RE.finditer(log_text)]
+    imports = [tuple(int(x) for x in m.groups()) for m in IMPORT_RE.finditer(log_text)]
+    dones_out = [tuple(int(x) for x in m.groups()) for m in RDONE_OUT_RE.finditer(log_text)]
+    dones_in = [tuple(int(x) for x in m.groups()) for m in RDONE_IN_RE.finditer(log_text)]
+    exp_tasks = [e[1] for e in exports]
+    if sc["fault_gid"] not in exp_tasks:
+        problems.append(f"task {sc['fault_gid']} was not exported: {exports}")
+    if any((e[0], e[2], e[3]) != (chip, TWO_PLAIN_CORE_TYPE, proxy_slot) for e in exports):
+        problems.append(f"export not from chip {chip} type {TWO_PLAIN_CORE_TYPE} slot {proxy_slot}: {exports}")
+    if [i[1] for i in imports] != exp_tasks:
+        problems.append(f"imports {[i[1] for i in imports]} != exports {exp_tasks}")
+    if any((i[0], i[2], i[3], i[4], i[5]) != (chip, chip, proxy_slot, substitute, cluster) for i in imports):
+        problems.append(f"import not on core {substitute} from slot {proxy_slot}: {imports}")
+    if [d[1] for d in dones_out] != exp_tasks or any((d[2], d[3]) != (chip, proxy_slot) for d in dones_out):
+        problems.append(f"remote dones out {dones_out}, expected tasks {exp_tasks} to slot {proxy_slot}")
+    if [d[1] for d in dones_in] != exp_tasks or any(d[2] != proxy_slot for d in dones_in):
+        problems.append(f"remote dones in {dones_in}, expected tasks {exp_tasks} on slot {proxy_slot}")
+    # Packets on the real quad AXI-Lite xbar path: TX (link master) and RX (mailbox leaf)
+    ev = {(d, c): [] for d in ("TX", "RX") for c in ("AW", "W", "B")}
+    for m in RLINK_RE.finditer(log_text):
+        direction, channel, pchip, _, value = m.groups()
+        ev[(direction, channel)].append(int(value, 0))
+    tx = list(zip(ev[("TX", "AW")], ev[("TX", "W")]))
+    rx = list(zip(ev[("RX", "AW")], ev[("RX", "W")]))
+    if len(ev[("TX", "AW")]) != len(ev[("TX", "W")]) or len(ev[("TX", "B")]) != len(tx):
+        problems.append(f"TX AW/W/B counts {[len(ev[('TX', c)]) for c in ('AW', 'W', 'B')]}")
+    if any(ev[("TX", "B")]):
+        problems.append(f"TX write error responses: {ev[('TX', 'B')]}")
+    if rx != tx:
+        problems.append(f"loopback RX packets differ from TX: tx={tx[:4]} rx={rx[:4]}")
+    if len(tx) != 2 * len(exports):
+        problems.append(f"{len(tx)} link packets for {len(exports)} exports (expected dispatch + done each)")
+    chip_base = (chip << 40) | REMOTE_LINK_BASE
+    dispatch_ids, done_ids = [], []
+    for addr, data in tx:
+        pk = decode_packet(data)
+        if addr == chip_base and pk["kind"] == 0x5:
+            if (pk["chip"], pk["slot"], pk["core_type"]) != (chip, proxy_slot, TWO_PLAIN_CORE_TYPE):
+                problems.append(f"dispatch packet fields {pk} (0x{data:016x})")
+            dispatch_ids.append(pk["task_id"])
+        elif addr == chip_base + 0x1000 and pk["kind"] == 0xA:
+            if (pk["chip"], pk["slot"]) != (chip, proxy_slot):
+                problems.append(f"done packet fields {pk} (0x{data:016x})")
+            done_ids.append(pk["task_id"])
+        else:
+            problems.append(f"unexpected packet addr=0x{addr:012x} data=0x{data:016x}")
+    if dispatch_ids != exp_tasks or done_ids != exp_tasks:
+        problems.append(f"packet task ids: dispatch {dispatch_ids}, done {done_ids}, exports {exp_tasks}")
+    seqs = [decode_packet(d)["seq"] for a, d in tx if a == chip_base]
+    if seqs != [i % 256 for i in range(len(seqs))] and seqs != [(i + 1) % 256 for i in range(len(seqs))]:
+        problems.append(f"dispatch sequence numbers {seqs}")
+    status = re.findall(r"\[BINGO_STATUS\] \d+ chip=\d+ (.*)", log_text)
+    if status and "link_error=0 " not in status[-1] + " ":
+        problems.append(f"final [BINGO_STATUS] {status[-1]}")
+    print(f"[remote_loopback] exports={exports} imports={imports} tx_packets="
+          f"{[(hex(a), hex(d)) for a, d in tx]} status={status[-1:] if status else None}")
+    return problems
+
+
 def evaluate(name: str, sc: dict, log_text: str, uart_text: str) -> List[str]:
     """Return the list of failed expectations (empty = pass)."""
     problems: List[str] = []
@@ -269,7 +399,9 @@ def evaluate(name: str, sc: dict, log_text: str, uart_text: str) -> List[str]:
         problems.append("run finished although the victim task hangs forever")
     victim = sc.get("victim", VICTIM)
     substitute = sc.get("substitute")
-    if substitute is None:
+    if sc.get("remote_loopback", False):
+        problems += evaluate_remote_loopback(sc, log_text)
+    elif substitute is None:
         # No core may take over the victim's tasks: nothing moves
         if remaps:
             problems.append(f"{len(remaps)} unexpected [BINGO_REMAP] event(s): {remaps[:3]}")
@@ -336,7 +468,7 @@ def run_scenario(name: str, args: argparse.Namespace) -> bool:
     out_dir = Path(args.out_root) / name
     print(f"\n===== {name}: {sc['desc']} =====")
     cfg = make_cfg(sc["cfg"], sc["timeout_cycles"], sc.get("cluster_swap"),
-                   sc.get("confirm_timeout_cycles"))
+                   sc.get("confirm_timeout_cycles"), sc.get("extra_cfg"), sc.get("cfg_suffix", ""))
     clean_app_builds(sc["workload"])
 
     task = make_task(host_app_type="offload_bingo_hw", chip_type="single_chip",

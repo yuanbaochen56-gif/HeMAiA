@@ -38,9 +38,22 @@ SNAX_LIB_DEFINE uint32_t __snax_bingo_kernel_entry_point(void *arg){
 
 SNAX_LIB_DEFINE uint32_t __snax_bingo_kernel_exit(void *arg){
     BINGO_TRACE_MARKER(BINGO_TRACE_KERNEL_ARG_PARSE_START);
-    uint32_t exit_code = ((uint32_t *)arg)[0];
+    const __snax_bingo_kernel_exit_args_t *a = (const __snax_bingo_kernel_exit_args_t *)arg;
+    uint32_t exit_code = a->exit_code;
     bingo_kernel_scratchpad_t* sp = BINGO_GET_SP(arg, __snax_bingo_kernel_exit_args_t);
     BINGO_TRACE_MARKER(BINGO_TRACE_KERNEL_ARG_PARSE_END);
+    // After a core died, the HW manager may run its exit task on a substitute
+    // core (replay / remap). Only the core the task was compiled for leaves its
+    // loop; the substitute completes it and keeps serving its own tasks.
+    if ((a->assigned_cluster_id != snrt_cluster_idx()) ||
+        (a->assigned_core_id != snrt_cluster_core_idx())) {
+        printf_safe("[Cluster %d Core %d]: Exit task of cluster %d core %d taken over, not exiting\r\n",
+                    snrt_cluster_idx(), snrt_cluster_core_idx(),
+                    a->assigned_cluster_id, a->assigned_core_id);
+        sp->return_value = BINGO_RET_SUCC;
+        sp->num_return_values = 0;
+        return BINGO_RET_SUCC;
+    }
     BINGO_TRACE_MARKER(BINGO_TRACE_DUMMY_KERNEL_START);
     printf_safe("[Cluster %d Core %d]: Exiting with code %d\r\n", snrt_cluster_idx(), snrt_cluster_core_idx(), exit_code);
     BINGO_TRACE_MARKER(BINGO_TRACE_DUMMY_KERNEL_END);

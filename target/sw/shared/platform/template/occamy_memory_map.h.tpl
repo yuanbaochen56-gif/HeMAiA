@@ -214,6 +214,14 @@ inline uintptr_t quad_ctrl_bingo_status_addr(){
     return QUAD_AXI_LITE_NARROW_PERIPHERALS_BASE_ADDR + OCCAMY_QUAD_PERIPH_BINGO_STATUS_REG_OFFSET;
 }
 
+inline uintptr_t quad_ctrl_bingo_park_req_addr(){
+    return QUAD_AXI_LITE_NARROW_PERIPHERALS_BASE_ADDR + OCCAMY_QUAD_PERIPH_BINGO_PARK_REQ_REG_OFFSET;
+}
+
+inline uintptr_t quad_ctrl_bingo_park_fail_addr(){
+    return QUAD_AXI_LITE_NARROW_PERIPHERALS_BASE_ADDR + OCCAMY_QUAD_PERIPH_BINGO_PARK_FAIL_REG_OFFSET;
+}
+
 inline uintptr_t quad_ctrl_bingo_core_fenced_addr(){
     return QUAD_AXI_LITE_NARROW_PERIPHERALS_BASE_ADDR + OCCAMY_QUAD_PERIPH_BINGO_CORE_FENCED_REG_OFFSET;
 }

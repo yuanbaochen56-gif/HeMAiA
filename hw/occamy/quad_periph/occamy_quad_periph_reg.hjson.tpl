@@ -424,6 +424,26 @@
         }
       ]
     },
+    { name: "BINGO_PARK_REQ",
+      desc: "Bingo core parking request (bit core + cluster * cores per cluster, host slot included): the slot drains, then its later tasks run on a live core of its type; 0 = no change.",
+      swaccess: "rw",
+      hwaccess: "hro",
+      fields: [
+        { bits: "31:0", resval: "0", name: "BINGO_PARK_REQ",
+          desc: '''Bit i: park bingo slot i (level, see bingo_hw_manager_ctrl). Clearing it does not move the tasks back.'''
+        }
+      ]
+    },
+    { name: "BINGO_PARK_FAIL",
+      desc: "Bingo core parking failed (same bits as BINGO_PARK_REQ): no live core of the type, the slot runs another slot's tasks, or its substitute died with none left; stays set until the request bit is cleared.",
+      swaccess: "ro",
+      hwaccess: "hwo",
+      fields: [
+        { bits: "31:0", resval: "0", name: "BINGO_PARK_FAIL",
+          desc: '''Bit i: the park of bingo slot i failed.'''
+        }
+      ]
+    },
     { name: "BINGO_CORE_FENCED",
       desc: "Bingo watchdog: fenced (confirmed dead, sticky) cores (bit core + cluster * cores per cluster, host slot included).",
       swaccess: "ro",

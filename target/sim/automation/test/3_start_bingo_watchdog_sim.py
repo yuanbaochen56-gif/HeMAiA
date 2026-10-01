@@ -276,6 +276,17 @@ SCENARIOS: Dict[str, dict] = {
         extra_flags="-DBINGO_PM_BOOST_POWER_LEVEL=3", expect_boost_level=3,
         expect_eoc=True, expect_fence=True, sim_timeout_s=3600,
     ),
+    "s15": dict(
+        desc="no fault: the host parks the cluster-0 DM core, its tasks run on the cluster-1 DM core, run completes",
+        cfg=HEMAIA_CI_CFG, timeout_cycles=TIGHT_TIMEOUT_CYCLES,
+        confirm_timeout_cycles=CONFIRM_TIMEOUT_CYCLES,
+        extra_cfg=L2_CFG_KEYS, cfg_suffix="_l2",
+        workload="dummy_2cluster", fault_stall_cycles=None,
+        victim=VICTIM, substitute=1, substitute_cluster=1, park=True,
+        # bingo slot = core + cluster * cores per cluster: the victim (core 1, cluster 0)
+        extra_flags="-DBINGO_PARK_REQ=2",
+        expect_eoc=True, sim_timeout_s=3600,
+    ),
     "s12": dict(
         desc="cluster-0 DM core hangs, level 2: its tasks run on the cluster-1 DM core, run completes",
         cfg=HEMAIA_CI_CFG, timeout_cycles=TIGHT_TIMEOUT_CYCLES,
@@ -298,6 +309,7 @@ REPLAY_FIELDS_RE = re.compile(r"\[BINGO_REPLAY\] \d+ chip=(\d+) task=(\d+) type=
 RETIRED_RE = re.compile(r"\[BINGO_RETIRED\] \d+ chip=(\d+) core=(\d+) cluster=(\d+)")
 FENCE_DROP_RE = re.compile(r"\[BINGO_FENCE\] \d+ chip=(\d+) core=(\d+) cluster=(\d+) dropped done task=(\d+)")
 STUCK_RE = re.compile(r"\[BINGO_REPLAY_STUCK\].*")
+PARK_RE = re.compile(r"\[BINGO_PARK\] \d+ chip=(\d+) core=(\d+) cluster=(\d+) (HOLD|FAIL|dropped, fenced|PARKED -> core=(\d+) cluster=(\d+))")
 ASSERT_RE = re.compile(r"\[BINGO_ASSERT\].*")
 CSR_RE = re.compile(r"\[BINGO_CSR\].*")
 CHECK_RE = re.compile(r"Check \[([^\]]*)\]: (PASS|FAIL)")
@@ -507,6 +519,36 @@ def evaluate_remote_reject(sc: dict, log_text: str) -> List[str]:
     return problems
 
 
+def evaluate_park(sc: dict, log_text: str, uart_text: str) -> List[str]:
+    """Core parking without a fault: the victim slot goes HOLD -> PARKED onto the
+    substitute, every task routed away from it lands there, nothing is fenced,
+    replayed or retired, and the host sees no park failure."""
+    problems: List[str] = []
+    chip, core, cluster = sc["victim"]
+    sub, sub_cluster = sc["substitute"], sc["substitute_cluster"]
+    park = [(int(m.group(1)), int(m.group(2)), int(m.group(3)), m.group(4).split(" ->")[0],
+             m.group(5), m.group(6)) for m in PARK_RE.finditer(log_text)]
+    expected = [(chip, core, cluster, "HOLD", None, None),
+                (chip, core, cluster, "PARKED", str(sub), str(sub_cluster))]
+    if park != expected:
+        problems.append(f"[BINGO_PARK] events {park}, expected HOLD then PARKED -> core {sub} cluster {sub_cluster}")
+    routed = [tuple(int(x) for x in m.groups()) for m in REMAP_FIELDS_RE.finditer(log_text)]
+    if not routed:
+        problems.append("no task of the parked core was routed to its substitute")
+    wrong = [r for r in routed if (r[0], r[2], r[3], r[4]) != (chip, core, sub, sub_cluster)]
+    if wrong:
+        problems.append(f"remap other than logical core {core} -> {sub} (cluster {sub_cluster}): {wrong[:3]}")
+    if REPLAY_RE.findall(log_text) or RETIRED_RE.findall(log_text):
+        problems.append("a parked core was replayed or retired")
+    if f"Exit task of cluster {cluster} core {core} taken over" not in uart_text:
+        problems.append(f"no 'Exit task of cluster {cluster} core {core} taken over' in the UART log")
+    host = re.search(r"\[Host\] Bingo status: .* park_fail=0x([0-9a-fA-F]+)", uart_text)
+    if not host or int(host.group(1), 16) != 0:
+        problems.append(f"host park_fail {host.group(1) if host else '?'}, expected 0")
+    print(f"[park] events={park} routed={len(routed)}")
+    return problems
+
+
 def check_core_types(expected: Dict[int, int]) -> List[str]:
     """Compare the generated BingoCoreTypeId (one cluster) with {core: type}."""
     rtl = _REPO_ROOT / QUAD_CTRL_RTL
@@ -554,6 +596,8 @@ def evaluate(name: str, sc: dict, log_text: str, uart_text: str) -> List[str]:
         problems.append(f"final [BINGO_STATUS] {status[-1]}")
     if sc.get("remote_loopback", False) or sc.get("remote_reject", False):
         pass
+    elif sc.get("park", False):
+        problems += evaluate_park(sc, log_text, uart_text)
     elif substitute is None:
         # No core may take over the victim's tasks: nothing moves
         if remaps:

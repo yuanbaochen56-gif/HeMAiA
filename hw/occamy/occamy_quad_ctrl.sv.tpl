@@ -117,6 +117,7 @@ module ${name}_quad_ctrl
   logic [5:0]                            bingo_remote_link_error;
   logic                                  bingo_remote_done_mismatch;
   logic                                  bingo_remote_timeout;
+  cfg_t                                  bingo_park_req, bingo_park_fail;
   cfg_t                                  bingo_remote_proxy_timeout;
   logic                                  bingo_replay_stuck;
   logic [BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER-1:0][NrClustersPerQuad-1:0] bingo_core_fenced;
@@ -227,6 +228,8 @@ module ${name}_quad_ctrl
     .bingo_hw_manager_remote_done_mismatch_i  (bingo_remote_done_mismatch          ),
     .bingo_hw_manager_remote_timeout_i        (bingo_remote_timeout                ),
     .bingo_hw_manager_remote_proxy_timeout_o  (bingo_remote_proxy_timeout          ),
+    .bingo_hw_manager_park_req_o              (bingo_park_req                      ),
+    .bingo_hw_manager_park_fail_i             (bingo_park_fail                     ),
     .bingo_hw_manager_remote_link_error_i     (bingo_remote_link_error             ),
     .bingo_hw_manager_core_dead_suspect_i     (bingo_core_dead_suspect             ),
     .bingo_hw_manager_core_fenced_i           (bingo_core_fenced                   )
@@ -383,6 +386,8 @@ module ${name}_quad_ctrl
     .bingo_hw_manager_idle_power_level_i       (bingo_hw_manager_idle_power_level            ),
     .bingo_hw_manager_boost_power_level_i      (bingo_hw_manager_boost_power_level           ),
     .bingo_hw_manager_idle_entry_delay_i       (bingo_hw_manager_idle_entry_delay            ),
+    .bingo_hw_manager_park_req_i               (bingo_park_req                               ),
+    .bingo_hw_manager_park_fail_o              (bingo_park_fail                              ),
     .bingo_hw_manager_cluster_access_i         (bingo_cluster_access_i                       ),
     .bingo_hw_manager_access_wake_hold_i       (bingo_hw_manager_access_wake_hold            ),
     .bingo_hw_manager_normal_power_level_i     (bingo_hw_manager_norm_power_level            ),

@@ -506,6 +506,11 @@ void bingo_close_all_clusters(bingo_task_t **task_list, uint32_t num_tasks);
 #ifndef BINGO_REMOTE_PROXY_TIMEOUT
 #define BINGO_REMOTE_PROXY_TIMEOUT  0
 #endif
+// Core parking: bingo slots (bit core + cluster * cores per cluster) that drain
+// and hand their later tasks to a live core of their type; 0 = none
+#ifndef BINGO_PARK_REQ
+#define BINGO_PARK_REQ              0
+#endif
 
 // Configure the power-management registers (idle/normal power levels, per-core
 // power domains, EN_IDLE_PM) without starting a task offload. Exposed so a test

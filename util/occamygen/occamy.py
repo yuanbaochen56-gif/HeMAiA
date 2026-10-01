@@ -896,6 +896,12 @@ def get_bingo_remote_kwargs(occamy_cfg):
     import_mask = quad.get("bingo_import_substitute_level_mask", level_mask & 3)
     if not (0 <= level_mask < 8 and 0 <= import_mask < 8):
         raise ValueError("bingo_substitute_level_mask / bingo_import_substitute_level_mask are 3-bit masks")
+    # The remote link mailboxes sit at one quad AXI-Lite offset without a
+    # quadrant index (BingoRemoteLinkBaseAddr), and remote chiplets address them
+    # as {chip id, offset}: with several quadrants their links would share it.
+    if (level_mask & 4) and occamy_cfg["nr_s1_quadrant"] > 1:
+        raise ValueError("bingo level 3 (bingo_substitute_level_mask bit 2) supports one s1 quadrant only: "
+                         "the remote link mailbox address has no quadrant index")
     # {core type id (string or int): target chip id}
     targets = [None] * nr_core_types
     for core_type, chip in quad.get("bingo_remote_target_chip", {}).items():

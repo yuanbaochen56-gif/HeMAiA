@@ -896,6 +896,11 @@ def get_bingo_remote_kwargs(occamy_cfg):
     import_mask = quad.get("bingo_import_substitute_level_mask", level_mask & 3)
     if not (0 <= level_mask < 8 and 0 <= import_mask < 8):
         raise ValueError("bingo_substitute_level_mask / bingo_import_substitute_level_mask are 3-bit masks")
+    # bingo_hw_manager_top masks bit 2 of ImportSubstituteLevelMask off: an
+    # imported task is never exported again
+    if import_mask & 4:
+        raise ValueError("bingo_import_substitute_level_mask bit 2 (level 3) has no effect: "
+                         "imported tasks are never exported again")
     # The remote link mailboxes sit at one quad AXI-Lite offset without a
     # quadrant index (BingoRemoteLinkBaseAddr), and remote chiplets address them
     # as {chip id, offset}: with several quadrants their links would share it.

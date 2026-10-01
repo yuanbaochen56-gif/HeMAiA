@@ -430,7 +430,7 @@
       hwaccess: "hro",
       fields: [
         { bits: "31:0", resval: "0", name: "BINGO_PARK_REQ",
-          desc: '''Bit i: park bingo slot i (level, see bingo_hw_manager_ctrl). Clearing it does not move the tasks back.'''
+          desc: '''Bit i: park bingo slot i (level, see bingo_hw_manager_ctrl). Clearing it moves a parked slot back once its tasks on the substitute retired.'''
         }
       ]
     },

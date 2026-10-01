@@ -835,6 +835,16 @@ void bingo_hw_scheduler_init(uint64_t dev_arg_base_addr, uint64_t dev_kernel_bas
     asm volatile("fence" ::: "memory");
 }
 
+// Fault status of the HW manager (watchdog / replay / level 3), one line on the UART
+void bingo_hw_scheduler_print_status(){
+    uint32_t status  = readw((uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_bingo_status_addr()));
+    uint32_t fenced  = readw((uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_bingo_core_fenced_addr()));
+    uint32_t suspect = readw((uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_bingo_core_dead_suspect_addr()));
+    printf_safe("Chip(%x, %x): [Host] Bingo status: replay_stuck=%d remote_done_mismatch=%d link_error=%d fenced=0x%x dead_suspect=0x%x\r\n",
+                get_current_chip_loc_x(), get_current_chip_loc_y(),
+                status & 0x1, (status >> 1) & 0x1, (status >> 2) & 0x1f, fenced, suspect);
+}
+
 uint32_t bingo_hw_scheduler(uint64_t* host_arg_list, uint64_t* host_kernel_list, int32_t* global_task_id_to_host_task_id){
     uint32_t current_global_task_id;
     int32_t current_host_task_id;
@@ -909,6 +919,8 @@ uint32_t bingo_hw_scheduler(uint64_t* host_arg_list, uint64_t* host_kernel_list,
             break;
         }
     }
+    // Whatever ended the loop, report which cores the manager fenced on the way
+    bingo_hw_scheduler_print_status();
     return err;
 }
 

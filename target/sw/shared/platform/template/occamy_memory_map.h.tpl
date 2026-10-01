@@ -207,6 +207,21 @@ inline uintptr_t quad_ctrl_idle_power_level_addr(){
     return QUAD_AXI_LITE_NARROW_PERIPHERALS_BASE_ADDR + OCCAMY_QUAD_PERIPH_IDLE_POWER_LEVEL_REG_OFFSET;
 }
 
+// Bingo HW manager status (read-only): BINGO_STATUS {link_error[6:2],
+// remote_done_mismatch[1], replay_stuck[0]}, and per-slot bitmaps (bit
+// core + cluster * slots per cluster)
+inline uintptr_t quad_ctrl_bingo_status_addr(){
+    return QUAD_AXI_LITE_NARROW_PERIPHERALS_BASE_ADDR + OCCAMY_QUAD_PERIPH_BINGO_STATUS_REG_OFFSET;
+}
+
+inline uintptr_t quad_ctrl_bingo_core_fenced_addr(){
+    return QUAD_AXI_LITE_NARROW_PERIPHERALS_BASE_ADDR + OCCAMY_QUAD_PERIPH_BINGO_CORE_FENCED_REG_OFFSET;
+}
+
+inline uintptr_t quad_ctrl_bingo_core_dead_suspect_addr(){
+    return QUAD_AXI_LITE_NARROW_PERIPHERALS_BASE_ADDR + OCCAMY_QUAD_PERIPH_BINGO_CORE_DEAD_SUSPECT_REG_OFFSET;
+}
+
 inline uintptr_t quad_ctrl_idle_entry_delay_addr(){
     return QUAD_AXI_LITE_NARROW_PERIPHERALS_BASE_ADDR + OCCAMY_QUAD_PERIPH_IDLE_ENTRY_DELAY_REG_OFFSET;
 }

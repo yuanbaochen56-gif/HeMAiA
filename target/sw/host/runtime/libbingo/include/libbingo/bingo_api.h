@@ -504,6 +504,8 @@ void bingo_hw_scheduler_init_pm(void);
 
 void bingo_hw_scheduler_init(uint64_t dev_arg_base_addr, uint64_t dev_kernel_base_addr, uint32_t num_dev_tasks, uint64_t global_task_id_to_dev_task_id_base_addr, uint32_t num_total_tasks, uint64_t bingo_hw_scheduler_task_desc_list_base, uint32_t bingo_hw_scheduler_num_task_desc);
 
+// Prints the HW manager's fault status (BINGO_STATUS, fenced / dead_suspect cores) on the UART
+void bingo_hw_scheduler_print_status();
 uint32_t bingo_hw_scheduler(uint64_t *host_arg_list, uint64_t *host_kernel_list, int32_t *global_task_id_to_host_task_id);
 
 /////////////////////////////

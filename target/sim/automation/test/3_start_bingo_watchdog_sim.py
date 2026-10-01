@@ -677,6 +677,17 @@ def run_scenario(name: str, args: argparse.Namespace) -> bool:
     problems = evaluate(name, sc, log_text, uart_text)
     if sc.get("expect_core_types"):
         problems += check_core_types(sc["expect_core_types"])
+    if sc["expect_eoc"] and log_text:
+        # The host prints the manager's status at the end; its fenced bitmap must
+        # match the last [BINGO_STATUS] of the RTL (0 without such a line)
+        host = re.search(r"\[Host\] Bingo status: replay_stuck=(\d+) remote_done_mismatch=(\d+) "
+                         r"link_error=(\d+) fenced=0x([0-9a-fA-F]+)", uart_text)
+        rtl = re.findall(r"\[BINGO_STATUS\] \d+ chip=\d+ .*fenced=0x([0-9a-fA-F]+)", log_text)
+        rtl_fenced = int(rtl[-1], 16) if rtl else 0
+        if not host:
+            problems.append("no '[Host] Bingo status' line in the UART log")
+        elif (int(host.group(4), 16) != rtl_fenced) or host.group(1) != "0" or host.group(3) != "0":
+            problems.append(f"host status {host.group(0)} (RTL fenced 0x{rtl_fenced:x})")
     if sc.get("expect_boost_level"):
         # The victim's cluster domain (1) reaches the boost level after the fence
         fence_t = [int(m.group(1)) for m in WD_RE.finditer(log_text) if m.group(6) == "1"]

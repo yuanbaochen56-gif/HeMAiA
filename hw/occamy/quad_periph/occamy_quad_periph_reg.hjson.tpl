@@ -391,6 +391,16 @@
         }
       ]
     },
+    { name: "IDLE_ENTRY_DELAY",
+      desc: "Bingo control plane: cycles a core must be idle before its power domain may drop to the idle level; 0 = at once",
+      swaccess: "rw",
+      hwaccess: "hro",
+      fields: [
+        { bits: "31:0", resval: "0", name: "IDLE_ENTRY_DELAY",
+          desc: '''Idle entry delay in quad_ctrl cycles (0: the domain drops as soon as all its cores are idle).'''
+        }
+      ]
+    },
     { name: "BINGO_CORE_FENCED",
       desc: "Bingo watchdog: fenced (confirmed dead, sticky) cores (bit core + cluster * cores per cluster, host slot included).",
       swaccess: "ro",

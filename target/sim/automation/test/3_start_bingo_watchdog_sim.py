@@ -625,7 +625,12 @@ def evaluate(name: str, sc: dict, log_text: str, uart_text: str) -> List[str]:
 
 
 def run_scenario(name: str, args: argparse.Namespace) -> bool:
-    sc = SCENARIOS[name]
+    sc = dict(SCENARIOS[name])
+    if args.wd_timeout is not None and sc.get("timeout_cycles") is not None:
+        # Sweep: other watchdog timeouts (the confirm timeout stays twice as long)
+        sc["timeout_cycles"] = args.wd_timeout
+        if sc.get("confirm_timeout_cycles"):
+            sc["confirm_timeout_cycles"] = 2 * args.wd_timeout
     out_dir = Path(args.out_root) / name
     print(f"\n===== {name}: {sc['desc']} =====")
     cfg = make_cfg(sc["cfg"], sc["timeout_cycles"], sc.get("cluster_swap"),
@@ -641,8 +646,9 @@ def run_scenario(name: str, args: argparse.Namespace) -> bool:
             # The substitute gets the same task replayed: only the victim misbehaves
             _, core, cluster = sc["victim"]
             task["extra_user_flags"] += f" -DBINGO_WD_FAULT_CLUSTER={cluster} -DBINGO_WD_FAULT_CORE={core}"
-    if sc.get("extra_flags"):
-        task["extra_user_flags"] = (task.get("extra_user_flags", "") + " " + sc["extra_flags"]).strip()
+    for flags in (sc.get("extra_flags"), args.extra_flags):
+        if flags:
+            task["extra_user_flags"] = (task.get("extra_user_flags", "") + " " + flags).strip()
 
     runner = HeMAiASimRunner(
         repo_root=_REPO_ROOT,
@@ -707,6 +713,13 @@ def main() -> None:
                              "(keep it off the quota-limited home directory)")
     parser.add_argument("--bingo-repo", default=str(_REPO_ROOT.parent / "bingo_hw_manager"),
                         help="bingo_hw_manager checkout used by the Bender path pin")
+    parser.add_argument("--extra-flags", default="",
+                        help="further SW flags for every scenario, given with '=' because they start "
+                             "with '-', e.g. --extra-flags='-DBINGO_PM_IDLE_ENTRY_DELAY=10000' (sweeps)")
+    parser.add_argument("--wd-timeout", type=int, default=None,
+                        help="override the watchdog heartbeat timeout (quad_ctrl cycles) of every "
+                             "scenario that sets one; the confirm timeout becomes twice that (sweeps; "
+                             "s3/s8/s9 size their stalls for the default 100k)")
     args = parser.parse_args()
 
     if shutil.which("vsim") is None:

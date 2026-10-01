@@ -491,6 +491,11 @@ void bingo_close_all_clusters(bingo_task_t **task_list, uint32_t num_tasks);
 #ifndef BINGO_PM_BOOST_POWER_LEVEL
 #define BINGO_PM_BOOST_POWER_LEVEL  0
 #endif
+// Idle entry delay: quad_ctrl cycles a core must be idle before its power
+// domain may drop to the idle level; 0 = at once
+#ifndef BINGO_PM_IDLE_ENTRY_DELAY
+#define BINGO_PM_IDLE_ENTRY_DELAY   0
+#endif
 
 // Configure the power-management registers (idle/normal power levels, per-core
 // power domains, EN_IDLE_PM) without starting a task offload. Exposed so a test

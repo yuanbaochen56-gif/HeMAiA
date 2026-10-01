@@ -62,6 +62,7 @@ module ${name}_quad_ctrl
   cfg_t bingo_hw_manager_enable_idle_pm;
   cfg_t bingo_hw_manager_idle_power_level;
   cfg_t bingo_hw_manager_boost_power_level;
+  cfg_t bingo_hw_manager_idle_entry_delay;
   cfg_t bingo_hw_manager_norm_power_level;
   cfg_t [BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER-1:0][NrClustersPerQuad-1:0] bingo_hw_manager_core_power_domain;
   //  DVFS
@@ -199,6 +200,7 @@ module ${name}_quad_ctrl
     .bingo_hw_manager_enable_idle_pm_o      (bingo_hw_manager_enable_idle_pm     ),
     .bingo_hw_manager_idle_power_level_o    (bingo_hw_manager_idle_power_level   ),
     .bingo_hw_manager_boost_power_level_o   (bingo_hw_manager_boost_power_level  ),
+    .bingo_hw_manager_idle_entry_delay_o    (bingo_hw_manager_idle_entry_delay   ),
     .bingo_hw_manager_norm_power_level_o    (bingo_hw_manager_norm_power_level   ),
     .bingo_hw_manager_core_power_domain_o   (bingo_hw_manager_core_power_domain  ),
     // DVFS
@@ -367,6 +369,7 @@ module ${name}_quad_ctrl
     .bingo_hw_manager_enable_idle_pm_i         (bingo_hw_manager_enable_idle_pm              ),
     .bingo_hw_manager_idle_power_level_i       (bingo_hw_manager_idle_power_level            ),
     .bingo_hw_manager_boost_power_level_i      (bingo_hw_manager_boost_power_level           ),
+    .bingo_hw_manager_idle_entry_delay_i       (bingo_hw_manager_idle_entry_delay            ),
     .bingo_hw_manager_normal_power_level_i     (bingo_hw_manager_norm_power_level            ),
     .bingo_hw_manager_pm_base_addr_i           (bingo_hw_manager_pm_base_addr                ),
     .bingo_hw_manager_core_power_domain_i      (bingo_hw_manager_core_power_domain           ),

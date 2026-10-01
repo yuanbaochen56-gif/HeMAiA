@@ -830,6 +830,8 @@ void bingo_hw_scheduler_init(uint64_t dev_arg_base_addr, uint64_t dev_kernel_bas
     }
     // Init the power manager
     bingo_hw_scheduler_init_pm();
+    // Level 3: proxy timeout (0 = wait forever for a remote done)
+    writew(BINGO_REMOTE_PROXY_TIMEOUT, (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_remote_proxy_timeout_addr()));
     // Init the task desc list base and num tasks
     writew(bingo_hw_scheduler_task_desc_list_base>>32,       (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_task_desc_base_hi_addr()));
     writew((uint32_t)bingo_hw_scheduler_task_desc_list_base, (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_task_desc_base_lo_addr()));
@@ -846,9 +848,9 @@ void bingo_hw_scheduler_print_status(){
     uint32_t status  = readw((uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_bingo_status_addr()));
     uint32_t fenced  = readw((uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_bingo_core_fenced_addr()));
     uint32_t suspect = readw((uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_bingo_core_dead_suspect_addr()));
-    printf_safe("Chip(%x, %x): [Host] Bingo status: replay_stuck=%d remote_done_mismatch=%d link_error=%d fenced=0x%x dead_suspect=0x%x\r\n",
+    printf_safe("Chip(%x, %x): [Host] Bingo status: replay_stuck=%d remote_done_mismatch=%d link_error=%d fenced=0x%x dead_suspect=0x%x remote_timeout=%d\r\n",
                 get_current_chip_loc_x(), get_current_chip_loc_y(),
-                status & 0x1, (status >> 1) & 0x1, (status >> 2) & 0x3f, fenced, suspect);
+                status & 0x1, (status >> 1) & 0x1, (status >> 2) & 0x3f, fenced, suspect, (status >> 8) & 0x1);
 }
 
 uint32_t bingo_hw_scheduler(uint64_t* host_arg_list, uint64_t* host_kernel_list, int32_t* global_task_id_to_host_task_id){

@@ -547,9 +547,10 @@ def evaluate(name: str, sc: dict, log_text: str, uart_text: str) -> List[str]:
               if re.search(r"\[BINGO_(EXPORT|IMPORT|REMOTE_DONE_OUT|REMOTE_DONE_IN|RLINK_\w+)\]", l)]
         if l3:
             problems.append(f"{len(l3)} unexpected level-3 event(s): {l3[:3]}")
-    # The sticky link / remote-done error flags stay clear in every scenario
+    # The sticky link / remote-done / proxy-timeout flags stay clear in every scenario
     status = re.findall(r"\[BINGO_STATUS\] \d+ chip=\d+ (.*)", log_text)
-    if status and not ("remote_done_mismatch=0 " in status[-1] and "link_error=0 " in status[-1] + " "):
+    if status and not ("remote_done_mismatch=0 " in status[-1] and "link_error=0 " in status[-1] + " " and
+                       "remote_timeout=0" in status[-1]):
         problems.append(f"final [BINGO_STATUS] {status[-1]}")
     if sc.get("remote_loopback", False) or sc.get("remote_reject", False):
         pass

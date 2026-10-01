@@ -43,6 +43,8 @@ module occamy_quad_periph import occamy_quad_periph_reg_pkg::*; #(
   // Bingo status (read-only registers)
   input  logic        bingo_hw_manager_replay_stuck_i,
   input  logic        bingo_hw_manager_remote_done_mismatch_i,
+  input  logic        bingo_hw_manager_remote_timeout_i,
+  output reg_data_t   bingo_hw_manager_remote_proxy_timeout_o,
   input  logic [5:0]  bingo_hw_manager_remote_link_error_i,
   input  logic [BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER-1:0][BINGO_HW_MANAGER_NR_CLUSTER-1:0] bingo_hw_manager_core_dead_suspect_i,
   input  logic [BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER-1:0][BINGO_HW_MANAGER_NR_CLUSTER-1:0] bingo_hw_manager_core_fenced_i
@@ -98,6 +100,9 @@ module occamy_quad_periph import occamy_quad_periph_reg_pkg::*; #(
   assign hw2reg.bingo_status.replay_stuck.d          = bingo_hw_manager_replay_stuck_i;
   assign hw2reg.bingo_status.replay_stuck.de         = 1'b1;
   assign hw2reg.bingo_status.remote_done_mismatch.d  = bingo_hw_manager_remote_done_mismatch_i;
+  assign hw2reg.bingo_status.remote_timeout.d        = bingo_hw_manager_remote_timeout_i;
+  assign hw2reg.bingo_status.remote_timeout.de       = 1'b1;
+  assign bingo_hw_manager_remote_proxy_timeout_o     = reg2hw.remote_proxy_timeout.q;
   assign hw2reg.bingo_status.remote_done_mismatch.de = 1'b1;
   assign hw2reg.bingo_status.remote_link_error.d     = bingo_hw_manager_remote_link_error_i;
   assign hw2reg.bingo_status.remote_link_error.de    = 1'b1;

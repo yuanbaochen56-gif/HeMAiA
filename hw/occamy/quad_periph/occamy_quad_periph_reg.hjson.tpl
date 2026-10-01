@@ -368,6 +368,9 @@
         },
         { bits: "7:2", resval: "0", name: "REMOTE_LINK_ERROR",
           desc: '''Sticky bingo_hw_manager_remote_link error_o: [0] SLVERR on a sent packet (resent), [1] unknown packet kind, [2] sequence error, [3] packet from an unknown peer, [4] credit overflow, [5] a packet dropped after its last resend (lost).'''
+        },
+        { bits: "8", resval: "0", name: "REMOTE_TIMEOUT",
+          desc: '''Sticky: a proxy slot gave up waiting for the remote done of an exported task (REMOTE_PROXY_TIMEOUT) and stopped as on a reject (remote_timeout_o).'''
         }
       ]
     },
@@ -398,6 +401,16 @@
       fields: [
         { bits: "31:0", resval: "0", name: "IDLE_ENTRY_DELAY",
           desc: '''Idle entry delay in quad_ctrl cycles (0: the domain drops as soon as all its cores are idle).'''
+        }
+      ]
+    },
+    { name: "REMOTE_PROXY_TIMEOUT",
+      desc: "Bingo level 3: cycles a proxy slot waits for the remote done of its exported head before it gives up (stops, REMOTE_TIMEOUT); 0 = wait forever",
+      swaccess: "rw",
+      hwaccess: "hro",
+      fields: [
+        { bits: "31:0", resval: "0", name: "REMOTE_PROXY_TIMEOUT",
+          desc: '''Proxy timeout in quad_ctrl cycles (0: never).'''
         }
       ]
     },

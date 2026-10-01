@@ -116,6 +116,8 @@ module ${name}_quad_ctrl
   logic                                  bingo_rdn_in_reject;
   logic [5:0]                            bingo_remote_link_error;
   logic                                  bingo_remote_done_mismatch;
+  logic                                  bingo_remote_timeout;
+  cfg_t                                  bingo_remote_proxy_timeout;
   logic                                  bingo_replay_stuck;
   logic [BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER-1:0][NrClustersPerQuad-1:0] bingo_core_fenced;
   logic [BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER-1:0][NrClustersPerQuad-1:0] bingo_core_dead_suspect;
@@ -223,6 +225,8 @@ module ${name}_quad_ctrl
     // Bingo status (read-only): BINGO_STATUS, BINGO_CORE_DEAD_SUSPECT, BINGO_CORE_FENCED
     .bingo_hw_manager_replay_stuck_i          (bingo_replay_stuck                  ),
     .bingo_hw_manager_remote_done_mismatch_i  (bingo_remote_done_mismatch          ),
+    .bingo_hw_manager_remote_timeout_i        (bingo_remote_timeout                ),
+    .bingo_hw_manager_remote_proxy_timeout_o  (bingo_remote_proxy_timeout          ),
     .bingo_hw_manager_remote_link_error_i     (bingo_remote_link_error             ),
     .bingo_hw_manager_core_dead_suspect_i     (bingo_core_dead_suspect             ),
     .bingo_hw_manager_core_fenced_i           (bingo_core_fenced                   )
@@ -428,6 +432,8 @@ module ${name}_quad_ctrl
     .remote_export_type_en_i                   (bingo_rd_export_type_en              ),
     .remote_export_type_peer_i                 (bingo_rd_export_type_peer            ),
     .remote_export_peer_ready_i                (bingo_rd_export_peer_ready           ),
+    .remote_proxy_timeout_i                    (bingo_remote_proxy_timeout           ),
+    .remote_timeout_o                          (bingo_remote_timeout                 ),
     .remote_done_mismatch_o                    (bingo_remote_done_mismatch           )
   );
 
@@ -511,7 +517,7 @@ module ${name}_quad_ctrl
     end
   end
   // The status that the quad periph BINGO_* registers show, on every change
-  logic [7:0] bingo_status_log_q;
+  logic [8:0] bingo_status_log_q;
   logic [BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER-1:0][NrClustersPerQuad-1:0] bingo_fenced_log_q, bingo_suspect_log_q;
   always @(posedge ${quad_ctrl_axi_lite_xbar.clk} or negedge ${quad_ctrl_axi_lite_xbar.rst}) begin : bingo_status_log
     if (!${quad_ctrl_axi_lite_xbar.rst}) begin
@@ -519,10 +525,10 @@ module ${name}_quad_ctrl
       bingo_fenced_log_q  <= '0;
       bingo_suspect_log_q <= '0;
     end else begin
-      bingo_status_log_q  <= {bingo_remote_link_error, bingo_remote_done_mismatch, bingo_replay_stuck};
+      bingo_status_log_q  <= {bingo_remote_timeout, bingo_remote_link_error, bingo_remote_done_mismatch, bingo_replay_stuck};
       bingo_fenced_log_q  <= bingo_core_fenced;
       bingo_suspect_log_q <= bingo_core_dead_suspect;
-      if (({bingo_remote_link_error, bingo_remote_done_mismatch, bingo_replay_stuck} != bingo_status_log_q) ||
+      if (({bingo_remote_timeout, bingo_remote_link_error, bingo_remote_done_mismatch, bingo_replay_stuck} != bingo_status_log_q) ||
           (bingo_core_fenced != bingo_fenced_log_q) || (bingo_core_dead_suspect != bingo_suspect_log_q)) begin
         // fenced / dead_suspect in the order of the status registers: bit
         // core + cluster * BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER
@@ -533,9 +539,9 @@ module ${name}_quad_ctrl
             suspect_reg[core + cluster*BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER] = bingo_core_dead_suspect[core][cluster];
           end
         end
-        $display("[BINGO_STATUS] %0t chip=%0d replay_stuck=%0b remote_done_mismatch=%0b link_error=%0d fenced=0x%0h dead_suspect=0x%0h",
+        $display("[BINGO_STATUS] %0t chip=%0d replay_stuck=%0b remote_done_mismatch=%0b link_error=%0d fenced=0x%0h dead_suspect=0x%0h remote_timeout=%0b",
                  $time, chip_id_i, bingo_replay_stuck, bingo_remote_done_mismatch, bingo_remote_link_error,
-                 fenced_reg, suspect_reg);
+                 fenced_reg, suspect_reg, bingo_remote_timeout);
       end
     end
   end

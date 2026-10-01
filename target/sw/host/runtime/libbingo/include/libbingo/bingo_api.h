@@ -501,6 +501,11 @@ void bingo_close_all_clusters(bingo_task_t **task_list, uint32_t num_tasks);
 #ifndef BINGO_PM_ACCESS_WAKE_HOLD
 #define BINGO_PM_ACCESS_WAKE_HOLD   0
 #endif
+// Level 3: quad_ctrl cycles a proxy waits for the remote done of an exported
+// task before it gives up (stops, BINGO_STATUS.REMOTE_TIMEOUT); 0 = forever
+#ifndef BINGO_REMOTE_PROXY_TIMEOUT
+#define BINGO_REMOTE_PROXY_TIMEOUT  0
+#endif
 
 // Configure the power-management registers (idle/normal power levels, per-core
 // power domains, EN_IDLE_PM) without starting a task offload. Exposed so a test

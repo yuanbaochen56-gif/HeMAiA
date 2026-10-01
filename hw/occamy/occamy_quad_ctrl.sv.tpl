@@ -107,7 +107,7 @@ module ${name}_quad_ctrl
   logic [BingoRemoteSlotIdWidth-1:0]     bingo_rdn_in_proxy_slot;
   logic [BingoTaskIdWidth-1:0]           bingo_rdn_in_task_id;
   logic                                  bingo_rdn_in_reject;
-  logic [4:0]                            bingo_remote_link_error;
+  logic [5:0]                            bingo_remote_link_error;
   logic                                  bingo_remote_done_mismatch;
   logic                                  bingo_replay_stuck;
   logic [BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER-1:0][NrClustersPerQuad-1:0] bingo_core_fenced;
@@ -496,7 +496,7 @@ module ${name}_quad_ctrl
     end
   end
   // The status that the quad periph BINGO_* registers show, on every change
-  logic [6:0] bingo_status_log_q;
+  logic [7:0] bingo_status_log_q;
   logic [BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER-1:0][NrClustersPerQuad-1:0] bingo_fenced_log_q, bingo_suspect_log_q;
   always @(posedge ${quad_ctrl_axi_lite_xbar.clk} or negedge ${quad_ctrl_axi_lite_xbar.rst}) begin : bingo_status_log
     if (!${quad_ctrl_axi_lite_xbar.rst}) begin

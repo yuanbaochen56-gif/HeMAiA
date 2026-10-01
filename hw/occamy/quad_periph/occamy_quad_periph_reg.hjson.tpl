@@ -366,8 +366,8 @@
         { bits: "1", resval: "0", name: "REMOTE_DONE_MISMATCH",
           desc: '''Sticky: a remote done did not belong to the exported head task of its proxy slot (remote_done_mismatch_o).'''
         },
-        { bits: "6:2", resval: "0", name: "REMOTE_LINK_ERROR",
-          desc: '''Sticky bingo_hw_manager_remote_link error_o: [0] SLVERR on a sent packet, [1] unknown packet kind, [2] sequence error, [3] packet from an unknown peer, [4] credit overflow.'''
+        { bits: "7:2", resval: "0", name: "REMOTE_LINK_ERROR",
+          desc: '''Sticky bingo_hw_manager_remote_link error_o: [0] SLVERR on a sent packet (resent), [1] unknown packet kind, [2] sequence error, [3] packet from an unknown peer, [4] credit overflow, [5] a packet dropped after its last resend (lost).'''
         }
       ]
     },

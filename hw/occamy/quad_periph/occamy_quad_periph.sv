@@ -42,7 +42,7 @@ module occamy_quad_periph import occamy_quad_periph_reg_pkg::*; #(
   // Bingo status (read-only registers)
   input  logic        bingo_hw_manager_replay_stuck_i,
   input  logic        bingo_hw_manager_remote_done_mismatch_i,
-  input  logic [4:0]  bingo_hw_manager_remote_link_error_i,
+  input  logic [5:0]  bingo_hw_manager_remote_link_error_i,
   input  logic [BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER-1:0][BINGO_HW_MANAGER_NR_CLUSTER-1:0] bingo_hw_manager_core_dead_suspect_i,
   input  logic [BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER-1:0][BINGO_HW_MANAGER_NR_CLUSTER-1:0] bingo_hw_manager_core_fenced_i
 );

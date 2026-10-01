@@ -846,7 +846,7 @@ void bingo_hw_scheduler_print_status(){
     uint32_t suspect = readw((uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_bingo_core_dead_suspect_addr()));
     printf_safe("Chip(%x, %x): [Host] Bingo status: replay_stuck=%d remote_done_mismatch=%d link_error=%d fenced=0x%x dead_suspect=0x%x\r\n",
                 get_current_chip_loc_x(), get_current_chip_loc_y(),
-                status & 0x1, (status >> 1) & 0x1, (status >> 2) & 0x1f, fenced, suspect);
+                status & 0x1, (status >> 1) & 0x1, (status >> 2) & 0x3f, fenced, suspect);
 }
 
 uint32_t bingo_hw_scheduler(uint64_t* host_arg_list, uint64_t* host_kernel_list, int32_t* global_task_id_to_host_task_id){

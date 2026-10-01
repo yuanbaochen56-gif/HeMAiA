@@ -496,6 +496,11 @@ void bingo_close_all_clusters(bingo_task_t **task_list, uint32_t num_tasks);
 #ifndef BINGO_PM_IDLE_ENTRY_DELAY
 #define BINGO_PM_IDLE_ENTRY_DELAY   0
 #endif
+// Access wake: quad_ctrl cycles a cluster accessed from outside (e.g. the host
+// reading its L1) keeps its power domain awake after the last access; 0 = off
+#ifndef BINGO_PM_ACCESS_WAKE_HOLD
+#define BINGO_PM_ACCESS_WAKE_HOLD   0
+#endif
 
 // Configure the power-management registers (idle/normal power levels, per-core
 // power domains, EN_IDLE_PM) without starting a task offload. Exposed so a test

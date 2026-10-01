@@ -401,6 +401,16 @@
         }
       ]
     },
+    { name: "ACCESS_WAKE_HOLD",
+      desc: "Bingo control plane: a cluster accessed from outside (e.g. the host reading its L1) keeps its power domain awake this many cycles after the last access; 0 = off",
+      swaccess: "rw",
+      hwaccess: "hro",
+      fields: [
+        { bits: "31:0", resval: "0", name: "ACCESS_WAKE_HOLD",
+          desc: '''Access wake hold in quad_ctrl cycles (0: accesses do not affect the power level).'''
+        }
+      ]
+    },
     { name: "BINGO_CORE_FENCED",
       desc: "Bingo watchdog: fenced (confirmed dead, sticky) cores (bit core + cluster * cores per cluster, host slot included).",
       swaccess: "ro",

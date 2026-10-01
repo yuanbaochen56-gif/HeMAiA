@@ -9,6 +9,8 @@ results with ``bingo_recovery_metrics.py``. Sets:
                   entry delay (BINGO_PM_IDLE_ENTRY_DELAY, quad_ctrl cycles) in DELAYS
 * ``timeouts``    s1, s6 (healthy: false positives?), s7 (L1), s10 (L3 loopback),
                   s12 (L2) with the watchdog heartbeat timeout in TIMEOUTS (confirm = 2x)
+* ``access_wake`` s6, s7, s12 with the access wake hold (BINGO_PM_ACCESS_WAKE_HOLD,
+                  quad_ctrl cycles) in HOLDS, idle entry delay 0
 
 Each point is one driver run into ``<out-root>/<set>/<point>``; the tables go to
 ``<out-root>/<set>/summary.md`` (and .csv). The run stops before a point if the
@@ -31,6 +33,7 @@ DRIVER = HERE / "3_start_bingo_watchdog_sim.py"
 METRICS = HERE / "bingo_recovery_metrics.py"
 DELAYS = [0, 5000, 20000, 100000, 200000]
 TIMEOUTS = [50000, 100000, 200000]
+HOLDS = [0, 1000, 10000]
 QUOTA_MARGIN_MB = 300
 
 SETS = {
@@ -38,7 +41,11 @@ SETS = {
                        points=[(f"d{d}", [f"--extra-flags=-DBINGO_PM_IDLE_ENTRY_DELAY={d}"]) for d in DELAYS]),
     "timeouts": dict(scenarios=["s1", "s6", "s7", "s10", "s12"], baseline="s6",
                      points=[(f"t{t}", ["--wd-timeout", str(t)]) for t in TIMEOUTS]),
+    "access_wake": dict(scenarios=["s6", "s7", "s12"], baseline="s6",
+                        points=[(f"h{h}", [f"--extra-flags=-DBINGO_PM_ACCESS_WAKE_HOLD={h}"]) for h in HOLDS]),
 }
+# PM settings the host prints ([Host] Bingo PM: ...), by the flag that sets them
+PM_FLAGS = {"BINGO_PM_IDLE_ENTRY_DELAY": "idle_entry_delay", "BINGO_PM_ACCESS_WAKE_HOLD": "access_wake_hold"}
 
 
 def quota_ok() -> bool:
@@ -74,13 +81,16 @@ def main() -> None:
             print(f"[sweep] {name} {point}: {' '.join(cmd)}", flush=True)
             rc = subprocess.run(cmd).returncode
             print(f"[sweep] {name} {point}: driver exit {rc}", flush=True)
-            want = re.search(r"BINGO_PM_IDLE_ENTRY_DELAY=(\d+)", " ".join(opts))
-            for sc in cfg["scenarios"]:
-                for uart in (set_root / point / sc).glob("*/bin/uart_chip_0_0.log"):
-                    got = re.search(r"idle_entry_delay=(\d+)", uart.read_text(errors="replace"))
-                    if want and (not got or got.group(1) != want.group(1)):
-                        print(f"[sweep] WARNING {name} {point} {sc}: host used idle_entry_delay="
-                              f"{got.group(1) if got else '?'}, requested {want.group(1)}", flush=True)
+            for flag, key in PM_FLAGS.items():
+                want = re.search(flag + r"=(\d+)", " ".join(opts))
+                if not want:
+                    continue
+                for sc in cfg["scenarios"]:
+                    for uart in (set_root / point / sc).glob("*/bin/uart_chip_0_0.log"):
+                        got = re.search(key + r"=(\d+)", uart.read_text(errors="replace"))
+                        if not got or got.group(1) != want.group(1):
+                            print(f"[sweep] WARNING {name} {point} {sc}: host used {key}="
+                                  f"{got.group(1) if got else '?'}, requested {want.group(1)}", flush=True)
             for sc in cfg["scenarios"]:
                 if (set_root / point / sc).exists():
                     runs += ["--run", f"{sc}_{point}={set_root / point / sc}"]

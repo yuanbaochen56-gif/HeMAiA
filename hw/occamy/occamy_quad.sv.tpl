@@ -658,6 +658,10 @@ module ${name}_quad
   %endif
 
 
+  // External requests into each cluster, before its input CDCs (quad clock):
+  // the bingo control plane keeps an accessed cluster's power domain awake
+  logic [${nr_clusters-1}:0] bingo_cluster_access;
+
   /////////////////////
   // Quad Controller //
   /////////////////////
@@ -671,6 +675,7 @@ module ${name}_quad
     .rst_ni,
     .test_mode_i,
     .chip_id_i,
+    .bingo_cluster_access_i (bingo_cluster_access),
     .csr_req_i          (csr_req                    ),
     .csr_req_valid_i    (csr_req_valid              ),
     .csr_req_ready_o    (csr_req_ready              ),
@@ -786,6 +791,11 @@ module ${name}_quad
     .dst_resp_i ( wide_in_cdc_dst_rsp_${i} )
   );
 
+  assign bingo_cluster_access[${i}] = cluster_noc_narrow_out_req[${x+1}][${y}].ar_valid |
+                                      cluster_noc_narrow_out_req[${x+1}][${y}].aw_valid |
+                                      cluster_noc_wide_out_req[${x+1}][${y}].ar_valid   |
+                                      cluster_noc_wide_out_req[${x+1}][${y}].aw_valid;
+
   // AXI CDC signals for wide_out interface (accelerator -> quadrant_uncore)
   floo_${noc_name}_noc_pkg::axi_noc_wide_in_req_t wide_out_cdc_src_req_${i};
   floo_${noc_name}_noc_pkg::axi_noc_wide_in_rsp_t wide_out_cdc_src_rsp_${i};
@@ -849,7 +859,11 @@ module ${name}_quad
 
     wide_cluster_out = quad_wide_xbar.__dict__["in_cluster_{}".format(i)].copy(name="wide_out_{}".format(i),clk="clk_acc_i[{}]".format(i),rst="rst_acc_ni[{}]".format(i)).declare(context)
     wide_cluster_out.cdc(context, target_clk="clk_i", target_rst="rst_ni", name="wide_cluster_out_cdc_{}".format(i)).cut(context, cuts_widex_with_cluster, to=quad_wide_xbar.__dict__["in_cluster_{}".format(i)])
+    narrow_cluster_in_req = quad_narrow_xbar.__dict__["out_cluster_{}".format(i)].req_name()
+    wide_cluster_in_req = quad_wide_xbar.__dict__["out_cluster_{}".format(i)].req_name()
   %>
+  assign bingo_cluster_access[${i}] = ${narrow_cluster_in_req}.ar_valid | ${narrow_cluster_in_req}.aw_valid |
+                                      ${wide_cluster_in_req}.ar_valid | ${wide_cluster_in_req}.aw_valid;
   ${cluster_name}_wrapper i_${name}_cluster_${i} (
     .clk_i               (clk_acc_i[${i}]),
     .rst_ni              (rst_acc_ni[${i}]),

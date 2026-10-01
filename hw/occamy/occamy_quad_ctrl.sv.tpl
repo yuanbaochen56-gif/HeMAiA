@@ -508,10 +508,20 @@ module ${name}_quad_ctrl
       bingo_fenced_log_q  <= bingo_core_fenced;
       bingo_suspect_log_q <= bingo_core_dead_suspect;
       if (({bingo_remote_link_error, bingo_remote_done_mismatch, bingo_replay_stuck} != bingo_status_log_q) ||
-          (bingo_core_fenced != bingo_fenced_log_q) || (bingo_core_dead_suspect != bingo_suspect_log_q))
+          (bingo_core_fenced != bingo_fenced_log_q) || (bingo_core_dead_suspect != bingo_suspect_log_q)) begin
+        // fenced / dead_suspect in the order of the status registers: bit
+        // core + cluster * BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER
+        automatic logic [63:0] fenced_reg = '0, suspect_reg = '0;
+        for (int core = 0; core < BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER; core++) begin
+          for (int cluster = 0; cluster < NrClustersPerQuad; cluster++) begin
+            fenced_reg[core + cluster*BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER]  = bingo_core_fenced[core][cluster];
+            suspect_reg[core + cluster*BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER] = bingo_core_dead_suspect[core][cluster];
+          end
+        end
         $display("[BINGO_STATUS] %0t chip=%0d replay_stuck=%0b remote_done_mismatch=%0b link_error=%0d fenced=0x%0h dead_suspect=0x%0h",
                  $time, chip_id_i, bingo_replay_stuck, bingo_remote_done_mismatch, bingo_remote_link_error,
-                 bingo_core_fenced, bingo_core_dead_suspect);
+                 fenced_reg, suspect_reg);
+      end
     end
   end
 `endif

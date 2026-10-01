@@ -486,6 +486,11 @@ void bingo_close_all_clusters(bingo_task_t **task_list, uint32_t num_tasks);
 // stale 0 (which would otherwise cause a spurious initial RAISE doorbell).
 #define BINGO_PM_IDLE_POWER_LEVEL   25
 #define BINGO_PM_NORMAL_POWER_LEVEL 6
+// Recovery boost: level of a domain whose core runs a dead core's tasks (a
+// smaller clock divider than the normal level); 0 = off
+#ifndef BINGO_PM_BOOST_POWER_LEVEL
+#define BINGO_PM_BOOST_POWER_LEVEL  0
+#endif
 
 // Configure the power-management registers (idle/normal power levels, per-core
 // power domains, EN_IDLE_PM) without starting a task offload. Exposed so a test

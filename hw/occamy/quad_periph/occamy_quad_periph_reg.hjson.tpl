@@ -381,6 +381,16 @@
         }
       ]
     },
+    { name: "BOOST_POWER_LEVEL",
+      desc: "Bingo recovery boost: power level (clock divider) of a domain whose core runs a dead core's tasks; 0 = off",
+      swaccess: "rw",
+      hwaccess: "hro",
+      fields: [
+        { bits: "31:0", resval: "0", name: "BOOST_POWER_LEVEL",
+          desc: '''Power level while a substitute of a fenced core is busy (0: no boost).'''
+        }
+      ]
+    },
     { name: "BINGO_CORE_FENCED",
       desc: "Bingo watchdog: fenced (confirmed dead, sticky) cores (bit core + cluster * cores per cluster, host slot included).",
       swaccess: "ro",

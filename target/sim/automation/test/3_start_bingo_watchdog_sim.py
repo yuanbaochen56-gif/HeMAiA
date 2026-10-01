@@ -46,6 +46,9 @@ s13     as s10, but the import may only use its home   no EOC; core 1 fenced, ta
         nothing can run the task                           (REJECT packet on the done page), the
                                                            proxy stuck (replay_stuck=1), its exit
                                                            task never exported, no link error
+s14     as s7, with the recovery boost (host sets the      as s7, plus the cluster domain goes to
+        boost power level to 3, faster than the normal     level 3 while core 2 runs core 1's
+        level 6)                                           tasks ([BINGO_PM]); EOC compared to s7
 s12     as s5, but with level 2 (substitute mask 3):       EOC success, both host checks PASS; the
         the cluster-0 DM core hangs on task 0 and the      victim is fenced, task 0 replayed on the
         cluster-1 DM core (same type) takes over           cluster-1 DM core, the victim retired,
@@ -263,6 +266,15 @@ SCENARIOS: Dict[str, dict] = {
         fault_gid=TWO_PLAIN_FAULT_GID, victim=TWO_PLAIN_VICTIM,
         remote_reject=True, expect_core_types=TWO_PLAIN_CORE_TYPES,
         expect_eoc=False, expect_fence=True, sim_timeout_s=1800,
+    ),
+    "s14": dict(
+        desc="as s7 with the recovery boost: the substitute's domain runs at level 3 while it takes over",
+        cfg=ONE_CLUSTER_CFG, cluster_swap=TWO_PLAIN_CLUSTER_SWAP,
+        timeout_cycles=TIGHT_TIMEOUT_CYCLES, confirm_timeout_cycles=CONFIRM_TIMEOUT_CYCLES,
+        workload="int32_add_2plain_1cluster", fault_stall_cycles=0,
+        fault_gid=TWO_PLAIN_FAULT_GID, victim=TWO_PLAIN_VICTIM, substitute=TWO_PLAIN_SUBSTITUTE,
+        extra_flags="-DBINGO_PM_BOOST_POWER_LEVEL=3", expect_boost_level=3,
+        expect_eoc=True, expect_fence=True, sim_timeout_s=3600,
     ),
     "s12": dict(
         desc="cluster-0 DM core hangs, level 2: its tasks run on the cluster-1 DM core, run completes",
@@ -629,6 +641,8 @@ def run_scenario(name: str, args: argparse.Namespace) -> bool:
             # The substitute gets the same task replayed: only the victim misbehaves
             _, core, cluster = sc["victim"]
             task["extra_user_flags"] += f" -DBINGO_WD_FAULT_CLUSTER={cluster} -DBINGO_WD_FAULT_CORE={core}"
+    if sc.get("extra_flags"):
+        task["extra_user_flags"] = (task.get("extra_user_flags", "") + " " + sc["extra_flags"]).strip()
 
     runner = HeMAiASimRunner(
         repo_root=_REPO_ROOT,
@@ -657,6 +671,16 @@ def run_scenario(name: str, args: argparse.Namespace) -> bool:
     problems = evaluate(name, sc, log_text, uart_text)
     if sc.get("expect_core_types"):
         problems += check_core_types(sc["expect_core_types"])
+    if sc.get("expect_boost_level"):
+        # The victim's cluster domain (1) reaches the boost level after the fence
+        fence_t = [int(m.group(1)) for m in WD_RE.finditer(log_text) if m.group(6) == "1"]
+        boosts = [int(t) for t, lvl in re.findall(r"\[BINGO_PM\] (\d+) domain=1 level=(\d+)", log_text)
+                  if int(lvl) == sc["expect_boost_level"]]
+        if not fence_t or not any(t >= fence_t[0] for t in boosts):
+            problems.append(f"no [BINGO_PM] domain=1 level={sc['expect_boost_level']} after the fence")
+    eoc = re.search(r"All chips finished successfully at (\d+)", log_text)
+    if eoc:
+        print(f"[{name}] EOC at {int(eoc.group(1)) / 1e9:.3f} ms")
     if not log_text:
         problems.append(f"missing {log_path}")
 

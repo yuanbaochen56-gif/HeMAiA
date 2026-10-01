@@ -26,6 +26,7 @@ module occamy_quad_periph import occamy_quad_periph_reg_pkg::*; #(
   output logic [47:0] bingo_hw_manager_pm_base_addr_o,
   output reg_data_t bingo_hw_manager_enable_idle_pm_o,
   output reg_data_t bingo_hw_manager_idle_power_level_o,
+  output reg_data_t bingo_hw_manager_boost_power_level_o,
   output reg_data_t bingo_hw_manager_norm_power_level_o,
   output reg_data_t [BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER-1:0][BINGO_HW_MANAGER_NR_CLUSTER-1:0] bingo_hw_manager_core_power_domain_o,
   // DARTS CERF
@@ -59,6 +60,7 @@ module occamy_quad_periph import occamy_quad_periph_reg_pkg::*; #(
   assign bingo_hw_manager_pm_base_addr_o[47:32] = reg2hw.pm_base_addr_hi.q[15:0];
   assign bingo_hw_manager_enable_idle_pm_o = reg2hw.en_idle_pm.q;
   assign bingo_hw_manager_idle_power_level_o = reg2hw.idle_power_level.q;
+  assign bingo_hw_manager_boost_power_level_o = reg2hw.boost_power_level.q;
   assign bingo_hw_manager_norm_power_level_o = reg2hw.norm_power_level.q;
   always_comb begin
     for (int core = 0; core < BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER; core++) begin

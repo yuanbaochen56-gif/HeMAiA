@@ -207,6 +207,10 @@ inline uintptr_t quad_ctrl_idle_power_level_addr(){
     return QUAD_AXI_LITE_NARROW_PERIPHERALS_BASE_ADDR + OCCAMY_QUAD_PERIPH_IDLE_POWER_LEVEL_REG_OFFSET;
 }
 
+inline uintptr_t quad_ctrl_boost_power_level_addr(){
+    return QUAD_AXI_LITE_NARROW_PERIPHERALS_BASE_ADDR + OCCAMY_QUAD_PERIPH_BOOST_POWER_LEVEL_REG_OFFSET;
+}
+
 inline uintptr_t quad_ctrl_norm_power_level_addr(){
     return QUAD_AXI_LITE_NARROW_PERIPHERALS_BASE_ADDR + OCCAMY_QUAD_PERIPH_NORM_POWER_LEVEL_REG_OFFSET;
 }

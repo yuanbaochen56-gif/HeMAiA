@@ -739,6 +739,10 @@ void bingo_hw_scheduler_init_pm(){
     writew(BINGO_PM_BOOST_POWER_LEVEL,   (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_boost_power_level_addr()));
     // 2c. quad_ctrl_idle_entry_delay_addr: cycles of idleness before a domain drops to the idle level (0 = at once)
     writew(BINGO_PM_IDLE_ENTRY_DELAY,    (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_idle_entry_delay_addr()));
+    printf_safe("Chip(%x, %x): [Host] Bingo PM: idle_level=%d normal_level=%d boost_level=%d idle_entry_delay=%d\r\n",
+                get_current_chip_loc_x(), get_current_chip_loc_y(),
+                BINGO_PM_IDLE_POWER_LEVEL, BINGO_PM_NORMAL_POWER_LEVEL,
+                BINGO_PM_BOOST_POWER_LEVEL, BINGO_PM_IDLE_ENTRY_DELAY);
     // 3. quad_ctrl_pm_base_hi_addr: set to the high 32 bits of the power manager base address
     uint64_t CLK_CONTROLLER_ADDR = chiplet_addr_transform(HEMAIA_CLK_RST_CONTROLLER_BASE_ADDR);
     writew((uint32_t)(CLK_CONTROLLER_ADDR>>32),       (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_pm_base_hi_addr()));

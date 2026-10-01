@@ -74,6 +74,13 @@ def main() -> None:
             print(f"[sweep] {name} {point}: {' '.join(cmd)}", flush=True)
             rc = subprocess.run(cmd).returncode
             print(f"[sweep] {name} {point}: driver exit {rc}", flush=True)
+            want = re.search(r"BINGO_PM_IDLE_ENTRY_DELAY=(\d+)", " ".join(opts))
+            for sc in cfg["scenarios"]:
+                for uart in (set_root / point / sc).glob("*/bin/uart_chip_0_0.log"):
+                    got = re.search(r"idle_entry_delay=(\d+)", uart.read_text(errors="replace"))
+                    if want and (not got or got.group(1) != want.group(1)):
+                        print(f"[sweep] WARNING {name} {point} {sc}: host used idle_entry_delay="
+                              f"{got.group(1) if got else '?'}, requested {want.group(1)}", flush=True)
             for sc in cfg["scenarios"]:
                 if (set_root / point / sc).exists():
                     runs += ["--run", f"{sc}_{point}={set_root / point / sc}"]

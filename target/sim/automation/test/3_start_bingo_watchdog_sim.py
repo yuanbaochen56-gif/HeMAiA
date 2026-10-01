@@ -371,10 +371,12 @@ def clean_app_builds(workload: str) -> None:
 
     The device runtime library matters too: the offload loop that actually runs
     (bingo_hw_offload_manager, a C99 inline function) is linked from
-    libsnRuntime.a, not from the app's own translation unit.
+    libsnRuntime.a, not from the app's own translation unit. So does the host's
+    libbingo: BINGO_PM_* (idle entry delay, boost level) are compiled into it.
     """
     for build_dir in (
         _REPO_ROOT / "target/sw/device/runtime/build",
+        _REPO_ROOT / "target/sw/host/runtime/libbingo/build",
         _REPO_ROOT / "target/sw/device/apps/snax/snax-bingo-offload/build",
         _REPO_ROOT / "target/sw/host/apps/offload_bingo_hw/single_chip/workloads" / workload / "build",
     ):
@@ -679,7 +681,8 @@ def run_scenario(name: str, args: argparse.Namespace) -> bool:
         problems += check_core_types(sc["expect_core_types"])
     if sc["expect_eoc"] and log_text:
         # The host prints the manager's status at the end; its fenced bitmap must
-        # match the last [BINGO_STATUS] of the RTL (0 without such a line)
+        # match the last [BINGO_STATUS] of the RTL (register order; 0 without
+        # such a line)
         host = re.search(r"\[Host\] Bingo status: replay_stuck=(\d+) remote_done_mismatch=(\d+) "
                          r"link_error=(\d+) fenced=0x([0-9a-fA-F]+)", uart_text)
         rtl = re.findall(r"\[BINGO_STATUS\] \d+ chip=\d+ .*fenced=0x([0-9a-fA-F]+)", log_text)

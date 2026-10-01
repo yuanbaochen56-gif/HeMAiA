@@ -42,6 +42,7 @@ WD_RE = re.compile(r"\[BINGO_WD\] (\d+) chip=\d+ core=\d+ cluster=\d+ dead_suspe
 MOVE_RE = re.compile(r"\[BINGO_(?:REPLAY|EXPORT)\] (\d+) ")
 RETIRED_RE = re.compile(r"\[BINGO_RETIRED\] (\d+) ")
 PM_RE = re.compile(r"\[BINGO_PM\] (\d+) domain=1 level=(\d+)")
+PM_CFG_RE = re.compile(r"\[Host\] Bingo PM: idle_level=(\d+) normal_level=(\d+) boost_level=(\d+) idle_entry_delay=(\d+)")
 PS_PER_MS = 1e9  # sim times are in ps
 
 
@@ -57,6 +58,11 @@ def find_log(path: Path) -> Path:
 def metrics(log: Path, normal_level: int) -> Dict[str, object]:
     text = log.read_text(errors="replace")
     m: Dict[str, object] = {}
+    # PM settings as the host programmed them (UART next to the sim log)
+    uart = log.parent / "uart_chip_0_0.log"
+    cfg = PM_CFG_RE.search(uart.read_text(errors="replace")) if uart.exists() else None
+    m["boost"] = int(cfg.group(3)) if cfg else None
+    m["idle_delay"] = int(cfg.group(4)) if cfg else None
     eoc = EOC_RE.search(text)
     m["eoc_ms"] = int(eoc.group(1)) / PS_PER_MS if eoc else None
     suspects = [int(t) for t, s, f in WD_RE.findall(text) if s == "1" and f != "1"]
@@ -126,8 +132,8 @@ def main() -> None:
     for r in rows:
         r["overhead_ms"] = (r["eoc_ms"] - base) if (base is not None and r.get("eoc_ms") is not None) else None
 
-    fixed = ["run", "eoc_ms", "overhead_ms", "suspect_ms", "fence_ms", "move_ms", "retired_ms",
-             "recovery_ms", "window_ms", "cycles_rel"]
+    fixed = ["run", "idle_delay", "boost", "eoc_ms", "overhead_ms", "suspect_ms", "fence_ms", "move_ms",
+             "retired_ms", "recovery_ms", "window_ms", "cycles_rel"]
     levels = sorted({k for r in rows for k in r if k.startswith("lvl_")}, key=lambda k: int(k.split("_")[1]))
     cols = fixed + levels
     print("| " + " | ".join(cols) + " |")

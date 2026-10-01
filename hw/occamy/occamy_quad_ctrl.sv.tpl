@@ -91,6 +91,10 @@ module ${name}_quad_ctrl
   };
   // core types the link has a target for (the others are never exported)
   logic [2**${bingo_core_type_id_width}-1:0]                         bingo_rd_export_type_en;
+  // one export queue per link peer: the peer of each core type, peers with a credit
+  localparam int unsigned BingoRemotePeerIdWidth = (BingoRemoteNumPeers > 1) ? $clog2(BingoRemoteNumPeers) : 1;
+  logic [2**${bingo_core_type_id_width}-1:0][BingoRemotePeerIdWidth-1:0] bingo_rd_export_type_peer;
+  logic [BingoRemoteNumPeers-1:0]                                     bingo_rd_export_peer_ready;
   logic                                  bingo_rd_export_valid, bingo_rd_export_ready;
   logic [${quad_ctrl_axi_lite_xbar.dw-1}:0]                           bingo_rd_export_desc;
   logic [${bingo_core_type_id_width-1}:0]                            bingo_rd_export_core_type;
@@ -318,6 +322,7 @@ module ${name}_quad_ctrl
     // (s1_quadrant.bingo_import_substitute_level_mask, default mask & 3)
     .SubstituteLevelMask       (3'd${bingo_substitute_level_mask}                   ),
     .ImportSubstituteLevelMask (3'd${bingo_import_substitute_level_mask}                   ),
+    .RemoteNumPeers            (BingoRemoteNumPeers                                  ),
     .CoreTypeIdWidth          (${bingo_core_type_id_width}                                        ),
     .CoreTypeId               (BingoCoreTypeId                           ),
     // snax_intf_translator only forwards CSR 0x5fe/0x5ff to this port (0x5fd would
@@ -421,6 +426,8 @@ module ${name}_quad_ctrl
     .remote_done_task_id_i                     (bingo_rdn_in_task_id                 ),
     .remote_done_reject_i                      (bingo_rdn_in_reject                  ),
     .remote_export_type_en_i                   (bingo_rd_export_type_en              ),
+    .remote_export_type_peer_i                 (bingo_rd_export_type_peer            ),
+    .remote_export_peer_ready_i                (bingo_rd_export_peer_ready           ),
     .remote_done_mismatch_o                    (bingo_remote_done_mismatch           )
   );
 
@@ -480,6 +487,8 @@ module ${name}_quad_ctrl
     .slv_req_i             ( ${quad_ctrl_axi_lite_xbar.out_bingo_remote_link.req_name()} ),
     .slv_resp_o            ( ${quad_ctrl_axi_lite_xbar.out_bingo_remote_link.rsp_name()} ),
     .target_valid_o        ( bingo_rd_export_type_en     ),
+    .target_peer_o         ( bingo_rd_export_type_peer   ),
+    .peer_ready_o          ( bingo_rd_export_peer_ready  ),
     .error_o               ( bingo_remote_link_error     ),
     .credits_o             ( /* unused */                )
   );

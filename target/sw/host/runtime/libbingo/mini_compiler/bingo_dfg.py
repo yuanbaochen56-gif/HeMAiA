@@ -3,6 +3,7 @@
 import os
 import subprocess
 import sys
+import warnings
 
 def install_package(package):
     subprocess.check_call([sys.executable, "-m", "pip", "install", package])
@@ -46,7 +47,8 @@ class BingoDFG(DiGraphWrapper[BingoNode]):
                  num_cores_per_cluster: int,
                  is_host_as_acc: bool,
                  chiplet_ids: list[int] = None,
-                 dep_tag_width: int = 4) -> None:
+                 dep_tag_width: int = 4,
+                 core_type_ids: dict[tuple[int, int], int] | None = None) -> None:
         super().__init__()
         # HW architecture parameters
         self.num_chiplets = num_chiplets
@@ -69,6 +71,12 @@ class BingoDFG(DiGraphWrapper[BingoNode]):
         self.id = -1
         self._next_cerf_group = 0
         self._gating_cerf_mappings: dict = {}  # gating_node → {expert_idx: cerf_group_id}
+        # Same slot/type table as BINGO_CORE_TYPE_ID in generated occamy.h.
+        # Only required by CERF fallback; existing graphs do not consult it.
+        self.core_type_ids = dict(core_type_ids or {})
+        self._cerf_fallbacks: list[tuple[BingoNode, BingoNode]] = []
+        self._cerf_fallback_table: dict = {}
+        self._cerf_fallback_nodes: set[BingoNode] = set()
     def bingo_add_node(self, node_obj: BingoNode) -> None:
         """Add a node to the DFG."""
 
@@ -89,6 +97,137 @@ class BingoDFG(DiGraphWrapper[BingoNode]):
         if cond_dic is not None:
             cond = True
         self.add_edge(from_node_obj, to_node_obj, cond=cond, cond_dic=cond_dic or {})
+
+    def bingo_add_cerf_fallback(self, primary: BingoNode, backup: BingoNode) -> None:
+        """Register representative nodes, resolving their groups after CERF compilation.
+
+        Pass core_type_ids=parse_bingo_core_type_ids(platformcfg) to BingoDFG
+        so conflicts and same-type backups can be checked against the hardware.
+        """
+        if primary not in self or backup not in self:
+            raise ValueError("CERF fallback representatives must belong to this DFG")
+        if primary is backup:
+            raise ValueError("CERF fallback needs distinct primary and backup nodes")
+        if primary.assigned_chiplet_id != backup.assigned_chiplet_id:
+            raise ValueError("CERF fallback groups must be on the same chiplet")
+        pair = (primary, backup)
+        if pair not in self._cerf_fallbacks:
+            self._cerf_fallbacks.append(pair)
+
+    def _compile_cerf_fallbacks(self) -> None:
+        """Add branch ordering, guard protected exits and build one table per chip."""
+        if not self._cerf_fallbacks:
+            return
+
+        def slot(node):
+            return (node.assigned_chiplet_id, node.assigned_cluster_id,
+                    node.assigned_core_id)
+
+        def core_type(node):
+            key = (node.assigned_cluster_id, node.assigned_core_id)
+            if key not in self.core_type_ids:
+                raise ValueError(f"Missing core_type_ids for CERF fallback slot {slot(node)}")
+            value = self.core_type_ids[key]
+            if not isinstance(value, int) or not 0 <= value < 32:
+                raise ValueError(f"CERF fallback core type {value} does not fit its 32-bit mask")
+            return value
+
+        table = {}
+        protected = {}
+        fallback_nodes = set()
+        backup_nodes = set()
+        ordering_edges = []
+        same_type_backups = []
+        for primary, backup in self._cerf_fallbacks:
+            if primary not in self or backup not in self:
+                raise ValueError("CERF fallback representatives must belong to this DFG")
+            if primary.assigned_chiplet_id != backup.assigned_chiplet_id:
+                raise ValueError("CERF fallback groups must be on the same chiplet")
+            for node in (primary, backup):
+                if (not node.cond_exec_en or node.cond_exec_invert
+                        or not 0 <= node.cond_exec_group_id < 32):
+                    raise ValueError(f"CERF fallback node '{node.node_name}' needs a non-inverted CERF group")
+            clear, set_group = primary.cond_exec_group_id, backup.cond_exec_group_id
+            if clear == set_group:
+                raise ValueError("CERF fallback primary and backup need distinct groups")
+            chip = primary.assigned_chiplet_id
+            type_id = core_type(primary)
+            key = (chip, type_id)
+            if key in table and table[key][2:] != (clear, set_group):
+                raise ValueError(f"Conflicting CERF fallback entries for chip {chip} core type {type_id}")
+            table.setdefault(key, (primary.assigned_cluster_id, primary.assigned_core_id,
+                                   clear, set_group))
+            if slot(primary) in protected and protected[slot(primary)] != clear:
+                raise ValueError(f"Conflicting CERF fallback groups for protected slot {slot(primary)}")
+            protected[slot(primary)] = clear
+
+            groups = [
+                [n for n in self.node_list if n.assigned_chiplet_id == chip
+                 and n.cond_exec_en and n.cond_exec_group_id == group]
+                for group in (clear, set_group)
+            ]
+            for nodes in groups:
+                if any(n.cond_exec_invert for n in nodes):
+                    raise ValueError("CERF fallback groups cannot contain inverted tasks")
+                # Disabling the backup's SW guard is only sound for a dedicated
+                # expert group, not multiple experts sharing a hardware group.
+                owners = {(n._gating_node, n._cond_node_index) for n in nodes
+                          if n._gating_node is not None}
+                if len(owners) > 1:
+                    raise ValueError("CERF fallback requires dedicated groups, not shared expert groups")
+            primary_nodes, backups = groups
+            primary_set, backup_set = set(primary_nodes), set(backups)
+            sinks = [n for n in primary_nodes if not any(s in primary_set for s in self.successors(n))]
+            sources = [n for n in backups if not any(p in backup_set for p in self.predecessors(n))]
+            ordering_edges.extend((sink, source) for sink in sinks for source in sources)
+            fallback_nodes.update(primary_set | backup_set)
+            backup_nodes.update(backup_set)
+            if any(core_type(n) == type_id for n in backups):
+                same_type_backups.append(primary.node_name)
+
+        preview = nx.DiGraph(self)
+        preview.add_edges_from(ordering_edges)
+        if not nx.is_directed_acyclic_graph(preview):
+            raise ValueError("CERF fallback branch ordering would create a cycle")
+        topo = list(nx.topological_sort(preview))
+        for protected_slot, group in protected.items():
+            first = next(i for i, n in enumerate(topo)
+                         if slot(n) == protected_slot and n.cond_exec_en
+                         and n.cond_exec_group_id == group)
+            for node in topo[first + 1:]:
+                if slot(node) != protected_slot or not node.kernel_name:
+                    continue
+                if node.kernel_name in ("__snax_bingo_kernel_exit", "__host_bingo_kernel_exit"):
+                    continue
+                if not node.cond_exec_en or node.cond_exec_group_id != group or node.cond_exec_invert:
+                    raise ValueError(
+                        f"Task '{node.node_name}' on protected slot {protected_slot} "
+                        f"follows the primary branch outside CERF group {group}")
+
+        for source, target in ordering_edges:
+            if not self.has_edge(source, target):
+                self.bingo_add_edge(source, target)
+        for node in self.node_list:
+            if (slot(node) in protected
+                    and node.kernel_name in ("__snax_bingo_kernel_exit", "__host_bingo_kernel_exit")):
+                node.cond_exec_en = True
+                node.cond_exec_group_id = protected[slot(node)]
+                node.cond_exec_invert = False
+        # The router selected the primary, so its activation array still says
+        # "skip backup" after a hardware fallback. CERF alone gates that branch.
+        for node in backup_nodes:
+            node._gating_node = None
+            node._cond_node_index = None
+            if node.kernel_args:
+                node.kernel_args._gating_sp_c_expr = None
+                node.kernel_args._cond_node_index = None
+        self._cerf_fallback_table = table
+        self._cerf_fallback_nodes = fallback_nodes
+        for name in same_type_backups:
+            warnings.warn(
+                f"CERF fallback for '{name}' has a same-type backup; reachable "
+                "substitution levels can select it as a substitute and prevent degradation",
+                UserWarning, stacklevel=2)
 
     def bingo_insert_node_between(self, from_node_obj: BingoNode, to_node_obj: BingoNode, new_node_obj: BingoNode) -> None:
         """Insert a new node between two existing nodes in the DFG."""
@@ -1963,6 +2102,20 @@ class BingoDFG(DiGraphWrapper[BingoNode]):
         f.write('        OFFLOAD_BINGO_HW_DEBUG_PRINT_SAFE("Chip(%x, %x): [Host] Init HW Bingo Scheduler\\r\\n",\n')
         f.write('               get_current_chip_loc_x(), get_current_chip_loc_y());\n\n')
 
+        entries = [(type_id, row) for (chip, type_id), row in sorted(self._cerf_fallback_table.items())
+                   if chip == chiplet_id]
+        if entries:
+            f.write("#ifdef BINGO_CERF_FB_CLUSTER\n")
+            f.write('#error "Do not combine compiler CERF fallback with BINGO_CERF_FB_CLUSTER"\n')
+            f.write("#endif\n")
+            masks = []
+            for type_id, (cluster, core, clear, set_group) in entries:
+                type_expr = f"BINGO_CORE_TYPE_ID({cluster}, {core})"
+                f.write(f'        _Static_assert({type_expr} == {type_id}, "CERF fallback core type mismatch");\n')
+                f.write(f"        bingo_cerf_fb_set({type_expr}, {clear}, {set_group});\n")
+                masks.append(f"(1u << {type_expr})")
+            f.write(f"        bingo_cerf_fb_enable({' | '.join(masks)});\n\n")
+
         f.write(f"        bingo_hw_scheduler_init((uint64_t)(uintptr_t)device_arg_list_chip_{chiplet_id:02x},\n")
         f.write(f"                                (uint64_t)(uintptr_t)device_kernel_list_chip_{chiplet_id:02x},\n")
         f.write(f"                                num_dev_tasks_chip_{chiplet_id:02x},\n")
@@ -1996,6 +2149,11 @@ class BingoDFG(DiGraphWrapper[BingoNode]):
             src_grp = node_to_group[u]
             dst_grp = node_to_group.get(v)
             if dst_grp != src_grp:
+                # Explicit fallback branches propagate skipped dependencies,
+                # including their ordered backup and unguarded join.
+                if u in self._cerf_fallback_nodes and (
+                        v in self._cerf_fallback_nodes or not v.cond_exec_en):
+                    continue
                 dst_info = (f"CERF group {dst_grp}" if dst_grp is not None
                             else "not CERF-gated")
                 raise ValueError(
@@ -2073,7 +2231,12 @@ class BingoDFG(DiGraphWrapper[BingoNode]):
         # Compile conditional regions (CERF group assignment)
         # Must be called before dummy node transforms.
         # No-op for non-conditional DFGs (returns empty dict).
+        if self._cerf_fallbacks:
+            manual_groups = [n.cond_exec_group_id for n in self.node_list if n.cond_exec_en]
+            if manual_groups:
+                self._next_cerf_group = max(self._next_cerf_group, max(manual_groups) + 1)
         self.bingo_compile_conditional_regions()
+        self._compile_cerf_fallbacks()
         self._validate_cerf_cross_group_edges()
         # Identity-aware deps: per-edge tags are allocated LAST (after dep-info
         # assignment). The allocator's min-chain-cover reuses a tag across edges

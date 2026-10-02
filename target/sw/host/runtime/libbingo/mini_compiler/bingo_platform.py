@@ -48,6 +48,32 @@ def parse_platform_cfg(occamy_h_path):
     }
 
 
+def parse_bingo_core_type_ids(occamy_h_path):
+    """Read the slot/type table from the generated BINGO_CORE_TYPE_ID macro."""
+    text = Path(occamy_h_path).read_text()
+    macro = re.search(r"^\s*#define\s+BINGO_CORE_TYPE_ID\(cluster,\s*core\)\s+(.+)$",
+                      text, re.MULTILINE)
+    if not macro:
+        raise ValueError(f"Missing BINGO_CORE_TYPE_ID in {occamy_h_path}")
+    entries = re.findall(
+        r"\(\(cluster\)\s*==\s*(\d+)\s*&&\s*\(core\)\s*==\s*(\d+)\)\s*\?\s*(\d+)\s*:",
+        macro.group(1))
+    if not entries:
+        raise ValueError(f"Cannot parse BINGO_CORE_TYPE_ID in {occamy_h_path}")
+    defines = _parse_defines(occamy_h_path)
+    clusters = _require_define(defines, "N_CLUSTERS_PER_CHIPLET", occamy_h_path)
+    cores = _require_define(defines, "N_CORES_PER_CLUSTER", occamy_h_path)
+    # The macro lists native cores; its default 0 covers the extra host/tied-off
+    # slot that BingoDFG adds when is_host_as_acc is enabled.
+    result = {(cluster, core): 0 for cluster in range(clusters) for core in range(cores + 1)}
+    for cluster, core, core_type in entries:
+        key = (int(cluster), int(core))
+        if key not in result:
+            raise ValueError(f"BINGO_CORE_TYPE_ID slot {key} is outside {occamy_h_path}'s geometry")
+        result[key] = int(core_type)
+    return result
+
+
 def guard_cluster_count(param, platform, output_dir, output_offload_file_name):
     expected = param.get("num_clusters")
     if expected is None:

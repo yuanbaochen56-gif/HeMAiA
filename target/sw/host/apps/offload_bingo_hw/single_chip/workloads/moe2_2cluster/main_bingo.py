@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
-"""Two experts, top-1, with a manually assigned g0 -> g1 fallback.
+"""Two experts, top-1, with a compiler-generated g0 -> g1 fallback.
 
 router -> gating -> expert 0 (cluster 0, g0) -> expert 1 (cluster 1, g1)
                                                  -> host join -> exits
 
-The backup's loads wait for expert 0's final store, so CERF does not skip
-them before the watchdog has confirmed the fault. The fault core's exit is
-also in g0: no mandatory work may remain on that shared waiting queue.
+The compiler orders the backup's loads after expert 0's final store and
+places the fault core's exit in g0, so the shared waiting queue can drain.
 """
 
 import argparse
@@ -22,7 +21,7 @@ sys.path.append(str(ROOT_DIR / "target/sw/host/runtime/libbingo/mini_compiler"))
 
 from moe_datagen import generate_moe_data, emit_header_file
 from bingo_dfg import BingoDFG
-from bingo_platform import guard_cluster_count, parse_platform_cfg
+from bingo_platform import guard_cluster_count, parse_bingo_core_type_ids, parse_platform_cfg
 from bingo_node import BingoNode
 from bingo_mem_handle import BingoMemAlloc, BingoMemSymbol
 from bingo_kernel_args import (
@@ -33,16 +32,6 @@ from bingo_kernel_args import (
     SnaxBingoKernelGemmFullArgs,
     SnaxBingoKernelIdma1dCopyArgs,
 )
-
-
-class MoE2DFG(BingoDFG):
-    def bingo_transform_dfg_add_exit_nodes(self):
-        super().bingo_transform_dfg_add_exit_nodes()
-        for node in self.node_list:
-            if (node.kernel_name == "__snax_bingo_kernel_exit"
-                    and node.assigned_cluster_id == 0 and node.assigned_core_id == 0):
-                node.cond_exec_en = True
-                node.cond_exec_group_id = 0
 
 
 def main():
@@ -79,8 +68,9 @@ def main():
     if args.data_h:
         emit_header_file(str(args.data_h), params, data)
 
-    dfg = MoE2DFG(num_chiplets=1, num_clusters_per_chiplet=2,
-                  num_cores_per_cluster=2, is_host_as_acc=True, chiplet_ids=[0])
+    dfg = BingoDFG(num_chiplets=1, num_clusters_per_chiplet=2,
+                   num_cores_per_cluster=2, is_host_as_acc=True, chiplet_ids=[0],
+                   core_type_ids=parse_bingo_core_type_ids(args.platformcfg))
     logits = BingoMemAlloc("logits", 8, "L3")
     activation = BingoMemAlloc("router_activation", 2, "L3")
     router = BingoNode(0, 0, 2, node_name="router",
@@ -139,10 +129,9 @@ def main():
         dfg.bingo_add_edge(ld_a, gemm)
         dfg.bingo_add_edge(ld_b, gemm)
         dfg.bingo_add_edge(gemm, store)
-        if expert == 1:
-            dfg.bingo_add_edge(branches[0][-1], ld_a)
-            dfg.bingo_add_edge(branches[0][-1], ld_b)
         branches.append((ld_a, ld_b, gemm, store))
+
+    dfg.bingo_add_cerf_fallback(branches[0][2], branches[1][2])
 
     join = BingoNode(0, 0, 2, node_name="join",
                      kernel_name="__host_bingo_kernel_dummy",

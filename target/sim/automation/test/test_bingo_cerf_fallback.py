@@ -32,6 +32,20 @@ def fixture(fault):
 
 
 class CerfFallbackTests(unittest.TestCase):
+    def test_moe_scenarios_use_compiler_tables_without_legacy_macros(self):
+        for name in ("s16", "s17", "s24", "s25"):
+            with self.subTest(scenario=name):
+                scenario = driver.SCENARIOS[name]
+                self.assertEqual(scenario["workload"], "moe2_2cluster")
+                self.assertNotIn("BINGO_CERF_FB_", scenario["extra_flags"])
+                self.assertEqual(scenario["extra_cfg"]["bingo_substitute_level_mask"], "1")
+                expert = 0 if name == "s17" else 1
+                self.assertIn(f"-DBINGO_MOE_EXPECT_EXPERT={expert}", scenario["extra_flags"])
+                if name != "s17":
+                    self.assertEqual(scenario["fault_gid"], 4)
+        self.assertIn("-DBINGO_BOOST_POLICY=0x101",
+                      driver.SCENARIOS["s25"]["extra_flags"].split())
+
     def check_fixture(self, fault, log=None, uart=None):
         original_log, original_uart = fixture(fault)
         sc = driver.SCENARIOS["s16" if fault else "s17"]

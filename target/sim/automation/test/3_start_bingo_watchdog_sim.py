@@ -193,8 +193,6 @@ HEMAIA_CI_SLOTS = 3
 CHAIN_FLAGS = "-DBINGO_WD_FAULT_PRE_STALL_CYCLES=100000 -DBINGO_RISK_LATE=30000"
 MOE2_FAULT_GID = 4  # e0_gemm; explicit node ids in moe2_2cluster/main_bingo.py
 MOE2_CORE_TYPE = 1
-MOE2_FB_FLAGS = ("-DBINGO_CERF_FB_CLUSTER=0 -DBINGO_CERF_FB_CORE=0 "
-                 "-DBINGO_CERF_FB_CLEAR=0 -DBINGO_CERF_FB_SET=1")
 
 SCENARIOS: Dict[str, dict] = {
     "s1": dict(
@@ -335,7 +333,7 @@ SCENARIOS: Dict[str, dict] = {
         extra_cfg={"bingo_substitute_level_mask": "1"}, cfg_suffix="_cerf_l1",
         workload="moe2_2cluster", fault_stall_cycles=0,
         fault_gid=MOE2_FAULT_GID, victim=(0, 0, 0), cerf_fallback=True,
-        extra_flags=MOE2_FB_FLAGS + " -DBINGO_MOE_EXPECT_EXPERT=1",
+        extra_flags="-DBINGO_MOE_EXPECT_EXPERT=1",
         expect_core_types={0: MOE2_CORE_TYPE, 1: 2, 2: 0},
         expect_eoc=True, expect_fence=True, expect_host_stuck=True, sim_timeout_s=900,
     ),
@@ -346,7 +344,7 @@ SCENARIOS: Dict[str, dict] = {
         extra_cfg={"bingo_substitute_level_mask": "1"}, cfg_suffix="_cerf_l1",
         workload="moe2_2cluster", fault_stall_cycles=None, cerf_fallback=True,
         victim=(0, 0, 0),
-        extra_flags=MOE2_FB_FLAGS + " -DBINGO_MOE_EXPECT_EXPERT=0",
+        extra_flags="-DBINGO_MOE_EXPECT_EXPERT=0",
         expect_core_types={0: MOE2_CORE_TYPE, 1: 2, 2: 0},
         expect_eoc=True, sim_timeout_s=900,
     ),
@@ -429,7 +427,7 @@ SCENARIOS: Dict[str, dict] = {
         extra_cfg={"bingo_substitute_level_mask": "1"}, cfg_suffix="_cerf_l1",
         workload="moe2_2cluster", fault_stall_cycles=0,
         fault_gid=MOE2_FAULT_GID, victim=(0, 0, 0), cerf_fallback=True,
-        extra_flags=MOE2_FB_FLAGS + " -DBINGO_MOE_EXPECT_EXPERT=1 "
+        extra_flags="-DBINGO_MOE_EXPECT_EXPERT=1 "
                     "-DBINGO_PM_BOOST_POWER_LEVEL=3 -DBINGO_BOOST_POLICY=0x0",
         expect_core_types={0: MOE2_CORE_TYPE, 1: 2, 2: 0}, expect_boost_domains=(),
         expect_eoc=True, expect_fence=True, expect_host_stuck=True, sim_timeout_s=900,
@@ -442,7 +440,7 @@ SCENARIOS: Dict[str, dict] = {
         workload="moe2_2cluster", fault_stall_cycles=0,
         fault_gid=MOE2_FAULT_GID, victim=(0, 0, 0), cerf_fallback=True,
         # capacity policy, one boosted domain per lost core, no minimum load
-        extra_flags=MOE2_FB_FLAGS + " -DBINGO_MOE_EXPECT_EXPERT=1 "
+        extra_flags="-DBINGO_MOE_EXPECT_EXPERT=1 "
                     "-DBINGO_PM_BOOST_POWER_LEVEL=3 -DBINGO_BOOST_POLICY=0x101",
         expect_core_types={0: MOE2_CORE_TYPE, 1: 2, 2: 0}, expect_boost_domains=(2,),
         expect_eoc=True, expect_fence=True, expect_host_stuck=True, sim_timeout_s=900,

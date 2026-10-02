@@ -129,6 +129,7 @@ module ${name}_quad_ctrl
   cfg_t                                  bingo_remote_proxy_timeout;
   logic                                  bingo_replay_stuck;
   logic [BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER-1:0][NrClustersPerQuad-1:0] bingo_core_fenced;
+  logic [BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER-1:0][NrClustersPerQuad-1:0] bingo_replay_blocked;
   logic [BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER-1:0][NrClustersPerQuad-1:0] bingo_core_dead_suspect;
 
 
@@ -250,7 +251,8 @@ module ${name}_quad_ctrl
     .bingo_hw_manager_boost_policy_o          (bingo_boost_policy                  ),
     .bingo_hw_manager_remote_link_error_i     (bingo_remote_link_error             ),
     .bingo_hw_manager_core_dead_suspect_i     (bingo_core_dead_suspect             ),
-    .bingo_hw_manager_core_fenced_i           (bingo_core_fenced                   )
+    .bingo_hw_manager_core_fenced_i           (bingo_core_fenced                   ),
+    .bingo_hw_manager_replay_blocked_i        (bingo_replay_blocked                )
   );
 
 
@@ -438,6 +440,7 @@ module ${name}_quad_ctrl
     .core_fenced_o                             (bingo_core_fenced                    ),
     .core_dead_suspect_o                       (bingo_core_dead_suspect              ),
     .replay_stuck_o                            (bingo_replay_stuck                   ),
+    .replay_blocked_o                          (bingo_replay_blocked                 ),
     // Level 3 remote dispatch (i_bingo_remote_link)
     .remote_dispatch_valid_o                   (bingo_rd_export_valid                ),
     .remote_dispatch_ready_i                   (bingo_rd_export_ready                ),

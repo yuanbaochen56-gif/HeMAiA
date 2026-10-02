@@ -560,5 +560,15 @@
         }
       ]
     },
+    { name: "BINGO_REPLAY_BLOCKED",
+      desc: "Bingo tasks blocked because replay is forbidden; sticky until reset, same slot bits as BINGO_CORE_FENCED.",
+      swaccess: "ro",
+      hwaccess: "hwo",
+      fields: [
+        { bits: "31:0", resval: "0", name: "BINGO_REPLAY_BLOCKED",
+          desc: '''Bit i: a possibly started task, or a task needing unsupported level-3 recovery, blocked bingo slot i.'''
+        }
+      ]
+    },
   ]
 }

@@ -31,6 +31,8 @@ class BingoNode(metaclass=ABCMeta):
         self._node_name = node_name if node_name else f"Node_ID{self._node_id}_Chiplet{self._assigned_chiplet_id}_Cluster{self._assigned_cluster_id}_Core{self._assigned_core_id}_Kernel{self._kernel_name}"
 
         self._node_type: Literal['normal', 'dummy', 'gating'] = "normal"
+        # None uses the compiler's known-kernel replay-safety analysis.
+        self.non_idempotent: bool | None = None
         self._dep_check_enable: bool = False
         self._dep_check_list: list[int] = []
         self._dep_set_enable: bool = False

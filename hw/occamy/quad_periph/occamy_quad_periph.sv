@@ -64,7 +64,8 @@ module occamy_quad_periph import occamy_quad_periph_reg_pkg::*; #(
   output reg_data_t   bingo_hw_manager_boost_policy_o,
   input  logic [5:0]  bingo_hw_manager_remote_link_error_i,
   input  logic [BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER-1:0][BINGO_HW_MANAGER_NR_CLUSTER-1:0] bingo_hw_manager_core_dead_suspect_i,
-  input  logic [BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER-1:0][BINGO_HW_MANAGER_NR_CLUSTER-1:0] bingo_hw_manager_core_fenced_i
+  input  logic [BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER-1:0][BINGO_HW_MANAGER_NR_CLUSTER-1:0] bingo_hw_manager_core_fenced_i,
+  input  logic [BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER-1:0][BINGO_HW_MANAGER_NR_CLUSTER-1:0] bingo_hw_manager_replay_blocked_i
 );
 
   occamy_quad_periph_hw2reg_t hw2reg;
@@ -143,6 +144,7 @@ module occamy_quad_periph import occamy_quad_periph_reg_pkg::*; #(
   always_comb begin
     hw2reg.bingo_core_dead_suspect.d = '0;
     hw2reg.bingo_core_fenced.d       = '0;
+    hw2reg.bingo_replay_blocked.d    = '0;
     for (int core = 0; core < BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER; core++) begin
       for (int cluster = 0; cluster < BINGO_HW_MANAGER_NR_CLUSTER; cluster++) begin
         if (core + cluster*BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER < REG_WIDTH) begin
@@ -150,12 +152,15 @@ module occamy_quad_periph import occamy_quad_periph_reg_pkg::*; #(
             bingo_hw_manager_core_dead_suspect_i[core][cluster];
           hw2reg.bingo_core_fenced.d[core + cluster*BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER] =
             bingo_hw_manager_core_fenced_i[core][cluster];
+          hw2reg.bingo_replay_blocked.d[core + cluster*BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER] =
+            bingo_hw_manager_replay_blocked_i[core][cluster];
         end
       end
     end
   end
   assign hw2reg.bingo_core_dead_suspect.de = 1'b1;
   assign hw2reg.bingo_core_fenced.de       = 1'b1;
+  assign hw2reg.bingo_replay_blocked.de    = 1'b1;
   occamy_quad_periph_reg_top #(
     .reg_req_t ( reg_req_t ),
     .reg_rsp_t ( reg_rsp_t  )

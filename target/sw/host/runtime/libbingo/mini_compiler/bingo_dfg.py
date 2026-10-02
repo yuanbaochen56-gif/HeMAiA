@@ -37,12 +37,69 @@ from bingo_kernel_args import (
     BINGO_GATING_MODE_STATIC,
     SnaxBingoKernelIdma1dCopyArgs,
     HostBingoKernelIdmaArgs,
+    SnaxBingoKernelInt32AddArgs,
+    SnaxBingoKernelGemmFullArgs,
+    SnaxBingoKernelGemmMinimalArgs,
+    _SnaxBingoKernelGemmPlainArgs,
+    _SnaxBingoKernelGemmQuantArgs,
 )
 
 # Explicit equivalents only; do not infer host kernels from their names.
 _HOST_FALLBACK_KERNELS = {
     ("__snax_bingo_kernel_idma_1d_copy", SnaxBingoKernelIdma1dCopyArgs):
         ("__host_bingo_kernel_idma", HostBingoKernelIdmaArgs),
+}
+
+def region(handle):
+    # Match _process_addr: a view offset is relative to the raw allocation.
+    if isinstance(handle, BingoMemAlloc):
+        return handle, handle.offset
+    if isinstance(handle, BingoMemAllocView):
+        return handle.base, handle.offset
+    if isinstance(handle, BingoMemSymbol):
+        return ("symbol", handle.symbol_name), handle.offset
+    if isinstance(handle, BingoMemFixedAddr):
+        return ("fixed",), handle.address
+    raise ValueError("Host fallback copy needs memory handles, not bare integer addresses")
+
+
+def _regions_overlap(left, right, size):
+    if not isinstance(size, int) or size <= 0:
+        return False
+    try:
+        left_base, left_offset = region(left)
+        right_base, right_offset = region(right)
+    except ValueError:
+        return False
+    return left_base == right_base and max(left_offset, right_offset) < min(
+        left_offset + size, right_offset + size)
+
+
+def _add_replay_hazard(args):
+    size = args.num_elements * 4 if isinstance(args.num_elements, int) else None
+    return any(_regions_overlap(args.c_addr, source, size)
+               for source in (args.a_addr, args.b_addr))
+
+
+def _copy_replay_hazard(args):
+    return _regions_overlap(args.src_addr, args.dst_addr, args.size)
+
+
+def _gemm_replay_hazard(args):
+    return getattr(args, "accumPrevC", 0) != 0
+
+
+# Explicit known kernels only. Unknown kernels and bare addresses remain opt-in.
+_REPLAY_SAFETY_KERNELS = {
+    ("__snax_bingo_kernel_int32_add", SnaxBingoKernelInt32AddArgs): _add_replay_hazard,
+    ("__snax_bingo_kernel_idma_1d_copy", SnaxBingoKernelIdma1dCopyArgs): _copy_replay_hazard,
+    ("__snax_bingo_kernel_gemm_full", SnaxBingoKernelGemmFullArgs): _gemm_replay_hazard,
+    ("__snax_bingo_kernel_gemm_minimal", SnaxBingoKernelGemmMinimalArgs): _gemm_replay_hazard,
+    **{(name, _SnaxBingoKernelGemmPlainArgs): _gemm_replay_hazard for name in (
+        "__snax_bingo_kernel_gemm_i8i8_i32", "__snax_bingo_kernel_gemm_i8i4_i32",
+        "__snax_bingo_kernel_gemm_i4i4_i32", "__snax_bingo_kernel_gemm_i8i4_f16",
+        "__snax_bingo_kernel_gemm_i8i8_f16")},
+    ("__snax_bingo_kernel_gemm_i8i8_i8", _SnaxBingoKernelGemmQuantArgs): _gemm_replay_hazard,
 }
 
 
@@ -56,7 +113,8 @@ class BingoDFG(DiGraphWrapper[BingoNode]):
                  is_host_as_acc: bool,
                  chiplet_ids: list[int] = None,
                  dep_tag_width: int = 4,
-                 core_type_ids: dict[tuple[int, int], int] | None = None) -> None:
+                 core_type_ids: dict[tuple[int, int], int] | None = None,
+                 allow_unsafe_replay: bool = False) -> None:
         super().__init__()
         # HW architecture parameters
         self.num_chiplets = num_chiplets
@@ -87,6 +145,33 @@ class BingoDFG(DiGraphWrapper[BingoNode]):
         self._cerf_fallback_nodes: set[BingoNode] = set()
         self._host_fallbacks: dict[BingoNode, BingoNode] = {}
         self._host_fallback_masks: dict[int, tuple[int, int]] = {}
+        self.allow_unsafe_replay = allow_unsafe_replay
+
+    def _node_no_replay(self, node: BingoNode) -> bool:
+        """Resolve opt-in/automatic protection without changing the node's override."""
+        host = (self.core_type_ids.get(
+            (node.assigned_cluster_id, node.assigned_core_id)) == 0
+            or (self.is_host_as_acc
+                and node.assigned_core_id == self.num_cores_per_cluster - 1))
+        excluded = (host or node.node_type != "normal"
+                    or node.kernel_name in (
+                        "__host_bingo_kernel_entry", "__snax_bingo_kernel_entry",
+                        "__host_bingo_kernel_exit", "__snax_bingo_kernel_exit"))
+        if excluded:
+            if node.non_idempotent is True:
+                raise ValueError("Host, dummy, gating, entry and exit tasks cannot be non_idempotent")
+            return False
+        hazardous = any(
+            node.kernel_name == name and isinstance(node.kernel_args, args_type)
+            and check(node.kernel_args)
+            for (name, args_type), check in _REPLAY_SAFETY_KERNELS.items())
+        if node.non_idempotent is False and hazardous:
+            message = f"Task '{node.node_name}' is non-idempotent but explicitly permits unsafe replay"
+            if not self.allow_unsafe_replay:
+                raise ValueError(message)
+            warnings.warn(message, UserWarning, stacklevel=2)
+        return hazardous if node.non_idempotent is None else node.non_idempotent
+
     def bingo_add_node(self, node_obj: BingoNode) -> None:
         """Add a node to the DFG."""
 
@@ -138,6 +223,8 @@ class BingoDFG(DiGraphWrapper[BingoNode]):
                 or any(data.get("cond", False) for _, _, data in
                        list(self.in_edges(node, data=True)) + list(self.out_edges(node, data=True)))):
             raise ValueError("Host fallback requires an ordinary unconditional device task")
+        if self._node_no_replay(node):
+            raise ValueError("Host fallback cannot replay a non-idempotent task (overlap or explicit marking)")
         key = (node.kernel_name, type(node.kernel_args))
         if key not in _HOST_FALLBACK_KERNELS:
             raise ValueError(f"Host fallback kernel/args not whitelisted: {node.kernel_name}")
@@ -162,18 +249,6 @@ class BingoDFG(DiGraphWrapper[BingoNode]):
         args = node.kernel_args
         if not isinstance(args.size, int) or args.size <= 0:
             raise ValueError("Host fallback copy size must be a positive integer")
-
-        def region(handle):
-            # Match _process_addr: a view offset is relative to the raw allocation.
-            if isinstance(handle, BingoMemAlloc):
-                return handle, handle.offset
-            if isinstance(handle, BingoMemAllocView):
-                return handle.base, handle.offset
-            if isinstance(handle, BingoMemSymbol):
-                return ("symbol", handle.symbol_name), handle.offset
-            if isinstance(handle, BingoMemFixedAddr):
-                return ("fixed",), handle.address
-            raise ValueError("Host fallback copy needs memory handles, not bare integer addresses")
 
         src, src_offset = region(args.src_addr)
         dst, dst_offset = region(args.dst_addr)
@@ -303,6 +378,11 @@ class BingoDFG(DiGraphWrapper[BingoNode]):
                 if len(owners) > 1:
                     raise ValueError("CERF fallback requires dedicated groups, not shared expert groups")
             primary_nodes, backups = groups
+            if any(self._node_no_replay(n) for n in primary_nodes):
+                warnings.warn(
+                    f"CERF primary group {clear} contains non-idempotent tasks; "
+                    "the backup must not read the primary output",
+                    UserWarning, stacklevel=2)
             primary_set, backup_set = set(primary_nodes), set(backups)
             sinks = [n for n in primary_nodes if not any(s in primary_set for s in self.successors(n))]
             sources = [n for n in backups if not any(p in backup_set for p in self.predecessors(n))]
@@ -1401,8 +1481,9 @@ class BingoDFG(DiGraphWrapper[BingoNode]):
         current_shift += 1
 
         # 4. task_type (2 bits) — expanded from 1 bit
-        # 00: Normal, 01: Dummy, 10: Gating
-        task_type_map = {"normal": 0, "dummy": 1, "gating": 2}
+        # 00: Normal, 01: Dummy, 10: Gating, 11: Normal, replay forbidden
+        no_replay = self._node_no_replay(node)
+        task_type_map = {"normal": 3 if no_replay else 0, "dummy": 1, "gating": 2}
         task_type_val = task_type_map.get(node.node_type, 0)
         packed_val |= (task_type_val << current_shift)
         current_shift += 2
@@ -1509,8 +1590,10 @@ class BingoDFG(DiGraphWrapper[BingoNode]):
         fields['cond_exec_en'] = (packed_val >> current_shift) & 0x1
         current_shift += 1
 
-        # 4. task_type (2 bits) — 00=normal, 01=dummy, 10=gating
+        # 4. task_type (2 bits) — 00=normal, 01=dummy, 10=gating, 11=no-replay normal
         fields['task_type'] = (packed_val >> current_shift) & 0x3
+        fields['node_type'] = {0: "normal", 1: "dummy", 2: "gating", 3: "normal"}[fields['task_type']]
+        fields['non_idempotent'] = fields['task_type'] == 3
         current_shift += 2
         
         # 2. task_id (12 bits)
@@ -2345,6 +2428,8 @@ class BingoDFG(DiGraphWrapper[BingoNode]):
         with open(output_path, "w") as f:
             # Step 1: Emit Headers
             self._emit_headers(f, extra_include_header_list)
+            if self.allow_unsafe_replay:
+                f.write("// TEST ONLY: allow_unsafe_replay=True disables known-hazard rejection.\n")
             
             # Step 2: Emit Debug Kernel List
             self._emit_debug_kernel_list(f)

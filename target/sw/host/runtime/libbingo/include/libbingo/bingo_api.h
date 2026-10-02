@@ -243,7 +243,7 @@ typedef struct {
 //////////////////////////////////////
 
 typedef struct hw_manager_task {
-    uint8_t  task_type;            // 2-bit: 0=Normal, 1=Dummy, 2=Gating
+    uint8_t  task_type;            // 2-bit: 0=Normal, 1=Dummy, 2=Gating, 3=Normal, replay forbidden
     uint16_t task_id;              // Task ID
     uint8_t  assigned_chiplet_id;  // Target chiplet for execution
     uint8_t  assigned_cluster_id;  // Target cluster for execution
@@ -572,3 +572,6 @@ void bingo_cerf_fb_set(uint32_t core_type, uint32_t clear_group, uint32_t set_gr
 void bingo_cerf_fb_enable(uint32_t type_mask);
 // Core types whose degradation was applied (bit t = core type t)
 uint32_t bingo_cerf_fb_evt(void);
+
+// Sticky slots blocked by replay protection, in BINGO_CORE_FENCED bit order.
+uint32_t bingo_replay_blocked(void);

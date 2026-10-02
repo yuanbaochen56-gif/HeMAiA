@@ -863,12 +863,13 @@ void bingo_hw_scheduler_print_status(){
     uint32_t suspect = readw((uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_bingo_core_dead_suspect_addr()));
     uint32_t park_fail = readw((uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_bingo_park_fail_addr()));
     uint32_t cerf      = readw((uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_cerf_status_addr()));
-    printf_safe("Chip(%x, %x): [Host] Bingo status: replay_stuck=%d remote_done_mismatch=%d link_error=%d fenced=0x%x dead_suspect=0x%x remote_timeout=%d park_fail=0x%x cerf=0x%x cerf_fb_en=0x%x cerf_fb_evt=0x%x risk=0x%x\r\n",
+    printf_safe("Chip(%x, %x): [Host] Bingo status: replay_stuck=%d remote_done_mismatch=%d link_error=%d fenced=0x%x dead_suspect=0x%x remote_timeout=%d park_fail=0x%x cerf=0x%x cerf_fb_en=0x%x cerf_fb_evt=0x%x risk=0x%x replay_blocked=0x%x\r\n",
                 get_current_chip_loc_x(), get_current_chip_loc_y(),
                 status & 0x1, (status >> 1) & 0x1, (status >> 2) & 0x3f, fenced, suspect, (status >> 8) & 0x1, park_fail,
                 cerf, readw((uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_bingo_cerf_fb_en_addr())),
                 bingo_cerf_fb_evt(),
-                readw((uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_bingo_risk_addr())));
+                readw((uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_bingo_risk_addr())),
+                bingo_replay_blocked());
 }
 
 uint32_t bingo_hw_scheduler(uint64_t* host_arg_list, uint64_t* host_kernel_list, int32_t* global_task_id_to_host_task_id){
@@ -989,4 +990,8 @@ void bingo_cerf_fb_enable(uint32_t type_mask) {
 
 uint32_t bingo_cerf_fb_evt(void) {
     return readw((uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_bingo_cerf_fb_evt_addr()));
+}
+
+uint32_t bingo_replay_blocked(void) {
+    return readw((uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_bingo_replay_blocked_addr()));
 }

@@ -761,20 +761,19 @@ void bingo_hw_scheduler_init_pm(){
     // Domain 2: Cluster 1
     // ...
     // At most we have 32 domains (0-31)
-    // However, we put the host core to the extra core slot (N_CORES_PER_CLUSTER)
-    // of cluster 0 and we not want to change the host core domain
-    // So we need to special case the host core here
+    // The extra slot (N_CORES_PER_CLUSTER) is the host in cluster 0;
+    // in every other cluster it is tied-off. Exclude all extra slots from PM.
     uint32_t core_power_domain;
     uint32_t idx;
     for (uint32_t cluster = 0; cluster < N_CLUSTERS_PER_CHIPLET; cluster++){
         for (uint32_t core = 0; core < N_CORES_PER_CLUSTER + 1; core++){ // +1 for the host core
             idx = cluster * (N_CORES_PER_CLUSTER + 1) + core;
-            if (cluster == 0 && core == N_CORES_PER_CLUSTER){
-                // Host core, do not change its power domain
+            if (core == N_CORES_PER_CLUSTER){
+                // Host or tied-off slot, not part of a managed power domain
                 // In Bingo HW scheduler, it will read this value and compare it with the 32
                 // to decide whether this is a valid domain or not
                 // We set to 99 to indicate it is invalid
-                core_power_domain = 99; 
+                core_power_domain = 99;
             } else {
                 core_power_domain = cluster + 1; // Cluster i
             }

@@ -28,14 +28,22 @@ except ImportError:
 
 from bingo_utils import DiGraphWrapper
 from bingo_node import BingoNode
-from bingo_mem_handle import BingoMemAlloc, BingoMemAllocView
+from bingo_mem_handle import BingoMemAlloc, BingoMemAllocView, BingoMemSymbol, BingoMemFixedAddr
 from bingo_kernel_args import (
     BingoKernelArgs,
     HostBingoKernelCerfGatingArgs,
     BINGO_GATING_MODE_TOP_K,
     BINGO_GATING_MODE_THRESHOLD,
     BINGO_GATING_MODE_STATIC,
+    SnaxBingoKernelIdma1dCopyArgs,
+    HostBingoKernelIdmaArgs,
 )
+
+# Explicit equivalents only; do not infer host kernels from their names.
+_HOST_FALLBACK_KERNELS = {
+    ("__snax_bingo_kernel_idma_1d_copy", SnaxBingoKernelIdma1dCopyArgs):
+        ("__host_bingo_kernel_idma", HostBingoKernelIdmaArgs),
+}
 
 
 class BingoDFG(DiGraphWrapper[BingoNode]):
@@ -77,6 +85,8 @@ class BingoDFG(DiGraphWrapper[BingoNode]):
         self._cerf_fallbacks: list[tuple[BingoNode, BingoNode]] = []
         self._cerf_fallback_table: dict = {}
         self._cerf_fallback_nodes: set[BingoNode] = set()
+        self._host_fallbacks: dict[BingoNode, BingoNode] = {}
+        self._host_fallback_masks: dict[int, tuple[int, int]] = {}
     def bingo_add_node(self, node_obj: BingoNode) -> None:
         """Add a node to the DFG."""
 
@@ -113,6 +123,121 @@ class BingoDFG(DiGraphWrapper[BingoNode]):
         pair = (primary, backup)
         if pair not in self._cerf_fallbacks:
             self._cerf_fallbacks.append(pair)
+
+    def _validate_host_fallback(self, node: BingoNode) -> int:
+        if node not in self:
+            raise ValueError("Host fallback node must belong to this DFG")
+        if self.num_chiplets != 1 or not self.is_host_as_acc:
+            raise ValueError("Host fallback requires a single chiplet and is_host_as_acc=True")
+        if (node.assigned_chiplet_id not in self.chiplet_ids
+                or not 0 <= node.assigned_cluster_id < self.num_clusters_per_chiplet
+                or not 0 <= node.assigned_core_id < self.num_cores_per_cluster - 1):
+            raise ValueError("Host fallback requires an assigned device slot")
+        if (node.node_type != "normal" or node.cond_exec_en
+                or node._gating_node is not None or node.cerf_write_groups
+                or any(data.get("cond", False) for _, _, data in
+                       list(self.in_edges(node, data=True)) + list(self.out_edges(node, data=True)))):
+            raise ValueError("Host fallback requires an ordinary unconditional device task")
+        key = (node.kernel_name, type(node.kernel_args))
+        if key not in _HOST_FALLBACK_KERNELS:
+            raise ValueError(f"Host fallback kernel/args not whitelisted: {node.kernel_name}")
+        type_id = self.core_type_ids.get((node.assigned_cluster_id, node.assigned_core_id))
+        if not isinstance(type_id, int) or not 0 < type_id < 32:
+            raise ValueError("Host fallback needs a nonzero core_type_ids entry for its device slot")
+        host_slot = (0, self.num_cores_per_cluster - 1)
+        if self.core_type_ids.get(host_slot) != 0:
+            raise ValueError("Host fallback host slot must have core type 0")
+        for other in self._host_fallbacks:
+            if other is not node and self.core_type_ids.get(
+                    (other.assigned_cluster_id, other.assigned_core_id)) == type_id:
+                raise ValueError("Only one host fallback per (chip, type) is supported")
+        for primary, backup in self._cerf_fallbacks:
+            if (primary, backup) == (node, self._host_fallbacks.get(node)):
+                continue
+            if (primary.assigned_chiplet_id == node.assigned_chiplet_id
+                    and self.core_type_ids.get(
+                        (primary.assigned_cluster_id, primary.assigned_core_id)) == type_id):
+                raise ValueError("Host fallback conflicts with a handwritten CERF fallback for this type")
+
+        args = node.kernel_args
+        if not isinstance(args.size, int) or args.size <= 0:
+            raise ValueError("Host fallback copy size must be a positive integer")
+
+        def region(handle):
+            # Match _process_addr: a view offset is relative to the raw allocation.
+            if isinstance(handle, BingoMemAlloc):
+                return handle, handle.offset
+            if isinstance(handle, BingoMemAllocView):
+                return handle.base, handle.offset
+            if isinstance(handle, BingoMemSymbol):
+                return ("symbol", handle.symbol_name), handle.offset
+            if isinstance(handle, BingoMemFixedAddr):
+                return ("fixed",), handle.address
+            raise ValueError("Host fallback copy needs memory handles, not bare integer addresses")
+
+        src, src_offset = region(args.src_addr)
+        dst, dst_offset = region(args.dst_addr)
+        if src == dst and max(src_offset, dst_offset) < min(
+                src_offset + args.size, dst_offset + args.size):
+            raise ValueError("Host fallback copy source and destination overlap in the same allocation")
+        return type_id
+
+    def bingo_add_host_fallback(self, node: BingoNode) -> BingoNode:
+        """Protect one whitelisted iDMA copy with an equivalent type-0 host copy.
+
+        The compiler shares the source and output handles, orders the backup
+        before all consumers, and registers the CERF fallback. Repeated calls
+        for the same node return the same backup. Only single-offload,
+        pre-kernel fault injection is covered: not a DMA stuck after partial
+        writes or late writes after fencing. Live substitutes replay first;
+        host fallback requires this type to become stuck/rejected.
+        """
+        if node in self._host_fallbacks:
+            return self._host_fallbacks[node]
+        self._validate_host_fallback(node)
+        kernel, args_type = _HOST_FALLBACK_KERNELS[(node.kernel_name, type(node.kernel_args))]
+        args = node.kernel_args
+        backup = BingoNode(
+            node.assigned_chiplet_id, 0, self.num_cores_per_cluster - 1,
+            node_name=f"__host_fallback_{node.node_name}", kernel_name=kernel,
+            kernel_args=args_type(src_addr=args.src_addr, dst_addr=args.dst_addr, size=args.size))
+        self.bingo_add_node(backup)
+        self._host_fallbacks[node] = backup
+        return backup
+
+    def _expand_host_fallbacks(self) -> None:
+        """Read the final user edges before entry/exit insertion."""
+        for primary, backup in self._host_fallbacks.items():
+            self._validate_host_fallback(primary)
+            if backup not in self:
+                raise ValueError("Generated host fallback was removed from the DFG")
+            for pred in list(self.predecessors(primary)):
+                self.bingo_add_edge(pred, backup)
+            for succ in list(self.successors(primary)):
+                self.bingo_add_edge(backup, succ)
+        if self._host_fallbacks and not nx.is_directed_acyclic_graph(self):
+            raise ValueError("Host fallback expansion would create a cycle")
+
+    def _compile_host_fallbacks(self) -> None:
+        """Reserve private groups after manual groups and routers, then use P7c."""
+        for primary, backup in self._host_fallbacks.items():
+            self._validate_host_fallback(primary)
+            gp = self._alloc_cerf_group()
+            gh = self._alloc_cerf_group()
+            controlled = (1 << gp) | (1 << gh)
+            for node in self.node_list:
+                mask = getattr(node.kernel_args, "cerf_controlled_mask", 0)
+                written = sum(1 << g for g in set(node.cerf_write_groups))
+                if (mask | written) & controlled:
+                    raise ValueError("A gating node controls private host fallback groups")
+            for node, group in ((primary, gp), (backup, gh)):
+                node.cond_exec_en = True
+                node.cond_exec_group_id = group
+                node.cond_exec_invert = False
+            chip = primary.assigned_chiplet_id
+            old_mask, old_value = self._host_fallback_masks.get(chip, (0, 0))
+            self._host_fallback_masks[chip] = (old_mask | controlled, old_value | (1 << gp))
+            self.bingo_add_cerf_fallback(primary, backup)
 
     def _compile_cerf_fallbacks(self) -> None:
         """Add branch ordering, guard protected exits and build one table per chip."""
@@ -2140,6 +2265,10 @@ class BingoDFG(DiGraphWrapper[BingoNode]):
         f.write('        OFFLOAD_BINGO_HW_DEBUG_PRINT_SAFE("Chip(%x, %x): [Host] Init HW Bingo Scheduler\\r\\n",\n')
         f.write('               get_current_chip_loc_x(), get_current_chip_loc_y());\n\n')
 
+        if chiplet_id in self._host_fallback_masks:
+            mask, value = self._host_fallback_masks[chiplet_id]
+            f.write(f"        bingo_cerf_update(0x{mask:08x}u, 0x{value:08x}u);\n")
+
         entries = [(type_id, row) for (chip, type_id), row in sorted(self._cerf_fallback_table.items())
                    if chip == chiplet_id]
         if entries:
@@ -2259,6 +2388,7 @@ class BingoDFG(DiGraphWrapper[BingoNode]):
     def bingo_compile_dfg(self, app_name: str, output_dir: str, output_file_name: str, extra_include_header_list: list[str] | None, post_execute_code: list[str] | None = None) -> None:
         """Compile the DFG by assigning dep info and emitting C code."""
         # 1. Transformations
+        self._expand_host_fallbacks()
         # Add Entry Node
         self.bingo_transform_dfg_add_entry_node()
         # Add Exit Nodes
@@ -2269,11 +2399,12 @@ class BingoDFG(DiGraphWrapper[BingoNode]):
         # Compile conditional regions (CERF group assignment)
         # Must be called before dummy node transforms.
         # No-op for non-conditional DFGs (returns empty dict).
-        if self._cerf_fallbacks:
+        if self._cerf_fallbacks or self._host_fallbacks:
             manual_groups = [n.cond_exec_group_id for n in self.node_list if n.cond_exec_en]
             if manual_groups:
                 self._next_cerf_group = max(self._next_cerf_group, max(manual_groups) + 1)
         self.bingo_compile_conditional_regions()
+        self._compile_host_fallbacks()
         self._compile_cerf_fallbacks()
         self._validate_cerf_cross_group_edges()
         # Identity-aware deps: per-edge tags are allocated LAST (after dep-info

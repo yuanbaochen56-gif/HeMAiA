@@ -1,0 +1,5 @@
+*.h
+*.png
+*.csv
+build/
+__pycache__/

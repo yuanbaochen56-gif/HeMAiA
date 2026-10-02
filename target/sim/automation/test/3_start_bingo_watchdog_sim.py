@@ -119,6 +119,7 @@ Results: ``<out-root>/<scenario>/result.md`` and the runner's task directory.
 from __future__ import annotations
 
 import argparse
+import csv
 import re
 import shutil
 import sys
@@ -207,6 +208,7 @@ MOE2_CORE_TYPE = 1
 PLAIN_CERF_FAULT_GID = 3  # core1_add in int32_add_2plain_cerf_1cluster
 DMA_CERF_FAULT_GID = 1  # copy_0 in dma_cerf_2cluster
 DMA_CERF_CORE_TYPE = 2  # the DM cores of hemaia_ci
+HOST_FALLBACK_FAULT_GID = 0  # pinned against the generated graph in test_host_fallback
 
 SCENARIOS: Dict[str, dict] = {
     "s1": dict(
@@ -506,6 +508,43 @@ SCENARIOS: Dict[str, dict] = {
         expect_takeover=True,
         expect_eoc=True, expect_fence=True, sim_timeout_s=1200,
     ),
+    # s30-s33 remain reserved for the parked C2 evaluation.
+    "s34": dict(
+        desc="automatic iDMA host fallback: both DM cores die, type 2 switches to the same-output host copy",
+        cfg=HEMAIA_CI_CFG, timeout_cycles=TIGHT_TIMEOUT_CYCLES,
+        confirm_timeout_cycles=CONFIRM_TIMEOUT_CYCLES,
+        extra_cfg=L2_CFG_KEYS, cfg_suffix="_l2",
+        workload="dma_host_fallback_2cluster", fault_stall_cycles=0,
+        fault_gid=HOST_FALLBACK_FAULT_GID, fault_any_core=True,
+        victim=VICTIM, substitute=1, substitute_cluster=1, host_fallback=True,
+        extra_flags="-DBINGO_DMA_EXPECT_BRANCH=1",
+        expect_core_types={0: 1, 1: 2, 2: 0},
+        expect_wd_other={(0, 1, 1): [(1, 0), (1, 1)]},
+        expect_replay_stuck=True, expect_host_stuck=True,
+        expect_eoc=True, expect_fence=True, sim_timeout_s=1200,
+    ),
+    "s35": dict(
+        desc="automatic iDMA host fallback control: only cluster 0 dies, cluster 1 replays, no host copy",
+        cfg=HEMAIA_CI_CFG, timeout_cycles=TIGHT_TIMEOUT_CYCLES,
+        confirm_timeout_cycles=CONFIRM_TIMEOUT_CYCLES,
+        extra_cfg=L2_CFG_KEYS, cfg_suffix="_l2",
+        workload="dma_host_fallback_2cluster", fault_stall_cycles=0,
+        fault_gid=HOST_FALLBACK_FAULT_GID,
+        victim=VICTIM, substitute=1, substitute_cluster=1, host_fallback=True,
+        extra_flags="-DBINGO_DMA_EXPECT_BRANCH=0",
+        expect_core_types={0: 1, 1: 2, 2: 0}, expect_takeover=True,
+        expect_eoc=True, expect_fence=True, sim_timeout_s=1200,
+    ),
+    "s36": dict(
+        desc="healthy automatic iDMA host fallback: no watchdog, replay or CERF event, no host copy",
+        cfg=HEMAIA_CI_CFG, timeout_cycles=TIGHT_TIMEOUT_CYCLES,
+        confirm_timeout_cycles=CONFIRM_TIMEOUT_CYCLES,
+        extra_cfg=L2_CFG_KEYS, cfg_suffix="_l2",
+        workload="dma_host_fallback_2cluster", fault_stall_cycles=None,
+        host_fallback=True, extra_flags="-DBINGO_DMA_EXPECT_BRANCH=0",
+        expect_core_types={0: 1, 1: 2, 2: 0},
+        expect_eoc=True, sim_timeout_s=1200,
+    ),
 }
 
 # fenced= only exists since the replay support; older RTL prints dead_suspect only.
@@ -769,6 +808,85 @@ def evaluate_dma_cerf(sc: dict, log_text: str, uart_text: str) -> List[str]:
         problems.append("missing gating / join completion marker")
     print(f"[dma_cerf] events={fb} dispatches={slots}")
     return problems
+
+def host_fallback_task_ids(path: Path) -> dict:
+    """Read task IDs from the actual compiled graph, not the old s28/s29 layout."""
+    with path.open() as stream:
+        rows = list(csv.DictReader(stream))
+    kernels = {"copy": "__snax_bingo_kernel_idma_1d_copy",
+               "backup": "__host_bingo_kernel_idma",
+               "check": "__host_bingo_kernel_check_result"}
+    result = {}
+    for name, kernel in kernels.items():
+        matches = [row for row in rows if row["Kernel"] == kernel]
+        if len(matches) != 1:
+            raise ValueError(f"expected one {name} in generated host fallback graph")
+        result[name] = int(matches[0]["ID"])
+    for name, cluster in (("primary_exit", 0), ("substitute_exit", 1)):
+        matches = [row for row in rows if row["Kernel"] == "__snax_bingo_kernel_exit"
+                   and (int(row["Cluster"]), int(row["Core"])) == (cluster, 1)]
+        if len(matches) != 1:
+            raise ValueError(f"expected one {name} in generated host fallback graph")
+        result[name] = int(matches[0]["ID"])
+    return result
+
+
+def evaluate_host_fallback(sc: dict, log_text: str, uart_text: str) -> List[str]:
+    """Validate automatic same-output fallback, replay-only and healthy controls."""
+    ids = sc.get("host_fallback_task_ids")
+    if not ids:
+        return ["missing task IDs from the generated host fallback graph"]
+    problems = []
+    faulty = sc["fault_stall_cycles"] is not None
+    double = sc.get("fault_any_core", False)
+    fb = [tuple(map(int, m.groups())) for m in CERF_FB_RE.finditer(log_text)]
+    if len(fb) != int(double) or any(e[1:] != (2, 0, 1) for e in fb):
+        problems.append(f"automatic host fallback CERF events {fb}, expected "
+                        f"{'one type 2 g0 -> g1' if double else 'none'}")
+    seen = {}
+    for m in DISPATCH_RE.finditer(log_text):
+        t, chip, task, core, cluster = map(int, m.groups())
+        seen.setdefault(task, []).append((chip, core, cluster, t))
+    expected = {
+        "copy": [(0, 1, 0), (0, 1, 1)] if faulty else [(0, 1, 0)],
+        "backup": [(0, 2, 0)] if double else [],
+        "check": [(0, 2, 0)],
+        "primary_exit": [] if double else [(0, 1, int(faulty))],
+        "substitute_exit": [] if double else [(0, 1, 1)],
+    }
+    for name, want in expected.items():
+        actual = [item[:3] for item in seen.get(ids[name], [])]
+        if actual != want:
+            problems.append(f"automatic host fallback {name} task {ids[name]} slots {actual}, expected {want}")
+    replay_times = [int(t) for t in re.findall(
+        rf"\[BINGO_REPLAY\] (\d+) chip=0 task={ids['copy']} ", log_text)]
+    if len(replay_times) != int(faulty):
+        problems.append("expected exactly one copy replay on fault, none when healthy")
+    if faulty and len(seen.get(ids["copy"], [])) == 2 and len(replay_times) == 1:
+        original, replayed = seen[ids["copy"]]
+        fences = [int(m.group(1)) for m in WD_RE.finditer(log_text)
+                  if (m.group(2), m.group(3), m.group(4), m.group(6)) == ("0", "1", "0", "1")]
+        if not fences or not original[3] < fences[0] <= replay_times[0] < replayed[3]:
+            problems.append("expected original copy < victim fence <= replay < substitute dispatch")
+    if double and len(fb) == 1 and seen.get(ids["backup"]) and seen.get(ids["check"]):
+        fences = [int(m.group(1)) for m in WD_RE.finditer(log_text)
+                  if (m.group(2), m.group(3), m.group(4), m.group(6)) == ("0", "1", "1", "1")]
+        stuck = [int(t) for t in re.findall(r"\[BINGO_REPLAY_STUCK\] (\d+) chip=0 core=1 cluster=1:", log_text)]
+        if (not fences or not stuck or not
+                fences[0] <= stuck[0] <= fb[0][0] < seen[ids["backup"]][0][3] < seen[ids["check"]][0][3]):
+            problems.append("expected substitute fence <= stuck <= CERF < host backup < check")
+    host = re.search(r"\[Host\] Bingo status: .* cerf=0x([0-9a-fA-F]+) "
+                     r"cerf_fb_en=0x([0-9a-fA-F]+) cerf_fb_evt=0x([0-9a-fA-F]+)", uart_text)
+    expected_status = (2 if double else 1, 4, 4 if double else 0)
+    if not host or tuple(int(v, 16) for v in host.groups()) != expected_status:
+        problems.append(f"automatic host fallback CERF/en/evt expected {expected_status}")
+    if CHECK_RE.findall(uart_text) != [("A_L1", "PASS")]:
+        problems.append("expected exactly one Check [A_L1]: PASS")
+    if f"[DmaHostFallback] check complete; host fallback {int(double)}" not in uart_text:
+        problems.append("missing automatic host fallback completion marker")
+    print(f"[host_fallback] task_ids={ids} events={fb}")
+    return problems
+
 
 def make_cfg(base_cfg: str, timeout_cycles: Optional[int],
              cluster_swap: Optional[Tuple[str, str]] = None,
@@ -1037,6 +1155,8 @@ def evaluate(name: str, sc: dict, log_text: str, uart_text: str) -> List[str]:
         problems += evaluate_plain_cerf_fallback(sc, log_text, uart_text)
     elif sc.get("dma_cerf"):
         problems += evaluate_dma_cerf(sc, log_text, uart_text)
+    elif sc.get("host_fallback"):
+        problems += evaluate_host_fallback(sc, log_text, uart_text)
     elif "[BINGO_CERF_FB]" in log_text:
         problems.append("unexpected CERF fallback in a continuity scenario")
     if sc.get("workload") == "dma_chain_2cluster":
@@ -1255,6 +1375,16 @@ def run_scenario(name: str, args: argparse.Namespace) -> bool:
     uart_path = bin_dir / "uart_chip_0_0.log"
     log_text = log_path.read_text(errors="replace") if log_path.exists() else ""
     uart_text = uart_path.read_text(errors="replace") if uart_path.exists() else ""
+    if sc.get("host_fallback"):
+        graph_csv = (_REPO_ROOT / "target/sw/host/apps/offload_bingo_hw/single_chip/workloads"
+                     / sc["workload"] / "final_dfg.csv")
+        try:
+            sc["host_fallback_task_ids"] = host_fallback_task_ids(graph_csv)
+            shutil.copyfile(graph_csv, out_dir / "host_fallback_final_dfg.csv")
+            if sc.get("fault_gid", HOST_FALLBACK_FAULT_GID) != sc["host_fallback_task_ids"]["copy"]:
+                raise ValueError("fault_gid differs from the generated copy task ID")
+        except (OSError, ValueError, KeyError) as error:
+            print(f"[{name}] cannot load generated host fallback graph: {error}")
     problems = evaluate(name, sc, log_text, uart_text)
     problems += runner.core_type_problems
     if sc["expect_eoc"] and log_text:

@@ -515,6 +515,19 @@ void bingo_close_all_clusters(bingo_task_t **task_list, uint32_t num_tasks);
 // once a slot of the core type of (BINGO_CERF_FB_CLUSTER, BINGO_CERF_FB_CORE)
 // is stuck or rejected, the manager clears CERF group BINGO_CERF_FB_CLEAR and
 // sets BINGO_CERF_FB_SET. Undefined (default) = table off.
+// Fault precursors, written at init (0 = off): a heartbeat or done of a busy
+// core arriving after BINGO_RISK_LATE quad cycles is late; BINGO_RISK_POLICY
+// [3:0] late beats make a slot at risk, [4] park it, [5] derate its domain,
+// [15:8] derate level; the counts halve every BINGO_RISK_EPOCH cycles.
+#ifndef BINGO_RISK_LATE
+#define BINGO_RISK_LATE             0
+#endif
+#ifndef BINGO_RISK_POLICY
+#define BINGO_RISK_POLICY           0
+#endif
+#ifndef BINGO_RISK_EPOCH
+#define BINGO_RISK_EPOCH            0
+#endif
 #ifdef BINGO_CERF_FB_CLUSTER
 #ifndef BINGO_CERF_FB_CORE
 #error "BINGO_CERF_FB_CLUSTER needs BINGO_CERF_FB_CORE, BINGO_CERF_FB_CLEAR and BINGO_CERF_FB_SET"

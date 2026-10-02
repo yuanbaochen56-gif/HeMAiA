@@ -500,5 +500,55 @@
         }
       ]
     },
+    { name: "BINGO_RISK_LATE",
+      desc: "Bingo fault precursors: a heartbeat or done of a busy core whose watchdog timer reached this many cycles (of the normal clock) is a late beat; 0 = off.",
+      swaccess: "rw",
+      hwaccess: "hro",
+      fields: [
+        { bits: "31:0", resval: "0", name: "BINGO_RISK_LATE",
+          desc: '''Late-beat threshold in quad ctrl cycles.'''
+        }
+      ]
+    },
+    { name: "BINGO_RISK_POLICY",
+      desc: "Bingo fault precursors: [3:0] late beats that make a slot at risk (0 = off), [4] park an at-risk slot, [5] derate its domain (with [4]: once the park failed), [15:8] derate level.",
+      swaccess: "rw",
+      hwaccess: "hro",
+      fields: [
+        { bits: "31:0", resval: "0", name: "BINGO_RISK_POLICY",
+          desc: '''Threshold, actions and derate level (see bingo_hw_manager_top).'''
+        }
+      ]
+    },
+    { name: "BINGO_RISK_EPOCH",
+      desc: "Bingo fault precursors: the late-beat counts are halved every this many quad ctrl cycles; 0 = never.",
+      swaccess: "rw",
+      hwaccess: "hro",
+      fields: [
+        { bits: "31:0", resval: "0", name: "BINGO_RISK_EPOCH",
+          desc: '''Halving period of the late-beat counts.'''
+        }
+      ]
+    },
+    { name: "BINGO_RISK_CLEAR",
+      desc: "Bingo fault precursors: bit i (same bits as BINGO_PARK_REQ) clears the risk of slot i and keeps its count at 0 while set; a parked at-risk slot then moves back.",
+      swaccess: "rw",
+      hwaccess: "hro",
+      fields: [
+        { bits: "31:0", resval: "0", name: "BINGO_RISK_CLEAR",
+          desc: '''Bit i: clear the risk of bingo slot i.'''
+        }
+      ]
+    },
+    { name: "BINGO_RISK",
+      desc: "Bingo fault precursors: at-risk slots (same bits as BINGO_PARK_REQ); sticky until cleared or the slot is fenced.",
+      swaccess: "ro",
+      hwaccess: "hwo",
+      fields: [
+        { bits: "31:0", resval: "0", name: "BINGO_RISK",
+          desc: '''Bit i: bingo slot i is at risk.'''
+        }
+      ]
+    },
   ]
 }

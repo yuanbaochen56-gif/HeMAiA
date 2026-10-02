@@ -241,6 +241,28 @@ inline uintptr_t quad_ctrl_bingo_cerf_fb_evt_addr(){
     return QUAD_AXI_LITE_NARROW_PERIPHERALS_BASE_ADDR + OCCAMY_QUAD_PERIPH_BINGO_CERF_FB_EVT_REG_OFFSET;
 }
 
+// Bingo fault precursors: late-beat threshold, policy, halving epoch, clear,
+// and the at-risk slots (read-only)
+inline uintptr_t quad_ctrl_bingo_risk_late_addr(){
+    return QUAD_AXI_LITE_NARROW_PERIPHERALS_BASE_ADDR + OCCAMY_QUAD_PERIPH_BINGO_RISK_LATE_REG_OFFSET;
+}
+
+inline uintptr_t quad_ctrl_bingo_risk_policy_addr(){
+    return QUAD_AXI_LITE_NARROW_PERIPHERALS_BASE_ADDR + OCCAMY_QUAD_PERIPH_BINGO_RISK_POLICY_REG_OFFSET;
+}
+
+inline uintptr_t quad_ctrl_bingo_risk_epoch_addr(){
+    return QUAD_AXI_LITE_NARROW_PERIPHERALS_BASE_ADDR + OCCAMY_QUAD_PERIPH_BINGO_RISK_EPOCH_REG_OFFSET;
+}
+
+inline uintptr_t quad_ctrl_bingo_risk_clear_addr(){
+    return QUAD_AXI_LITE_NARROW_PERIPHERALS_BASE_ADDR + OCCAMY_QUAD_PERIPH_BINGO_RISK_CLEAR_REG_OFFSET;
+}
+
+inline uintptr_t quad_ctrl_bingo_risk_addr(){
+    return QUAD_AXI_LITE_NARROW_PERIPHERALS_BASE_ADDR + OCCAMY_QUAD_PERIPH_BINGO_RISK_REG_OFFSET;
+}
+
 inline uintptr_t quad_ctrl_bingo_core_dead_suspect_addr(){
     return QUAD_AXI_LITE_NARROW_PERIPHERALS_BASE_ADDR + OCCAMY_QUAD_PERIPH_BINGO_CORE_DEAD_SUSPECT_REG_OFFSET;
 }

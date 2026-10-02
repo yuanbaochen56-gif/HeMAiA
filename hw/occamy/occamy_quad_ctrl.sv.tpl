@@ -118,6 +118,9 @@ module ${name}_quad_ctrl
   logic                                  bingo_remote_done_mismatch;
   logic                                  bingo_remote_timeout;
   cfg_t                                  bingo_park_req, bingo_park_fail;
+  // Fault precursors: late threshold, policy, epoch, clear, and at-risk slots
+  cfg_t                                  bingo_risk_late, bingo_risk_policy, bingo_risk_epoch;
+  cfg_t                                  bingo_risk_clear, bingo_risk;
   // CERF degradation table (index: core type) and the types that fired
   logic [${2**bingo_core_type_id_width-1}:0]       bingo_cerf_fb_en, bingo_cerf_fb_evt;
   logic [${2**bingo_core_type_id_width-1}:0][4:0]  bingo_cerf_fb_clear, bingo_cerf_fb_set;
@@ -237,6 +240,11 @@ module ${name}_quad_ctrl
     .bingo_hw_manager_cerf_fb_clear_o         (bingo_cerf_fb_clear                 ),
     .bingo_hw_manager_cerf_fb_set_o           (bingo_cerf_fb_set                   ),
     .bingo_hw_manager_cerf_fb_evt_i           (bingo_cerf_fb_evt                   ),
+    .bingo_hw_manager_risk_late_o             (bingo_risk_late                     ),
+    .bingo_hw_manager_risk_policy_o           (bingo_risk_policy                   ),
+    .bingo_hw_manager_risk_epoch_o            (bingo_risk_epoch                    ),
+    .bingo_hw_manager_risk_clear_o            (bingo_risk_clear                    ),
+    .bingo_hw_manager_risk_i                  (bingo_risk                          ),
     .bingo_hw_manager_remote_link_error_i     (bingo_remote_link_error             ),
     .bingo_hw_manager_core_dead_suspect_i     (bingo_core_dead_suspect             ),
     .bingo_hw_manager_core_fenced_i           (bingo_core_fenced                   )
@@ -395,6 +403,11 @@ module ${name}_quad_ctrl
     .bingo_hw_manager_idle_entry_delay_i       (bingo_hw_manager_idle_entry_delay            ),
     .bingo_hw_manager_park_req_i               (bingo_park_req                               ),
     .bingo_hw_manager_park_fail_o              (bingo_park_fail                              ),
+    .bingo_hw_manager_risk_late_i              (bingo_risk_late                              ),
+    .bingo_hw_manager_risk_policy_i            (bingo_risk_policy                            ),
+    .bingo_hw_manager_risk_epoch_i             (bingo_risk_epoch                             ),
+    .bingo_hw_manager_risk_clear_i             (bingo_risk_clear                             ),
+    .bingo_hw_manager_risk_o                   (bingo_risk                                   ),
     .bingo_hw_manager_cluster_access_i         (bingo_cluster_access_i                       ),
     .bingo_hw_manager_access_wake_hold_i       (bingo_hw_manager_access_wake_hold            ),
     .bingo_hw_manager_normal_power_level_i     (bingo_hw_manager_norm_power_level            ),
@@ -516,12 +529,12 @@ module ${name}_quad_ctrl
   );
 
 `ifndef SYNTHESIS
-  // With degradation enabled, log actual ready-queue dispatches on every slot.
-  // This checks that a cleared branch never runs after the fallback commit.
+  // With degradation or late-beat monitoring enabled, log actual dispatches.
+  // Check cleared branches and tasks routed away from an at-risk slot.
   for (genvar core = 0; core < BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER; core++) begin : gen_bingo_dispatch_core_log
     for (genvar cluster = 0; cluster < NrClustersPerQuad; cluster++) begin : gen_bingo_dispatch_cluster_log
       always @(posedge ${quad_ctrl_axi_lite_xbar.clk}) begin
-        if (${quad_ctrl_axi_lite_xbar.rst} && (|bingo_cerf_fb_en) &&
+        if (${quad_ctrl_axi_lite_xbar.rst} && ((|bingo_cerf_fb_en) || (|bingo_risk_late)) &&
             i_bingo_hw_manager.ready_queue_pop[core][cluster])
           $display("[BINGO_DISPATCH] %0t chip=%0d task=%0d core=%0d cluster=%0d",
                    $time, chip_id_i, i_bingo_hw_manager.ready_queue_data_out[core][cluster].task_id,

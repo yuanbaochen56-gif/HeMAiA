@@ -57,6 +57,12 @@ s16     moe2_2cluster, top-1, level 1 only; expert 0       one CERF g0 -> g1 eve
         accelerator hangs, CERF fallback enabled           join and EOC complete, expert 1 golden PASS
 s17     same workload/table as s16, without a fault       expert 0 golden PASS, expert 1 skipped,
                                                            no watchdog or CERF fallback event
+s18     dma_chain_2cluster, level 2: the cluster-0 DM      three late beats (precursors off), task 3
+        core is late on tasks 0-2, then hangs on task 3    fenced and replayed on the cluster-1 DM
+                                                           core, run completes (baseline for s19)
+s19     as s18, precursors on (two late beats: park)       cluster-0 DM core at risk after task 1
+                                                           starts, tasks 2-5 run on cluster 1,
+                                                           nothing fenced or replayed, run completes
 ======  =================================================  ==========================================
 
 The bingo manager may only move a dead core's tasks to a core of the same type
@@ -168,6 +174,14 @@ TWO_PLAIN_DM_VICTIM = (0, 3, 0)
 # the generated RTL by the level-3 scenarios (their cfg keys use these ids)
 TWO_PLAIN_CORE_TYPES = {0: 1, 1: TWO_PLAIN_CORE_TYPE, 2: TWO_PLAIN_CORE_TYPE, 3: 3, 4: 0}
 QUAD_CTRL_RTL = "target/rtl/src/occamy_quad_ctrl.sv"
+# dma_chain_2cluster: copies 0-5 on the cluster-0 DM core, in order. The victim
+# is late on each task before task 3 (100k core cycles, ~45k quad cycles: past
+# the 30k late threshold, short of the 100k heartbeat timeout), then hangs on it.
+CHAIN_FAULT_GID = 3
+# bingo slots per cluster of hemaia_ci (two cores and the host slot): a status
+# bitmap bit is core + cluster * HEMAIA_CI_SLOTS
+HEMAIA_CI_SLOTS = 3
+CHAIN_FLAGS = "-DBINGO_WD_FAULT_PRE_STALL_CYCLES=100000 -DBINGO_RISK_LATE=30000"
 MOE2_FAULT_GID = 4  # e0_gemm; explicit node ids in moe2_2cluster/main_bingo.py
 MOE2_CORE_TYPE = 1
 MOE2_FB_FLAGS = ("-DBINGO_CERF_FB_CLUSTER=0 -DBINGO_CERF_FB_CORE=0 "
@@ -327,6 +341,29 @@ SCENARIOS: Dict[str, dict] = {
         expect_core_types={0: MOE2_CORE_TYPE, 1: 2, 2: 0},
         expect_eoc=True, sim_timeout_s=900,
     ),
+    "s18": dict(
+        desc="DM core late on tasks 0-2 then hangs, precursors off: fenced, replayed on the cluster-1 DM core",
+        cfg=HEMAIA_CI_CFG, timeout_cycles=TIGHT_TIMEOUT_CYCLES,
+        confirm_timeout_cycles=CONFIRM_TIMEOUT_CYCLES,
+        extra_cfg=L2_CFG_KEYS, cfg_suffix="_l2",
+        workload="dma_chain_2cluster", fault_stall_cycles=0, fault_gid=CHAIN_FAULT_GID,
+        victim=VICTIM, substitute=1, substitute_cluster=1, expect_takeover=True,
+        extra_flags=CHAIN_FLAGS + " -DBINGO_RISK_POLICY=0",
+        expect_core_types={0: 1, 1: 2, 2: 0},
+        expect_late=3, expect_eoc=True, expect_fence=True, sim_timeout_s=900,
+    ),
+    "s19": dict(
+        desc="as s18 with precursors on: at risk after two late beats, parked, never fenced",
+        cfg=HEMAIA_CI_CFG, timeout_cycles=TIGHT_TIMEOUT_CYCLES,
+        confirm_timeout_cycles=CONFIRM_TIMEOUT_CYCLES,
+        extra_cfg=L2_CFG_KEYS, cfg_suffix="_l2",
+        workload="dma_chain_2cluster", fault_stall_cycles=0, fault_gid=CHAIN_FAULT_GID,
+        victim=VICTIM, substitute=1, substitute_cluster=1, park=True,
+        # threshold 2, park
+        extra_flags=CHAIN_FLAGS + " -DBINGO_RISK_POLICY=0x12",
+        expect_core_types={0: 1, 1: 2, 2: 0},
+        expect_late=2, expect_risk=True, expect_wd=[], expect_eoc=True, sim_timeout_s=900,
+    ),
 }
 
 # fenced= only exists since the replay support; older RTL prints dead_suspect only.
@@ -351,8 +388,41 @@ RDONE_IN_RE = re.compile(r"\[BINGO_REMOTE_DONE_IN\] \d+ chip=(\d+) task=(\d+) pr
 REJECT_OUT_RE = re.compile(r"\[BINGO_REMOTE_REJECT_OUT\] \d+ chip=(\d+) task=(\d+) -> chip=(\d+) proxy_slot=(\d+)")
 REJECT_IN_RE = re.compile(r"\[BINGO_REMOTE_REJECT_IN\] \d+ chip=(\d+) task=(\d+) proxy_slot=(\d+)")
 RLINK_RE = re.compile(r"\[BINGO_RLINK_(TX|RX)_(AW|W|B)\] \d+ chip=(\d+) (addr|data|resp)=(0x[0-9a-fA-F]+|\d+)")
+LATE_RE = re.compile(r"\[BINGO_LATE\] \d+ core=(\d+) cluster=(\d+)")
+RISK_RE = re.compile(r"\[BINGO_RISK\] \d+ core=(\d+) cluster=(\d+) at risk")
 CERF_FB_RE = re.compile(r"\[BINGO_CERF_FB\] (\d+) type (\d+) clear g(\d+) set g(\d+)")
 DISPATCH_RE = re.compile(r"\[BINGO_DISPATCH\] (\d+) chip=(\d+) task=(\d+) core=(\d+) cluster=(\d+)")
+
+
+def evaluate_risk_chain(sc: dict, log_text: str, uart_text: str) -> List[str]:
+    """Require the chain's actual placement, host risk bitmap and both goldens."""
+    problems: List[str] = []
+    chip, core, cluster = sc["victim"]
+    sub, sub_cluster = sc["substitute"], sc["substitute_cluster"]
+    parked = sc.get("expect_risk", False)
+    dispatches = [tuple(map(int, m.groups())) for m in DISPATCH_RE.finditer(log_text)
+                  if int(m.group(3)) < 6]
+    expected = [(task, core, cluster) for task in range(2 if parked else 4)]
+    expected += [(task, sub, sub_cluster) for task in range(2 if parked else 3, 6)]
+    if [(d[2], d[3], d[4]) for d in dispatches] != expected or any(
+            d[1] != chip for d in dispatches):
+        problems.append(f"chain dispatches {dispatches}, expected {expected} on chip {chip}")
+    if parked:
+        risk_times = [int(t) for t in re.findall(
+            r"\[BINGO_RISK\] (\d+) core=\d+ cluster=\d+ at risk", log_text)]
+        task1 = [d[0] for d in dispatches if d[2] == 1]
+        task2 = [d[0] for d in dispatches if d[2] == 2]
+        if len(risk_times) != 1 or len(task1) != 1 or len(task2) != 1 or not (
+                task1[0] < risk_times[0] < task2[0]):
+            problems.append("risk must trip during task 1, before task 2 is dispatched")
+    host = re.search(r"\[Host\] Bingo status: .* risk=0x([0-9a-fA-F]+)", uart_text)
+    expected_risk = (1 << (core + HEMAIA_CI_SLOTS * cluster)) if parked else 0
+    if not host or int(host.group(1), 16) != expected_risk:
+        problems.append(f"host risk {host.group(1) if host else None}, expected 0x{expected_risk:x}")
+    if sorted(CHECK_RE.findall(uart_text)) != [
+            ("A_chain_cluster0", "PASS"), ("A_cluster1", "PASS")]:
+        problems.append("expected both DMA-chain host checks to pass exactly once")
+    return problems
 
 
 def evaluate_cerf_fallback(sc: dict, log_text: str, uart_text: str) -> List[str]:
@@ -658,6 +728,20 @@ def evaluate(name: str, sc: dict, log_text: str, uart_text: str) -> List[str]:
         problems += evaluate_cerf_fallback(sc, log_text, uart_text)
     elif "[BINGO_CERF_FB]" in log_text:
         problems.append("unexpected CERF fallback in a continuity scenario")
+    if sc.get("workload") == "dma_chain_2cluster":
+        problems += evaluate_risk_chain(sc, log_text, uart_text)
+
+    # Fault precursors: late beats and at-risk events only where expected, on the victim
+    vc = sc.get("victim", VICTIM)
+    late = [tuple(int(x) for x in m.groups()) for m in LATE_RE.finditer(log_text)]
+    if late != [(vc[1], vc[2])] * sc.get("expect_late", 0):
+        problems.append(f"[BINGO_LATE] on (core, cluster) {late}, expected {sc.get('expect_late', 0)} on the victim")
+    risk = [tuple(int(x) for x in m.groups()) for m in RISK_RE.finditer(log_text)]
+    if risk != ([(vc[1], vc[2])] if sc.get("expect_risk") else []):
+        problems.append(f"[BINGO_RISK] events {risk}, expected {'one on the victim' if sc.get('expect_risk') else 'none'}")
+    host_risk = re.search(r"\[Host\] Bingo status: .* risk=0x([0-9a-fA-F]+)", uart_text)
+    if host_risk and int(host_risk.group(1), 16) != (1 << (vc[1] + HEMAIA_CI_SLOTS * vc[2]) if sc.get("expect_risk") else 0):
+        problems.append(f"host risk=0x{host_risk.group(1)}")
 
     if sc["expect_eoc"] and not eoc_ok:
         problems.append(f"expected '{SIM_OK_MARKER}' without errors")
@@ -751,6 +835,8 @@ def evaluate(name: str, sc: dict, log_text: str, uart_text: str) -> List[str]:
             expected = [(1, 0), (1, 1)]
         else:
             expected = [(1, 0), (0, 0)] if stall > 0 else [(1, 0)]
+        # (s19: parked before the hang, the victim never misses its timeout)
+        expected = sc.get("expect_wd", expected)
         if victim_events != expected:
             problems.append(f"victim {victim} (dead_suspect, fenced) sequence {victim_events}, expected {expected}")
 

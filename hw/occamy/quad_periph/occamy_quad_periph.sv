@@ -53,6 +53,13 @@ module occamy_quad_periph import occamy_quad_periph_reg_pkg::*; #(
   output logic [NumBingoCoreTypes-1:0][4:0] bingo_hw_manager_cerf_fb_clear_o,
   output logic [NumBingoCoreTypes-1:0][4:0] bingo_hw_manager_cerf_fb_set_o,
   input  logic [NumBingoCoreTypes-1:0]      bingo_hw_manager_cerf_fb_evt_i,
+  // Bingo fault precursors (late threshold, policy, halving epoch, clear;
+  // at-risk slots, same bits as park)
+  output reg_data_t   bingo_hw_manager_risk_late_o,
+  output reg_data_t   bingo_hw_manager_risk_policy_o,
+  output reg_data_t   bingo_hw_manager_risk_epoch_o,
+  output reg_data_t   bingo_hw_manager_risk_clear_o,
+  input  reg_data_t   bingo_hw_manager_risk_i,
   input  logic [5:0]  bingo_hw_manager_remote_link_error_i,
   input  logic [BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER-1:0][BINGO_HW_MANAGER_NR_CLUSTER-1:0] bingo_hw_manager_core_dead_suspect_i,
   input  logic [BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER-1:0][BINGO_HW_MANAGER_NR_CLUSTER-1:0] bingo_hw_manager_core_fenced_i
@@ -121,6 +128,12 @@ module occamy_quad_periph import occamy_quad_periph_reg_pkg::*; #(
   end
   assign hw2reg.bingo_cerf_fb_evt.d                  = bingo_hw_manager_cerf_fb_evt_i;
   assign hw2reg.bingo_cerf_fb_evt.de                 = 1'b1;
+  assign bingo_hw_manager_risk_late_o                = reg2hw.bingo_risk_late.q;
+  assign bingo_hw_manager_risk_policy_o              = reg2hw.bingo_risk_policy.q;
+  assign bingo_hw_manager_risk_epoch_o               = reg2hw.bingo_risk_epoch.q;
+  assign bingo_hw_manager_risk_clear_o               = reg2hw.bingo_risk_clear.q;
+  assign hw2reg.bingo_risk.d                         = bingo_hw_manager_risk_i;
+  assign hw2reg.bingo_risk.de                        = 1'b1;
   assign hw2reg.bingo_status.remote_done_mismatch.de = 1'b1;
   assign hw2reg.bingo_status.remote_link_error.d     = bingo_hw_manager_remote_link_error_i;
   assign hw2reg.bingo_status.remote_link_error.de    = 1'b1;

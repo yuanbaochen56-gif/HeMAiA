@@ -331,6 +331,62 @@ class CerfFallbackCompilerTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "32-bit mask"):
                 self.compile(graph)
 
+    def dm_fixture(self, backup_slot=(0, 2)):
+        """Primary on the cluster-0 DM core (type 2, as the cluster-1 DM core)."""
+        graph = BingoDFG(1, 2, 2, True, [0], core_type_ids=TYPES)
+        router = node(graph, "router", 0, 2)
+        primary = node(graph, "primary", 0, 1, 7)
+        backup = node(graph, "backup", *backup_slot, 11)
+        join = node(graph, "join", 0, 2)
+        for target in (primary, backup):
+            graph.bingo_add_edge(router, target)
+            graph.bingo_add_edge(target, join)
+        graph.bingo_add_cerf_fallback(primary, backup)
+        return graph, router, primary
+
+    def snax_exit_groups(self, graph):
+        return {(n.assigned_cluster_id, n.assigned_core_id):
+                n.cond_exec_group_id if n.cond_exec_en else None
+                for n in graph.node_list if n.kernel_name == "__snax_bingo_kernel_exit"}
+
+    def test_possible_substitute_exit_joins_the_primary_group(self):
+        graph, _, _ = self.dm_fixture()
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            self.compile(graph)
+        self.assertEqual(caught, [])
+        self.assertEqual(self.snax_exit_groups(graph),
+                         {(0, 0): None, (0, 1): 7, (1, 0): None, (1, 1): 7})
+
+    def test_same_type_backup_slot_is_not_a_substitute(self):
+        graph, _, _ = self.dm_fixture(backup_slot=(1, 1))
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            self.compile(graph)
+        self.assertEqual([str(w.message).count("same-type backup") for w in caught], [1])
+        self.assertIsNone(self.snax_exit_groups(graph)[(1, 1)])
+
+    def test_substitute_work_before_the_primary_is_allowed(self):
+        graph, _, primary = self.dm_fixture()
+        prefix = node(graph, "substitute_prefix", 1, 1)
+        graph.bingo_add_edge(prefix, primary)
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            self.compile(graph)
+        self.assertEqual(caught, [])
+
+    def test_late_substitute_work_warns_and_keeps_the_exit_guarded(self):
+        graph, router, _ = self.dm_fixture()
+        parallel = node(graph, "substitute_parallel", 1, 1)
+        graph.bingo_add_edge(router, parallel)
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            self.compile(graph)
+        self.assertEqual(len(caught), 1)
+        self.assertIn("substitute_parallel", str(caught[0].message))
+        self.assertIn("(0, 1, 1)", str(caught[0].message))
+        self.assertEqual(self.snax_exit_groups(graph)[(1, 1)], 7)
+
     def test_host_backup_uses_type_zero_slot(self):
         graph, primary, _, join = fixture()
         graph._cerf_fallbacks.clear()

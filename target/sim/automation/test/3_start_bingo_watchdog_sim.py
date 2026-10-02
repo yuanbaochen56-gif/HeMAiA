@@ -83,6 +83,10 @@ s28     dma_cerf_2cluster, level 2: copy 0 hangs on any    both DM cores fenced 
 s29     as s28, but only the cluster-0 DM core hangs       replay to the cluster-1 DM core, which
                                                            runs both copies and the taken-over exit;
                                                            no fallback, primary output PASS
+s37     in-place int32 add, fault after the kernel        no replay, blocked CSR, separate-output
+                                                           host CERF backup, both outputs PASS
+s38     same fault, test-only unsafe replay               add replayed, double accumulation PASS
+s39     same protected workload, healthy                  one accumulation, no fault or backup
 ======  =================================================  ==========================================
 
 The bingo manager may only move a dead core's tasks to a core of the same type
@@ -209,6 +213,7 @@ PLAIN_CERF_FAULT_GID = 3  # core1_add in int32_add_2plain_cerf_1cluster
 DMA_CERF_FAULT_GID = 1  # copy_0 in dma_cerf_2cluster
 DMA_CERF_CORE_TYPE = 2  # the DM cores of hemaia_ci
 HOST_FALLBACK_FAULT_GID = 0  # pinned against the generated graph in test_host_fallback
+INPLACE_FAULT_GID = 2  # pinned against the generated graph in test_inplace_cerf_workload
 
 SCENARIOS: Dict[str, dict] = {
     "s1": dict(
@@ -545,6 +550,41 @@ SCENARIOS: Dict[str, dict] = {
         expect_core_types={0: 1, 1: 2, 2: 0},
         expect_eoc=True, sim_timeout_s=1200,
     ),
+    "s37": dict(
+        desc="in-place add stalls after writing once; replay protection triggers separate-output CERF backup",
+        cfg=HEMAIA_CI_CFG, timeout_cycles=TIGHT_TIMEOUT_CYCLES,
+        confirm_timeout_cycles=CONFIRM_TIMEOUT_CYCLES,
+        extra_cfg=L2_CFG_KEYS, cfg_suffix="_l2",
+        workload="int32_inplace_cerf_2cluster", replay_safety=True,
+        fault_stall_cycles=0, fault_gid=INPLACE_FAULT_GID, victim=VICTIM,
+        extra_flags="-DBINGO_WD_FAULT_AFTER_KERNEL=1 -DBINGO_INPLACE_EXPECT_BRANCH=1",
+        expect_core_types={0: 1, 1: 2, 2: 0}, expect_fence=True,
+        expect_replay_stuck=True, expect_host_stuck=True,
+        expect_eoc=True, sim_timeout_s=1200,
+    ),
+    "s38": dict(
+        desc="unsafe replay negative control: in-place add executes twice",
+        cfg=HEMAIA_CI_CFG, timeout_cycles=TIGHT_TIMEOUT_CYCLES,
+        confirm_timeout_cycles=CONFIRM_TIMEOUT_CYCLES,
+        extra_cfg=L2_CFG_KEYS, cfg_suffix="_l2",
+        workload="int32_inplace_cerf_2cluster", replay_safety=True, unsafe_replay=True,
+        fault_stall_cycles=0, fault_gid=INPLACE_FAULT_GID,
+        victim=VICTIM, substitute=1, substitute_cluster=1, expect_takeover=True,
+        extra_flags="-DBINGO_WD_FAULT_AFTER_KERNEL=1 -DBINGO_INPLACE_UNSAFE_REPLAY=1 "
+                    "-DBINGO_INPLACE_EXPECT_BRANCH=0",
+        expect_core_types={0: 1, 1: 2, 2: 0}, expect_fence=True,
+        expect_eoc=True, sim_timeout_s=1200,
+    ),
+    "s39": dict(
+        desc="healthy protected in-place add: one accumulation and no backup",
+        cfg=HEMAIA_CI_CFG, timeout_cycles=TIGHT_TIMEOUT_CYCLES,
+        confirm_timeout_cycles=CONFIRM_TIMEOUT_CYCLES,
+        extra_cfg=L2_CFG_KEYS, cfg_suffix="_l2",
+        workload="int32_inplace_cerf_2cluster", replay_safety=True,
+        fault_stall_cycles=None, extra_flags="-DBINGO_INPLACE_EXPECT_BRANCH=0",
+        expect_core_types={0: 1, 1: 2, 2: 0},
+        expect_eoc=True, sim_timeout_s=1200,
+    ),
 }
 
 # fenced= only exists since the replay support; older RTL prints dead_suspect only.
@@ -808,6 +848,99 @@ def evaluate_dma_cerf(sc: dict, log_text: str, uart_text: str) -> List[str]:
         problems.append("missing gating / join completion marker")
     print(f"[dma_cerf] events={fb} dispatches={slots}")
     return problems
+
+def replay_safety_task_ids(path: Path) -> dict:
+    """Read the unique workload kernels and protected exits from the compiled CSV."""
+    with path.open() as stream:
+        rows = list(csv.DictReader(stream))
+    result = {}
+    for name, kernel in {
+        "copy": "__snax_bingo_kernel_idma_1d_copy",
+        "add": "__snax_bingo_kernel_int32_add",
+        "backup": "__host_bingo_kernel_add_i32",
+        "check": "__host_bingo_kernel_check_result",
+    }.items():
+        matches = [row for row in rows if row["Kernel"] == kernel]
+        if len(matches) != 1:
+            raise ValueError(f"expected one {name} in generated replay safety graph")
+        result[name] = int(matches[0]["ID"])
+    for name, cluster in (("primary_exit", 0), ("substitute_exit", 1)):
+        matches = [row for row in rows if row["Kernel"] == "__snax_bingo_kernel_exit"
+                   and (int(row["Cluster"]), int(row["Core"])) == (cluster, 1)]
+        if len(matches) != 1:
+            raise ValueError(f"expected one {name} in generated replay safety graph")
+        result[name] = int(matches[0]["ID"])
+    return result
+
+
+def evaluate_replay_safety(sc: dict, log_text: str, uart_text: str) -> List[str]:
+    ids = sc.get("replay_safety_task_ids")
+    if not ids:
+        return ["missing task IDs from the generated replay safety graph"]
+    problems = []
+    faulty = sc["fault_stall_cycles"] is not None
+    unsafe = sc.get("unsafe_replay", False)
+    protected_fault = faulty and not unsafe
+    branch = int(protected_fault)
+    fb = [tuple(map(int, m.groups())) for m in CERF_FB_RE.finditer(log_text)]
+    if len(fb) != branch or any(item[1:] != (2, 0, 1) for item in fb):
+        problems.append("expected one type 2 g0 -> g1 only for the protected fault")
+    blocked = [tuple(map(int, match)) for match in re.findall(
+        r"\[BINGO_REPLAY_BLOCKED\] (\d+) chip=(\d+) core=(\d+) cluster=(\d+) task=(\d+)",
+        log_text)]
+    if ([item[1:] for item in blocked] !=
+            ([(0, 1, 0, ids["add"])] if protected_fault else [])):
+        problems.append("expected one blocked event for the protected add, otherwise none")
+    seen = {}
+    for match in DISPATCH_RE.finditer(log_text):
+        time, chip, task, core, cluster = map(int, match.groups())
+        seen.setdefault(task, []).append((chip, core, cluster, time))
+    expected = {
+        "copy": [(0, 1, 0)],
+        "add": [(0, 1, 0), (0, 1, 1)] if unsafe else [(0, 1, 0)],
+        "backup": [(0, 2, 0)] if protected_fault else [],
+        "check": [(0, 2, 0)],
+        "primary_exit": [] if protected_fault else [(0, 1, int(unsafe))],
+        "substitute_exit": [] if protected_fault else [(0, 1, 1)],
+    }
+    for name, want in expected.items():
+        if [item[:3] for item in seen.get(ids[name], [])] != want:
+            problems.append(f"wrong {name} dispatch count or slot")
+    replays = [int(time) for time in re.findall(
+        rf"\[BINGO_REPLAY\] (\d+) chip=0 task={ids['add']} ", log_text)]
+    if len(replays) != int(unsafe):
+        problems.append("expected exactly one add replay only in the unsafe control")
+    if protected_fault and len(blocked) == len(fb) == 1:
+        fences = [int(match.group(1)) for match in WD_RE.finditer(log_text)
+                  if (match.group(2), match.group(3), match.group(4), match.group(6)) ==
+                  ("0", "1", "0", "1")]
+        if (not fences or not seen.get(ids["add"]) or not seen.get(ids["backup"]) or
+            not seen.get(ids["check"]) or not
+            seen[ids["add"]][0][3] < fences[0] <= blocked[0][0] <= fb[0][0] <
+                seen[ids["backup"]][0][3] < seen[ids["check"]][0][3]):
+            problems.append("expected add < fence <= blocked <= CERF < backup < check")
+    if unsafe and len(replays) == 1 and len(seen.get(ids["add"], [])) == 2:
+        fences = [int(match.group(1)) for match in WD_RE.finditer(log_text)
+                  if (match.group(2), match.group(3), match.group(4), match.group(6)) ==
+                  ("0", "1", "0", "1")]
+        if not fences or not seen[ids["add"]][0][3] < fences[0] <= replays[0] < seen[ids["add"]][1][3]:
+            problems.append("expected original add < fence <= replay < substitute add")
+    host = re.search(r"\[Host\] Bingo status: .* cerf=0x([0-9a-fA-F]+) "
+                     r"cerf_fb_en=0x([0-9a-fA-F]+) cerf_fb_evt=0x([0-9a-fA-F]+)"
+                     r".* replay_blocked=0x([0-9a-fA-F]+)", uart_text)
+    want_status = (2 if protected_fault else 1, 4, 4 if protected_fault else 0,
+                   2 if protected_fault else 0)
+    if not host or tuple(int(value, 16) for value in host.groups()) != want_status:
+        problems.append(f"wrong CERF/enable/event/blocked status, expected {want_status}")
+    checks = [("acc", "PASS")] + ([("bk", "PASS")] if protected_fault else [])
+    if CHECK_RE.findall(uart_text) != checks:
+        problems.append(f"expected host checks {checks}")
+    marker = (f"[Int32Inplace] check complete; branch={branch} unsafe={int(unsafe)} "
+              f"replay_blocked=0x{2 if protected_fault else 0:x}")
+    if marker not in uart_text:
+        problems.append("missing replay safety completion marker")
+    return problems
+
 
 def host_fallback_task_ids(path: Path) -> dict:
     """Read task IDs from the actual compiled graph, not the old s28/s29 layout."""
@@ -1149,7 +1282,9 @@ def evaluate(name: str, sc: dict, log_text: str, uart_text: str) -> List[str]:
                                log_text, flags=re.M)
     csr = CSR_RE.findall(log_text)
     checks = CHECK_RE.findall(uart_text)
-    if sc.get("cerf_fallback"):
+    if sc.get("replay_safety"):
+        problems += evaluate_replay_safety(sc, log_text, uart_text)
+    elif sc.get("cerf_fallback"):
         problems += evaluate_cerf_fallback(sc, log_text, uart_text)
     elif sc.get("plain_cerf_fallback"):
         problems += evaluate_plain_cerf_fallback(sc, log_text, uart_text)
@@ -1375,6 +1510,16 @@ def run_scenario(name: str, args: argparse.Namespace) -> bool:
     uart_path = bin_dir / "uart_chip_0_0.log"
     log_text = log_path.read_text(errors="replace") if log_path.exists() else ""
     uart_text = uart_path.read_text(errors="replace") if uart_path.exists() else ""
+    if sc.get("replay_safety"):
+        graph_csv = (_REPO_ROOT / "target/sw/host/apps/offload_bingo_hw/single_chip/workloads"
+                     / sc["workload"] / "final_dfg.csv")
+        try:
+            sc["replay_safety_task_ids"] = replay_safety_task_ids(graph_csv)
+            shutil.copyfile(graph_csv, out_dir / "replay_safety_final_dfg.csv")
+            if sc.get("fault_gid", INPLACE_FAULT_GID) != sc["replay_safety_task_ids"]["add"]:
+                raise ValueError("fault_gid differs from the generated in-place add task ID")
+        except (OSError, ValueError, KeyError) as error:
+            print(f"[{name}] cannot load generated replay safety graph: {error}")
     if sc.get("host_fallback"):
         graph_csv = (_REPO_ROOT / "target/sw/host/apps/offload_bingo_hw/single_chip/workloads"
                      / sc["workload"] / "final_dfg.csv")

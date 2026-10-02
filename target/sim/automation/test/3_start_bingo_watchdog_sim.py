@@ -76,6 +76,13 @@ s26     two plain cores, L3 only, home-slot import;        export and reject, CE
         primary add hangs, CERF fallback enabled           add and join complete, EOC and backup PASS
 s27     same workload/configuration as s26, no fault      primary add PASS, backup skipped, EOC,
                                                            no watchdog or fallback event
+s28     dma_cerf_2cluster, level 2: copy 0 hangs on any    both DM cores fenced (the substitute after
+        core, so the cluster-1 DM core dies on the         the replay), CERF type 2 g0 -> g1, the
+        replay too; host iDMA fallback                     substitute drains the dead core's task,
+                                                           host copy and join complete, EOC, PASS
+s29     as s28, but only the cluster-0 DM core hangs       replay to the cluster-1 DM core, which
+                                                           runs both copies and the taken-over exit;
+                                                           no fallback, primary output PASS
 ======  =================================================  ==========================================
 
 The bingo manager may only move a dead core's tasks to a core of the same type
@@ -198,6 +205,8 @@ CHAIN_FLAGS = "-DBINGO_WD_FAULT_PRE_STALL_CYCLES=100000 -DBINGO_RISK_LATE=30000"
 MOE2_FAULT_GID = 4  # e0_gemm; explicit node ids in moe2_2cluster/main_bingo.py
 MOE2_CORE_TYPE = 1
 PLAIN_CERF_FAULT_GID = 3  # core1_add in int32_add_2plain_cerf_1cluster
+DMA_CERF_FAULT_GID = 1  # copy_0 in dma_cerf_2cluster
+DMA_CERF_CORE_TYPE = 2  # the DM cores of hemaia_ci
 
 SCENARIOS: Dict[str, dict] = {
     "s1": dict(
@@ -471,6 +480,32 @@ SCENARIOS: Dict[str, dict] = {
         extra_flags="-DBINGO_ADD_EXPECT_BRANCH=0", expect_core_types=TWO_PLAIN_CORE_TYPES,
         expect_eoc=True, sim_timeout_s=900,
     ),
+    "s28": dict(
+        desc="both DM cores die on copy 0 (replay, then stuck): CERF to the host copy, EOC",
+        cfg=HEMAIA_CI_CFG, timeout_cycles=TIGHT_TIMEOUT_CYCLES,
+        confirm_timeout_cycles=CONFIRM_TIMEOUT_CYCLES,
+        extra_cfg=L2_CFG_KEYS, cfg_suffix="_l2",
+        workload="dma_cerf_2cluster", fault_stall_cycles=0,
+        fault_gid=DMA_CERF_FAULT_GID, fault_any_core=True,
+        victim=VICTIM, substitute=1, substitute_cluster=1, dma_cerf=True,
+        extra_flags="-DBINGO_DMA_EXPECT_BRANCH=1",
+        expect_core_types={0: MOE2_CORE_TYPE, 1: DMA_CERF_CORE_TYPE, 2: 0},
+        expect_wd_other={(0, 1, 1): [(1, 0), (1, 1)]}, expect_replay_stuck=True,
+        expect_eoc=True, expect_fence=True, expect_host_stuck=True, sim_timeout_s=1200,
+    ),
+    "s29": dict(
+        desc="only the cluster-0 DM core dies on copy 0: replay completes, no CERF fallback",
+        cfg=HEMAIA_CI_CFG, timeout_cycles=TIGHT_TIMEOUT_CYCLES,
+        confirm_timeout_cycles=CONFIRM_TIMEOUT_CYCLES,
+        extra_cfg=L2_CFG_KEYS, cfg_suffix="_l2",
+        workload="dma_cerf_2cluster", fault_stall_cycles=0,
+        fault_gid=DMA_CERF_FAULT_GID,
+        victim=VICTIM, substitute=1, substitute_cluster=1, dma_cerf=True,
+        extra_flags="-DBINGO_DMA_EXPECT_BRANCH=0",
+        expect_core_types={0: MOE2_CORE_TYPE, 1: DMA_CERF_CORE_TYPE, 2: 0},
+        expect_takeover=True,
+        expect_eoc=True, expect_fence=True, sim_timeout_s=1200,
+    ),
 }
 
 # fenced= only exists since the replay support; older RTL prints dead_suspect only.
@@ -692,6 +727,48 @@ def evaluate_plain_cerf_fallback(sc: dict, log_text: str, uart_text: str) -> Lis
     print(f"[plain_cerf_fallback] events={fb} dispatches={selected}")
     return problems
 
+
+def evaluate_dma_cerf(sc: dict, log_text: str, uart_text: str) -> List[str]:
+    """Both DM cores die on copy 0 (s28: host fallback) or only the victim (s29: replay)."""
+    problems: List[str] = []
+    double = sc.get("fault_any_core", False)
+    branch = int(double)
+    fb = [tuple(map(int, m.groups())) for m in CERF_FB_RE.finditer(log_text)]
+    if len(fb) != int(double) or any(e[1:] != (DMA_CERF_CORE_TYPE, 0, 1) for e in fb):
+        problems.append(f"DMA CERF events {fb}, expected {'one type 2 g0 -> g1' if double else 'none'}")
+    # task -> [(core, cluster, time)]; copies 1, 2, host copy 3, join 4, DM exits 7 and 9
+    seen: Dict[int, list] = {}
+    for m in DISPATCH_RE.finditer(log_text):
+        t, _, task, core, cluster = map(int, m.groups())
+        seen.setdefault(task, []).append((core, cluster, t))
+    slots = {task: [(c, cl) for c, cl, _ in seen.get(task, [])] for task in (1, 2, 3, 4, 7, 9)}
+    expected = {1: [(1, 0), (1, 1)], 4: [(2, 0)]}
+    if double:
+        # copy 1 and both DM exits are skipped; the substitute drains copy 0
+        expected.update({2: [], 3: [(2, 0)], 7: [], 9: []})
+    else:
+        # the substitute runs copy 1 and the victim's exit, then its own
+        expected.update({2: [(1, 1)], 3: [], 7: [(1, 1)], 9: [(1, 1)]})
+    for task, want in expected.items():
+        if slots[task] != want:
+            problems.append(f"task {task} dispatched on (core, cluster) {slots[task]}, expected {want}")
+    if double and len(fb) == 1 and seen.get(3) and seen.get(4):
+        fence_sub = [int(m.group(1)) for m in WD_RE.finditer(log_text)
+                     if (m.group(3), m.group(4), m.group(6)) == ("1", "1", "1")]
+        if not fence_sub or not (fence_sub[0] <= fb[0][0] < seen[3][0][2] < seen[4][0][2]):
+            problems.append("expected substitute fence <= CERF fallback < host copy < join")
+    host = re.search(r"\[Host\] Bingo status: .* cerf=0x([0-9a-fA-F]+) "
+                     r"cerf_fb_en=0x([0-9a-fA-F]+) cerf_fb_evt=0x([0-9a-fA-F]+)", uart_text)
+    expected_status = (1 << branch, 1 << DMA_CERF_CORE_TYPE,
+                       (1 << DMA_CERF_CORE_TYPE) if double else 0)
+    if not host or tuple(int(v, 16) for v in host.groups()) != expected_status:
+        problems.append(f"host DMA CERF/en/evt {host.groups() if host else None}, expected {expected_status}")
+    if CHECK_RE.findall(uart_text) != [(f"A_branch_{branch}", "PASS")]:
+        problems.append(f"expected only Check [A_branch_{branch}]: PASS")
+    if f"[DmaCERF] gating selected g0; join complete; output branch {branch}" not in uart_text:
+        problems.append("missing gating / join completion marker")
+    print(f"[dma_cerf] events={fb} dispatches={slots}")
+    return problems
 
 def make_cfg(base_cfg: str, timeout_cycles: Optional[int],
              cluster_swap: Optional[Tuple[str, str]] = None,
@@ -958,6 +1035,8 @@ def evaluate(name: str, sc: dict, log_text: str, uart_text: str) -> List[str]:
         problems += evaluate_cerf_fallback(sc, log_text, uart_text)
     elif sc.get("plain_cerf_fallback"):
         problems += evaluate_plain_cerf_fallback(sc, log_text, uart_text)
+    elif sc.get("dma_cerf"):
+        problems += evaluate_dma_cerf(sc, log_text, uart_text)
     elif "[BINGO_CERF_FB]" in log_text:
         problems.append("unexpected CERF fallback in a continuity scenario")
     if sc.get("workload") == "dma_chain_2cluster":
@@ -1046,6 +1125,8 @@ def evaluate(name: str, sc: dict, log_text: str, uart_text: str) -> List[str]:
         problems.append(f"{len(other_asserts)} RTL assertion failure(s): {other_asserts[:3]}")
     # (s13: stuck through the remote reject, not a local [BINGO_REPLAY_STUCK])
     expect_stuck = sc.get("expect_fence", False) and substitute is None and not sc.get("remote_reject", False)
+    # (s28: the substitute dies too and has no live core of its type left)
+    expect_stuck = sc.get("expect_replay_stuck", expect_stuck)
     if expect_stuck != bool(stuck):
         problems.append(f"[BINGO_REPLAY_STUCK] expected {expect_stuck}, got {stuck[:1]}")
     if csr:
@@ -1063,7 +1144,11 @@ def evaluate(name: str, sc: dict, log_text: str, uart_text: str) -> List[str]:
         if events:
             problems.append(f"unexpected [BINGO_WD] events in a healthy run: {events}")
     else:
-        if other_events:
+        # (s28: the substitute also dies) (chip, core, cluster) -> [(dead_suspect, fenced)]
+        others: Dict[Tuple[int, int, int], list] = {}
+        for e in other_events:
+            others.setdefault((e[1], e[2], e[3]), []).append((e[4], e[5]))
+        if others != sc.get("expect_wd_other", {}):
             problems.append(f"[BINGO_WD] events on non-victim cores: {other_events}")
         # (dead_suspect, fenced) per [BINGO_WD] line of the victim
         if sc.get("expect_fence", False):
@@ -1134,8 +1219,10 @@ def run_scenario(name: str, args: argparse.Namespace) -> bool:
     if sc["fault_stall_cycles"] is not None:
         task["extra_user_flags"] = (f"-DBINGO_WD_FAULT_GID={sc.get('fault_gid', FAULT_GID)} "
                                     f"-DBINGO_WD_FAULT_STALL_CYCLES={sc['fault_stall_cycles']}")
-        if "victim" in sc or sc.get("substitute") is not None or sc.get("cerf_fallback"):
+        if not sc.get("fault_any_core") and (
+                "victim" in sc or sc.get("substitute") is not None or sc.get("cerf_fallback")):
             # The substitute gets the same task replayed: only the victim misbehaves
+            # (fault_any_core, s28: the substitute dies on it as well)
             _, core, cluster = sc["victim"]
             task["extra_user_flags"] += f" -DBINGO_WD_FAULT_CLUSTER={cluster} -DBINGO_WD_FAULT_CORE={core}"
     for flags in (sc.get("extra_flags"), args.extra_flags):

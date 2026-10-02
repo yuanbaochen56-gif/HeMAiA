@@ -1,0 +1,7 @@
+{
+    // hemaia_ci: accelerator (0), DM core (1) and the host Bingo slot (2) per cluster
+    num_clusters: 2
+    // copies on the cluster-0 DM core, one chunk each; the host backup copies all
+    chain_len: 2
+    chunk_size: 256
+}

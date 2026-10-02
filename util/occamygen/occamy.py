@@ -1223,6 +1223,10 @@ def get_cheader_kwargs(occamy_cfg, cluster_generators, name):
         "cluster_base_addr": hex(cluster_base_addr),
         "mempool_total_size": hex(mempool_total_size),
         "same_memchip_speed": 1 if same_memchip_speed else 0,
+        # Bingo core type of each (cluster, core) slot, as in the quad ctrl RTL, so
+        # the host can program the CERF degradation table per type
+        "bingo_core_type_ids": get_bingo_core_type_ids(cluster_generators),
+        "bingo_nr_core_types": 1 << BINGO_CORE_TYPE_ID_WIDTH,
     }
     return cheader_kwargs
 
@@ -1372,6 +1376,8 @@ def get_ctrl_kwargs(occamy_cfg, cluster_generators, name):
         "backup_boot_addr": hex_backup_boot_addr,
         "occamy_cfg": occamy_cfg,
         "addr_width": addr_width,
-        "bingo_hw_manager_nr_cores_per_chiplet":  nr_clusters * (nr_cores_per_cluster + 1) # +1 for the host core as acc
+        "bingo_hw_manager_nr_cores_per_chiplet":  nr_clusters * (nr_cores_per_cluster + 1), # +1 for the host core as acc
+        # Entries of the bingo CERF degradation table (one per core type)
+        "bingo_nr_core_types": 1 << BINGO_CORE_TYPE_ID_WIDTH
     }
     return ctrl_kwargs

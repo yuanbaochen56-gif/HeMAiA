@@ -14,6 +14,11 @@
       type: "int",
       default: "${bingo_hw_manager_nr_cores_per_chiplet}"
     },    
+    { name: "NumBingoCoreTypes",
+      desc: "Number of bingo core types (entries of the CERF degradation table).",
+      type: "int",
+      default: "${bingo_nr_core_types}"
+    },
   ], 
   name: "occamy_quad_periph",
   clock_primary: "clk_i",
@@ -451,6 +456,47 @@
       fields: [
         { bits: "31:0", resval: "0", name: "BINGO_CORE_FENCED",
           desc: '''Bit i: bingo slot i is fenced.'''
+        }
+      ]
+    },
+    // Bingo CERF degradation (bingo_hw_manager_ctrl): once a slot of an enabled
+    // core type is stuck or rejected, the manager clears one CERF group and sets
+    // another, once per enable. Kept after the existing registers so their
+    // offsets do not move.
+    { name: "BINGO_CERF_FB_EN",
+      desc: "Bingo CERF degradation enable (bit t = core type t, see BINGO_CORE_TYPE_ID in occamy_memory_map.h); 0 = off. Clearing a bit clears its BINGO_CERF_FB_EVT bit and re-arms the type.",
+      swaccess: "rw",
+      hwaccess: "hro",
+      fields: [
+        { bits: "${bingo_nr_core_types-1}:0", resval: "0", name: "BINGO_CERF_FB_EN",
+          desc: '''Bit t: degrade when a slot of core type t is stuck or rejected.'''
+        }
+      ]
+    },
+    { multireg:
+      { name: "BINGO_CERF_FB_MAP",
+        desc: "Bingo CERF degradation of one core type: the CERF group to clear and the one to set (the same group ends set).",
+        swaccess: "rw",
+        hwaccess: "hro",
+        count: "NumBingoCoreTypes",
+        cname: "bingo_cerf_fb_map",
+        fields: [
+          { bits: "4:0", resval: "0", name: "CLEAR_GROUP",
+            desc: '''CERF group cleared when this type degrades.'''
+          },
+          { bits: "12:8", resval: "0", name: "SET_GROUP",
+            desc: '''CERF group set when this type degrades.'''
+          }
+        ]
+      }
+    },
+    { name: "BINGO_CERF_FB_EVT",
+      desc: "Bingo CERF degradation done (bit t = core type t); stays set until that enable bit is cleared.",
+      swaccess: "ro",
+      hwaccess: "hwo",
+      fields: [
+        { bits: "${bingo_nr_core_types-1}:0", resval: "0", name: "BINGO_CERF_FB_EVT",
+          desc: '''Bit t: the CERF update of core type t was applied.'''
         }
       ]
     },

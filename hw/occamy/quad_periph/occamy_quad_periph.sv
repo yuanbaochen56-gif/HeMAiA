@@ -48,6 +48,11 @@ module occamy_quad_periph import occamy_quad_periph_reg_pkg::*; #(
   // Bingo core parking (bit core + cluster * cores per cluster)
   output reg_data_t   bingo_hw_manager_park_req_o,
   input  reg_data_t   bingo_hw_manager_park_fail_i,
+  // Bingo CERF degradation table (index: core type)
+  output logic [NumBingoCoreTypes-1:0]      bingo_hw_manager_cerf_fb_en_o,
+  output logic [NumBingoCoreTypes-1:0][4:0] bingo_hw_manager_cerf_fb_clear_o,
+  output logic [NumBingoCoreTypes-1:0][4:0] bingo_hw_manager_cerf_fb_set_o,
+  input  logic [NumBingoCoreTypes-1:0]      bingo_hw_manager_cerf_fb_evt_i,
   input  logic [5:0]  bingo_hw_manager_remote_link_error_i,
   input  logic [BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER-1:0][BINGO_HW_MANAGER_NR_CLUSTER-1:0] bingo_hw_manager_core_dead_suspect_i,
   input  logic [BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER-1:0][BINGO_HW_MANAGER_NR_CLUSTER-1:0] bingo_hw_manager_core_fenced_i
@@ -109,6 +114,13 @@ module occamy_quad_periph import occamy_quad_periph_reg_pkg::*; #(
   assign bingo_hw_manager_park_req_o                 = reg2hw.bingo_park_req.q;
   assign hw2reg.bingo_park_fail.d                    = bingo_hw_manager_park_fail_i;
   assign hw2reg.bingo_park_fail.de                   = 1'b1;
+  assign bingo_hw_manager_cerf_fb_en_o               = reg2hw.bingo_cerf_fb_en.q;
+  for (genvar t = 0; t < NumBingoCoreTypes; t++) begin : gen_bingo_cerf_fb_map
+    assign bingo_hw_manager_cerf_fb_clear_o[t] = reg2hw.bingo_cerf_fb_map[t].clear_group.q;
+    assign bingo_hw_manager_cerf_fb_set_o[t]   = reg2hw.bingo_cerf_fb_map[t].set_group.q;
+  end
+  assign hw2reg.bingo_cerf_fb_evt.d                  = bingo_hw_manager_cerf_fb_evt_i;
+  assign hw2reg.bingo_cerf_fb_evt.de                 = 1'b1;
   assign hw2reg.bingo_status.remote_done_mismatch.de = 1'b1;
   assign hw2reg.bingo_status.remote_link_error.d     = bingo_hw_manager_remote_link_error_i;
   assign hw2reg.bingo_status.remote_link_error.de    = 1'b1;

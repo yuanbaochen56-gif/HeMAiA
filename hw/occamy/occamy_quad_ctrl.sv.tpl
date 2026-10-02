@@ -118,6 +118,9 @@ module ${name}_quad_ctrl
   logic                                  bingo_remote_done_mismatch;
   logic                                  bingo_remote_timeout;
   cfg_t                                  bingo_park_req, bingo_park_fail;
+  // CERF degradation table (index: core type) and the types that fired
+  logic [${2**bingo_core_type_id_width-1}:0]       bingo_cerf_fb_en, bingo_cerf_fb_evt;
+  logic [${2**bingo_core_type_id_width-1}:0][4:0]  bingo_cerf_fb_clear, bingo_cerf_fb_set;
   cfg_t                                  bingo_remote_proxy_timeout;
   logic                                  bingo_replay_stuck;
   logic [BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER-1:0][NrClustersPerQuad-1:0] bingo_core_fenced;
@@ -230,6 +233,10 @@ module ${name}_quad_ctrl
     .bingo_hw_manager_remote_proxy_timeout_o  (bingo_remote_proxy_timeout          ),
     .bingo_hw_manager_park_req_o              (bingo_park_req                      ),
     .bingo_hw_manager_park_fail_i             (bingo_park_fail                     ),
+    .bingo_hw_manager_cerf_fb_en_o            (bingo_cerf_fb_en                    ),
+    .bingo_hw_manager_cerf_fb_clear_o         (bingo_cerf_fb_clear                 ),
+    .bingo_hw_manager_cerf_fb_set_o           (bingo_cerf_fb_set                   ),
+    .bingo_hw_manager_cerf_fb_evt_i           (bingo_cerf_fb_evt                   ),
     .bingo_hw_manager_remote_link_error_i     (bingo_remote_link_error             ),
     .bingo_hw_manager_core_dead_suspect_i     (bingo_core_dead_suspect             ),
     .bingo_hw_manager_core_fenced_i           (bingo_core_fenced                   )
@@ -404,6 +411,10 @@ module ${name}_quad_ctrl
     .cerf_write_en_i                           (cerf_write_en                       ),
     .cerf_write_data_i                         (cerf_write_data                     ),
     .cerf_state_o                              (cerf_state                          ),
+    .cerf_fb_en_i                              (bingo_cerf_fb_en                    ),
+    .cerf_fb_clear_i                           (bingo_cerf_fb_clear                 ),
+    .cerf_fb_set_i                             (bingo_cerf_fb_set                   ),
+    .cerf_fb_evt_o                             (bingo_cerf_fb_evt                   ),
     // DARTS: Load Monitor (not connected yet)
     .load_total_pending_o                      (/* unused */                         ),
     // Watchdog / replay status (quad periph BINGO_* status registers)

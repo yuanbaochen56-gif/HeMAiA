@@ -226,6 +226,21 @@ inline uintptr_t quad_ctrl_bingo_core_fenced_addr(){
     return QUAD_AXI_LITE_NARROW_PERIPHERALS_BASE_ADDR + OCCAMY_QUAD_PERIPH_BINGO_CORE_FENCED_REG_OFFSET;
 }
 
+// Bingo CERF degradation table: enable (bit = core type), one word per core
+// type (clear group [4:0], set group [12:8]), fired types (read-only)
+inline uintptr_t quad_ctrl_bingo_cerf_fb_en_addr(){
+    return QUAD_AXI_LITE_NARROW_PERIPHERALS_BASE_ADDR + OCCAMY_QUAD_PERIPH_BINGO_CERF_FB_EN_REG_OFFSET;
+}
+
+inline uintptr_t quad_ctrl_bingo_cerf_fb_map_addr(uint32_t core_type){
+    return QUAD_AXI_LITE_NARROW_PERIPHERALS_BASE_ADDR + OCCAMY_QUAD_PERIPH_BINGO_CERF_FB_MAP_0_REG_OFFSET +
+           4 * core_type;
+}
+
+inline uintptr_t quad_ctrl_bingo_cerf_fb_evt_addr(){
+    return QUAD_AXI_LITE_NARROW_PERIPHERALS_BASE_ADDR + OCCAMY_QUAD_PERIPH_BINGO_CERF_FB_EVT_REG_OFFSET;
+}
+
 inline uintptr_t quad_ctrl_bingo_core_dead_suspect_addr(){
     return QUAD_AXI_LITE_NARROW_PERIPHERALS_BASE_ADDR + OCCAMY_QUAD_PERIPH_BINGO_CORE_DEAD_SUSPECT_REG_OFFSET;
 }

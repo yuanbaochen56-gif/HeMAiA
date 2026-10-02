@@ -53,6 +53,10 @@ s12     as s5, but with level 2 (substitute mask 3):       EOC success, both hos
         the cluster-0 DM core hangs on task 0 and the      victim is fenced, task 0 replayed on the
         cluster-1 DM core (same type) takes over           cluster-1 DM core, the victim retired,
                                                            its exit task remapped there as well
+s16     moe2_2cluster, top-1, level 1 only; expert 0       one CERF g0 -> g1 event, expert 1 runs,
+        accelerator hangs, CERF fallback enabled           join and EOC complete, expert 1 golden PASS
+s17     same workload/table as s16, without a fault       expert 0 golden PASS, expert 1 skipped,
+                                                           no watchdog or CERF fallback event
 ======  =================================================  ==========================================
 
 The bingo manager may only move a dead core's tasks to a core of the same type
@@ -164,6 +168,10 @@ TWO_PLAIN_DM_VICTIM = (0, 3, 0)
 # the generated RTL by the level-3 scenarios (their cfg keys use these ids)
 TWO_PLAIN_CORE_TYPES = {0: 1, 1: TWO_PLAIN_CORE_TYPE, 2: TWO_PLAIN_CORE_TYPE, 3: 3, 4: 0}
 QUAD_CTRL_RTL = "target/rtl/src/occamy_quad_ctrl.sv"
+MOE2_FAULT_GID = 4  # e0_gemm; explicit node ids in moe2_2cluster/main_bingo.py
+MOE2_CORE_TYPE = 1
+MOE2_FB_FLAGS = ("-DBINGO_CERF_FB_CLUSTER=0 -DBINGO_CERF_FB_CORE=0 "
+                 "-DBINGO_CERF_FB_CLEAR=0 -DBINGO_CERF_FB_SET=1")
 
 SCENARIOS: Dict[str, dict] = {
     "s1": dict(
@@ -297,6 +305,28 @@ SCENARIOS: Dict[str, dict] = {
         expect_takeover=True,
         expect_eoc=True, expect_fence=True, sim_timeout_s=3600,
     ),
+    "s16": dict(
+        desc="expert 0 accelerator hangs, CERF g0 -> g1: backup expert and join complete",
+        cfg=HEMAIA_CI_CFG, timeout_cycles=TIGHT_TIMEOUT_CYCLES,
+        confirm_timeout_cycles=CONFIRM_TIMEOUT_CYCLES,
+        extra_cfg={"bingo_substitute_level_mask": "1"}, cfg_suffix="_cerf_l1",
+        workload="moe2_2cluster", fault_stall_cycles=0,
+        fault_gid=MOE2_FAULT_GID, victim=(0, 0, 0), cerf_fallback=True,
+        extra_flags=MOE2_FB_FLAGS + " -DBINGO_MOE_EXPECT_EXPERT=1",
+        expect_core_types={0: MOE2_CORE_TYPE, 1: 2, 2: 0},
+        expect_eoc=True, expect_fence=True, expect_host_stuck=True, sim_timeout_s=900,
+    ),
+    "s17": dict(
+        desc="healthy top-1 MoE2: expert 0 runs, ordered backup expert is skipped",
+        cfg=HEMAIA_CI_CFG, timeout_cycles=TIGHT_TIMEOUT_CYCLES,
+        confirm_timeout_cycles=CONFIRM_TIMEOUT_CYCLES,
+        extra_cfg={"bingo_substitute_level_mask": "1"}, cfg_suffix="_cerf_l1",
+        workload="moe2_2cluster", fault_stall_cycles=None, cerf_fallback=True,
+        victim=(0, 0, 0),
+        extra_flags=MOE2_FB_FLAGS + " -DBINGO_MOE_EXPECT_EXPERT=0",
+        expect_core_types={0: MOE2_CORE_TYPE, 1: 2, 2: 0},
+        expect_eoc=True, sim_timeout_s=900,
+    ),
 }
 
 # fenced= only exists since the replay support; older RTL prints dead_suspect only.
@@ -321,6 +351,55 @@ RDONE_IN_RE = re.compile(r"\[BINGO_REMOTE_DONE_IN\] \d+ chip=(\d+) task=(\d+) pr
 REJECT_OUT_RE = re.compile(r"\[BINGO_REMOTE_REJECT_OUT\] \d+ chip=(\d+) task=(\d+) -> chip=(\d+) proxy_slot=(\d+)")
 REJECT_IN_RE = re.compile(r"\[BINGO_REMOTE_REJECT_IN\] \d+ chip=(\d+) task=(\d+) proxy_slot=(\d+)")
 RLINK_RE = re.compile(r"\[BINGO_RLINK_(TX|RX)_(AW|W|B)\] \d+ chip=(\d+) (addr|data|resp)=(0x[0-9a-fA-F]+|\d+)")
+CERF_FB_RE = re.compile(r"\[BINGO_CERF_FB\] (\d+) type (\d+) clear g(\d+) set g(\d+)")
+DISPATCH_RE = re.compile(r"\[BINGO_DISPATCH\] (\d+) chip=(\d+) task=(\d+) core=(\d+) cluster=(\d+)")
+
+
+def evaluate_cerf_fallback(sc: dict, log_text: str, uart_text: str) -> List[str]:
+    """Check actual dispatches, final CERF/evt and the selected expert golden."""
+    problems: List[str] = []
+    fault = sc["fault_stall_cycles"] is not None
+    expert = 1 if fault else 0
+    fb = [tuple(map(int, m.groups())) for m in CERF_FB_RE.finditer(log_text)]
+    if len(fb) != int(fault) or any(e[1:] != (MOE2_CORE_TYPE, 0, 1) for e in fb):
+        problems.append(f"CERF fallback events {fb}, expected {'one type 1 g0 -> g1' if fault else 'none'}")
+    dispatches = [tuple(map(int, m.groups())) for m in DISPATCH_RE.finditer(log_text)]
+    primary_ids = {2, 3, 4, 5, 12}  # branch and the g0 exit of the fault core
+    backup_ids = {6, 7, 8, 9}
+    expected_primary = {2, 3, 4} if fault else primary_ids
+    primary = [d for d in dispatches if d[2] in primary_ids]
+    backup = [d for d in dispatches if d[2] in backup_ids]
+    if {d[2] for d in primary} != expected_primary or len(primary) != len(expected_primary):
+        problems.append(f"primary dispatches {primary}, expected tasks {sorted(expected_primary)} once")
+    if {d[2] for d in backup} != (backup_ids if fault else set()) or len(backup) != (4 if fault else 0):
+        problems.append(f"backup dispatches {backup}, expected {'tasks 6..9 once' if fault else 'none'}")
+    for d in primary + backup:
+        cl = 0 if d[2] in primary_ids else 1
+        core = 0 if d[2] in {4, 8, 12} else 1
+        if (d[1], d[3], d[4]) != (0, core, cl):
+            problems.append(f"expert task on wrong physical slot: {d}")
+    if fault and len(fb) == 1:
+        switched_at = fb[0][0]
+        if any(d[0] >= switched_at for d in primary):
+            problems.append("g0 task dispatched after the CERF fallback")
+        if any(d[0] <= switched_at for d in backup):
+            problems.append("backup task dispatched before the CERF fallback")
+    joins = [d for d in dispatches if d[2] == 10]
+    if len(joins) != 1 or joins[0][1:] != (0, 10, 2, 0):
+        problems.append(f"host join dispatches {joins}, expected task 10 once on host")
+    elif any(d[0] >= joins[0][0] for d in primary + backup if d[2] != 12):
+        problems.append("join dispatched before the expert branch finished dispatching")
+    host = re.search(r"\[Host\] Bingo status: .* cerf=0x([0-9a-fA-F]+) "
+                     r"cerf_fb_en=0x([0-9a-fA-F]+) cerf_fb_evt=0x([0-9a-fA-F]+)", uart_text)
+    expected = (1 << expert, 1 << MOE2_CORE_TYPE, (1 << MOE2_CORE_TYPE) if fault else 0)
+    if not host or tuple(int(v, 16) for v in host.groups()) != expected:
+        problems.append(f"host CERF/en/evt {host.groups() if host else None}, expected {expected}")
+    if CHECK_RE.findall(uart_text) != [(f"expert_{expert}_D", "PASS")]:
+        problems.append(f"expected only Check [expert_{expert}_D]: PASS")
+    if f"[MoE2] router selected expert 0; join complete; output expert {expert}" not in uart_text:
+        problems.append("missing router / join completion marker")
+    print(f"[cerf_fallback] events={fb} primary={primary} backup={backup} joins={joins}")
+    return problems
 
 
 def make_cfg(base_cfg: str, timeout_cycles: Optional[int],
@@ -550,11 +629,11 @@ def evaluate_park(sc: dict, log_text: str, uart_text: str) -> List[str]:
 
 
 def check_core_types(expected: Dict[int, int]) -> List[str]:
-    """Compare the generated BingoCoreTypeId (one cluster) with {core: type}."""
+    """Compare the generated homogeneous BingoCoreTypeId with {core: type}."""
     rtl = _REPO_ROOT / QUAD_CTRL_RTL
     text = rtl.read_text(errors="replace") if rtl.exists() else ""
     found = {int(core): int(t) for t, core in
-             re.findall(r"^\s*\d+'d(\d+),?\s*// core (\d+), clusters 0\.\.0$", text, flags=re.M)}
+             re.findall(r"^\s*\d+'d(\d+)[^\n]*// core (\d+), clusters \d+\.\.\d+$", text, flags=re.M)}
     if found != expected:
         return [f"generated BingoCoreTypeId {found} in {QUAD_CTRL_RTL}, the scenario assumes {expected}"]
     return []
@@ -570,8 +649,15 @@ def evaluate(name: str, sc: dict, log_text: str, uart_text: str) -> List[str]:
     replays = REPLAY_RE.findall(log_text)
     stuck = STUCK_RE.findall(log_text)
     asserts = ASSERT_RE.findall(log_text)
+    # (includes the host reading X, which derails it before EOC)
+    other_asserts = re.findall(r"^.*(?:\[ASSERT FAILED\]|Assertion.*failed|reading invalid data).*$",
+                               log_text, flags=re.M)
     csr = CSR_RE.findall(log_text)
     checks = CHECK_RE.findall(uart_text)
+    if sc.get("cerf_fallback"):
+        problems += evaluate_cerf_fallback(sc, log_text, uart_text)
+    elif "[BINGO_CERF_FB]" in log_text:
+        problems.append("unexpected CERF fallback in a continuity scenario")
 
     if sc["expect_eoc"] and not eoc_ok:
         problems.append(f"expected '{SIM_OK_MARKER}' without errors")
@@ -637,6 +723,8 @@ def evaluate(name: str, sc: dict, log_text: str, uart_text: str) -> List[str]:
                             f"on {victim}, got {drops}")
     if asserts:
         problems.append(f"{len(asserts)} [BINGO_ASSERT] violation(s): {asserts[:3]}")
+    if other_asserts:
+        problems.append(f"{len(other_asserts)} RTL assertion failure(s): {other_asserts[:3]}")
     # (s13: stuck through the remote reject, not a local [BINGO_REPLAY_STUCK])
     expect_stuck = sc.get("expect_fence", False) and substitute is None and not sc.get("remote_reject", False)
     if expect_stuck != bool(stuck):
@@ -671,6 +759,42 @@ def evaluate(name: str, sc: dict, log_text: str, uart_text: str) -> List[str]:
     return problems
 
 
+class CoreTypeCheckedSimRunner(HeMAiASimRunner):
+    """Check the compiled configuration before a long simulation can outlive it."""
+
+    def __init__(self, *, expected_core_types=None, **kwargs):
+        super().__init__(**kwargs)
+        self.expected_core_types = expected_core_types
+        self.core_type_problems = []
+
+    def run_simulations(self, tasks_info):
+        # Generated RTL is shared by builds and may be overwritten while vsim
+        # runs. Keep the check result for this build, not the next one's RTL.
+        if self.expected_core_types is not None:
+            self.core_type_problems = check_core_types(self.expected_core_types)
+        return super().run_simulations(tasks_info)
+
+
+class NoTraceSimRunner(CoreTypeCheckedSimRunner):
+    """Sends the Snitch instruction traces to /dev/null.
+
+    Questa always writes them, one line per cycle for a core spinning in a
+    hang, so a scenario that runs into its wall-clock limit leaves GBs behind
+    (s13: 6 GB in 30 min). The host (CVA6) trace is kept.
+    """
+
+    def run_simulations(self, tasks_info):
+        for task_dir, _ in tasks_info:
+            logs = Path(task_dir) / "bin" / "logs"
+            logs.mkdir(parents=True, exist_ok=True)
+            for hart in range(1, 65):
+                trace = logs / f"trace_chip_00_hart_{hart:05x}.dasm"
+                if not trace.is_symlink():
+                    trace.unlink(missing_ok=True)
+                    trace.symlink_to("/dev/null")
+        return super().run_simulations(tasks_info)
+
+
 def run_scenario(name: str, args: argparse.Namespace) -> bool:
     sc = dict(SCENARIOS[name])
     if args.wd_timeout is not None and sc.get("timeout_cycles") is not None:
@@ -689,7 +813,7 @@ def run_scenario(name: str, args: argparse.Namespace) -> bool:
     if sc["fault_stall_cycles"] is not None:
         task["extra_user_flags"] = (f"-DBINGO_WD_FAULT_GID={sc.get('fault_gid', FAULT_GID)} "
                                     f"-DBINGO_WD_FAULT_STALL_CYCLES={sc['fault_stall_cycles']}")
-        if sc.get("substitute") is not None:
+        if sc.get("substitute") is not None or sc.get("cerf_fallback"):
             # The substitute gets the same task replayed: only the victim misbehaves
             _, core, cluster = sc["victim"]
             task["extra_user_flags"] += f" -DBINGO_WD_FAULT_CLUSTER={cluster} -DBINGO_WD_FAULT_CORE={core}"
@@ -697,7 +821,9 @@ def run_scenario(name: str, args: argparse.Namespace) -> bool:
         if flags:
             task["extra_user_flags"] = (task.get("extra_user_flags", "") + " " + flags).strip()
 
-    runner = HeMAiASimRunner(
+    runner_cls = CoreTypeCheckedSimRunner if args.keep_traces else NoTraceSimRunner
+    runner = runner_cls(
+        expected_core_types=sc.get("expect_core_types"),
         repo_root=_REPO_ROOT,
         output_dir=out_dir,
         engine="vsim",
@@ -722,8 +848,7 @@ def run_scenario(name: str, args: argparse.Namespace) -> bool:
     log_text = log_path.read_text(errors="replace") if log_path.exists() else ""
     uart_text = uart_path.read_text(errors="replace") if uart_path.exists() else ""
     problems = evaluate(name, sc, log_text, uart_text)
-    if sc.get("expect_core_types"):
-        problems += check_core_types(sc["expect_core_types"])
+    problems += runner.core_type_problems
     if sc["expect_eoc"] and log_text:
         # The host prints the manager's status at the end; its fenced bitmap must
         # match the last [BINGO_STATUS] of the RTL (register order; 0 without
@@ -734,7 +859,8 @@ def run_scenario(name: str, args: argparse.Namespace) -> bool:
         rtl_fenced = int(rtl[-1], 16) if rtl else 0
         if not host:
             problems.append("no '[Host] Bingo status' line in the UART log")
-        elif (int(host.group(4), 16) != rtl_fenced) or host.group(1) != "0" or host.group(3) != "0":
+        elif (int(host.group(4), 16) != rtl_fenced) or \
+                host.group(1) != str(int(sc.get("expect_host_stuck", False))) or host.group(3) != "0":
             problems.append(f"host status {host.group(0)} (RTL fenced 0x{rtl_fenced:x})")
     if sc.get("expect_boost_level"):
         # The victim's cluster domain (1) reaches the boost level after the fence
@@ -779,6 +905,9 @@ def main() -> None:
                         help="override the watchdog heartbeat timeout (quad_ctrl cycles) of every "
                              "scenario that sets one; the confirm timeout becomes twice that (sweeps; "
                              "s3/s8/s9 size their stalls for the default 100k)")
+    parser.add_argument("--keep-traces", action="store_true",
+                        help="keep the Snitch instruction traces (bin/logs/*.dasm); by default "
+                             "they go to /dev/null, a hung core writes GBs of them")
     args = parser.parse_args()
 
     if shutil.which("vsim") is None:

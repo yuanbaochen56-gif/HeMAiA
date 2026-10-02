@@ -516,6 +516,19 @@ module ${name}_quad_ctrl
   );
 
 `ifndef SYNTHESIS
+  // With degradation enabled, log actual ready-queue dispatches on every slot.
+  // This checks that a cleared branch never runs after the fallback commit.
+  for (genvar core = 0; core < BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER; core++) begin : gen_bingo_dispatch_core_log
+    for (genvar cluster = 0; cluster < NrClustersPerQuad; cluster++) begin : gen_bingo_dispatch_cluster_log
+      always @(posedge ${quad_ctrl_axi_lite_xbar.clk}) begin
+        if (${quad_ctrl_axi_lite_xbar.rst} && (|bingo_cerf_fb_en) &&
+            i_bingo_hw_manager.ready_queue_pop[core][cluster])
+          $display("[BINGO_DISPATCH] %0t chip=%0d task=%0d core=%0d cluster=%0d",
+                   $time, chip_id_i, i_bingo_hw_manager.ready_queue_data_out[core][cluster].task_id,
+                   core, cluster);
+      end
+    end
+  end
   // Simulation-only packet log of the remote link (address and 64-bit packet of
   // every AXI-Lite write it sends and receives, and the write responses).
   always @(posedge ${quad_ctrl_axi_lite_xbar.clk}) begin : bingo_remote_link_log

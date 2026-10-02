@@ -72,6 +72,10 @@ s24     s16 with boost level 3, substitute boost policy    as s16; the stuck cor
 s25     s16 with boost level 3, capacity policy (one       as s16; domain 2 (the type-1 survivor in
         domain per lost core)                              cluster 1) boosted after the fallback, never
                                                            domain 1
+s26     two plain cores, L3 only, home-slot import;        export and reject, CERF g0 -> g1, backup
+        primary add hangs, CERF fallback enabled           add and join complete, EOC and backup PASS
+s27     same workload/configuration as s26, no fault      primary add PASS, backup skipped, EOC,
+                                                           no watchdog or fallback event
 ======  =================================================  ==========================================
 
 The bingo manager may only move a dead core's tasks to a core of the same type
@@ -193,6 +197,7 @@ HEMAIA_CI_SLOTS = 3
 CHAIN_FLAGS = "-DBINGO_WD_FAULT_PRE_STALL_CYCLES=100000 -DBINGO_RISK_LATE=30000"
 MOE2_FAULT_GID = 4  # e0_gemm; explicit node ids in moe2_2cluster/main_bingo.py
 MOE2_CORE_TYPE = 1
+PLAIN_CERF_FAULT_GID = 3  # core1_add in int32_add_2plain_cerf_1cluster
 
 SCENARIOS: Dict[str, dict] = {
     "s1": dict(
@@ -445,6 +450,27 @@ SCENARIOS: Dict[str, dict] = {
         expect_core_types={0: MOE2_CORE_TYPE, 1: 2, 2: 0}, expect_boost_domains=(2,),
         expect_eoc=True, expect_fence=True, expect_host_stuck=True, sim_timeout_s=900,
     ),
+    "s26": dict(
+        desc="plain core 1 hangs, L3 import rejects: CERF switches to core 2, join and EOC complete",
+        cfg=ONE_CLUSTER_CFG, cluster_swap=TWO_PLAIN_CLUSTER_SWAP,
+        timeout_cycles=TIGHT_TIMEOUT_CYCLES, confirm_timeout_cycles=CONFIRM_TIMEOUT_CYCLES,
+        extra_cfg=REJECT_CFG_KEYS, cfg_suffix="_rlink_reject",
+        workload="int32_add_2plain_cerf_1cluster", fault_stall_cycles=0,
+        fault_gid=PLAIN_CERF_FAULT_GID, victim=TWO_PLAIN_VICTIM,
+        remote_reject=True, plain_cerf_fallback=True,
+        extra_flags="-DBINGO_ADD_EXPECT_BRANCH=1", expect_core_types=TWO_PLAIN_CORE_TYPES,
+        expect_eoc=True, expect_fence=True, expect_host_stuck=True, sim_timeout_s=900,
+    ),
+    "s27": dict(
+        desc="healthy int32 CERF add: core 1 runs, ordered core 2 backup is skipped",
+        cfg=ONE_CLUSTER_CFG, cluster_swap=TWO_PLAIN_CLUSTER_SWAP,
+        timeout_cycles=TIGHT_TIMEOUT_CYCLES, confirm_timeout_cycles=CONFIRM_TIMEOUT_CYCLES,
+        extra_cfg=REJECT_CFG_KEYS, cfg_suffix="_rlink_reject",
+        workload="int32_add_2plain_cerf_1cluster", fault_stall_cycles=None,
+        victim=TWO_PLAIN_VICTIM, plain_cerf_fallback=True,
+        extra_flags="-DBINGO_ADD_EXPECT_BRANCH=0", expect_core_types=TWO_PLAIN_CORE_TYPES,
+        expect_eoc=True, sim_timeout_s=900,
+    ),
 }
 
 # fenced= only exists since the replay support; older RTL prints dead_suspect only.
@@ -618,6 +644,55 @@ def evaluate_cerf_fallback(sc: dict, log_text: str, uart_text: str) -> List[str]
     return problems
 
 
+def evaluate_plain_cerf_fallback(sc: dict, log_text: str, uart_text: str) -> List[str]:
+    """Require rejection before fallback, the selected add, and an ordered join."""
+    problems: List[str] = []
+    fault = sc["fault_stall_cycles"] is not None
+    branch = int(fault)
+    fb = [tuple(map(int, m.groups())) for m in CERF_FB_RE.finditer(log_text)]
+    if len(fb) != int(fault) or any(e[1:] != (TWO_PLAIN_CORE_TYPE, 0, 1) for e in fb):
+        problems.append(f"plain CERF events {fb}, expected {'one type 2 g0 -> g1' if fault else 'none'}")
+    dispatches = [tuple(map(int, m.groups())) for m in DISPATCH_RE.finditer(log_text)]
+    # User tasks 0..5; task 8 is the compiler's g0 exit on the protected core.
+    expected = {0: 4, 1: 3, 2: 3, 3: 1, 5: 4}
+    expected[4 if fault else 8] = 2 if fault else 1
+    selected = [d for d in dispatches if d[2] in set(range(6)) | {8}]
+    if sorted(d[2] for d in selected) != sorted(expected):
+        problems.append(f"plain branch dispatches {selected}, expected tasks {sorted(expected)} once")
+    for d in selected:
+        if d[2] not in expected or (d[1], d[3], d[4]) != (0, expected[d[2]], 0):
+            problems.append(f"plain task on wrong physical slot: {d}")
+    times = {d[2]: d[0] for d in selected}
+    if all(task in times for task in (0, 1, 2, 3, 5)) and not (
+            times[0] < times[1] < times[2] < times[3] < times[5]):
+        problems.append("expected gating < both DM loads < primary add < host join")
+    if fault and len(fb) == 1:
+        rejected = [int(t) for t in re.findall(
+            r"\[BINGO_REMOTE_REJECT_IN\] (\d+) chip=0 task=3 proxy_slot=1", log_text)]
+        if len(rejected) != 1 or not rejected[0] < fb[0][0]:
+            problems.append("expected proxy reject before CERF fallback")
+        if not all(task in times for task in (3, 4, 5)) or not (
+                times[3] < fb[0][0] < times[4] < times[5]):
+            problems.append("expected primary add < CERF fallback < backup add < join")
+    elif not fault:
+        if "[BINGO_REMOTE_REJECT" in log_text:
+            problems.append("unexpected remote reject in the healthy control")
+        if 8 in times and 5 in times and times[8] <= times[5]:
+            problems.append("protected exit dispatched before the host join")
+    host = re.search(r"\[Host\] Bingo status: .* cerf=0x([0-9a-fA-F]+) "
+                     r"cerf_fb_en=0x([0-9a-fA-F]+) cerf_fb_evt=0x([0-9a-fA-F]+)", uart_text)
+    expected_status = (1 << branch, 1 << TWO_PLAIN_CORE_TYPE,
+                       (1 << TWO_PLAIN_CORE_TYPE) if fault else 0)
+    if not host or tuple(int(v, 16) for v in host.groups()) != expected_status:
+        problems.append(f"host plain CERF/en/evt {host.groups() if host else None}, expected {expected_status}")
+    if CHECK_RE.findall(uart_text) != [(f"C_branch_{branch}", "PASS")]:
+        problems.append(f"expected only Check [C_branch_{branch}]: PASS")
+    if f"[Int32AddCERF] gating selected g0; join complete; output branch {branch}" not in uart_text:
+        problems.append("missing gating / join completion marker")
+    print(f"[plain_cerf_fallback] events={fb} dispatches={selected}")
+    return problems
+
+
 def make_cfg(base_cfg: str, timeout_cycles: Optional[int],
              cluster_swap: Optional[Tuple[str, str]] = None,
              confirm_timeout_cycles: Optional[int] = None,
@@ -782,7 +857,7 @@ def evaluate_remote_reject(sc: dict, log_text: str) -> List[str]:
     task = sc["fault_gid"]
     exports = [tuple(int(x) for x in m.groups()) for m in EXPORT_RE.finditer(log_text)]
     if exports != [(chip, task, TWO_PLAIN_CORE_TYPE, proxy_slot)]:
-        problems.append(f"exports {exports}, expected only task {task} (the exit task stays held)")
+        problems.append(f"exports {exports}, expected only task {task} (no further export after rejection)")
     for name, rx in (("[BINGO_IMPORT]", IMPORT_RE), ("[BINGO_REMOTE_DONE_OUT]", RDONE_OUT_RE),
                      ("[BINGO_REMOTE_DONE_IN]", RDONE_IN_RE)):
         if rx.findall(log_text):
@@ -794,6 +869,8 @@ def evaluate_remote_reject(sc: dict, log_text: str) -> List[str]:
     moved = [tuple(int(x) for x in m.groups()) for m in REPLAY_FIELDS_RE.finditer(log_text)]
     if any((r[3], r[4]) != (core, core) for r in moved):
         problems.append(f"local replay although level 3 is forced: {moved[:3]}")
+    if REMAP_RE.findall(log_text):
+        problems.append(f"local remap although level 3 is forced: {REMAP_RE.findall(log_text)[:3]}")
     # Link: the dispatch, then the reject (kind 0xC) on the done page
     ev = {(d, c): [] for d in ("TX", "RX") for c in ("AW", "W", "B")}
     for m in RLINK_RE.finditer(log_text):
@@ -801,11 +878,15 @@ def evaluate_remote_reject(sc: dict, log_text: str) -> List[str]:
         ev[(direction, channel)].append(int(value, 0))
     tx = list(zip(ev[("TX", "AW")], ev[("TX", "W")]))
     rx = list(zip(ev[("RX", "AW")], ev[("RX", "W")]))
+    # The mailbox logger exposes RX AW/W, but B responses only at the TX master.
+    if any(len(ev[key]) != 2 for key in
+           (("TX", "AW"), ("TX", "W"), ("TX", "B"), ("RX", "AW"), ("RX", "W"))):
+        problems.append("expected two TX AW/W/B and RX AW/W transactions")
     chip_base = (chip << 40) | REMOTE_LINK_BASE
     kinds = [(a - chip_base, decode_packet(d)["kind"], decode_packet(d)["task_id"]) for a, d in tx]
     if kinds != [(0, 0x5, task), (0x1000, 0xC, task)]:
         problems.append(f"link packets {[(hex(a), hex(d)) for a, d in tx]}, expected dispatch + reject of task {task}")
-    if rx != tx or any(ev[("TX", "B")]):
+    if rx != tx or any(ev[("TX", "B")] + ev[("RX", "B")]):
         problems.append(f"RX {rx} / TX {tx} / B {ev[('TX', 'B')]}")
     status = re.findall(r"\[BINGO_STATUS\] \d+ chip=\d+ (.*)", log_text)
     if not status or "replay_stuck=1 " not in status[-1]:
@@ -875,6 +956,8 @@ def evaluate(name: str, sc: dict, log_text: str, uart_text: str) -> List[str]:
     checks = CHECK_RE.findall(uart_text)
     if sc.get("cerf_fallback"):
         problems += evaluate_cerf_fallback(sc, log_text, uart_text)
+    elif sc.get("plain_cerf_fallback"):
+        problems += evaluate_plain_cerf_fallback(sc, log_text, uart_text)
     elif "[BINGO_CERF_FB]" in log_text:
         problems.append("unexpected CERF fallback in a continuity scenario")
     if sc.get("workload") == "dma_chain_2cluster":

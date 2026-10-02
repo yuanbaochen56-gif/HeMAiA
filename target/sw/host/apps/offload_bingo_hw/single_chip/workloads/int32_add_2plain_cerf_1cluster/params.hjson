@@ -1,0 +1,6 @@
+{
+    // VersaCore (0), plain cores (1, 2), DM core (3), host Bingo slot (4).
+    num_clusters: 1
+    // Both branches compute the same full vector into separate L1 outputs.
+    num_elements: 512
+}

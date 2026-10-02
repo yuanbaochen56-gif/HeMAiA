@@ -20,11 +20,14 @@
 #include <stdint.h>
 
 #define BINGO_HW_MANAGER_HEARTBEAT_CSR 0x5fe
+// Report a real exit after done; a new ready read clears the manager's exit bit.
+#define BINGO_HW_HEARTBEAT_EXIT (UINT32_C(1) << 31)
 
 #define BINGO_HW_HEARTBEAT_STR_(x) #x
 #define BINGO_HW_HEARTBEAT_STR(x) BINGO_HW_HEARTBEAT_STR_(x)
 
-// The written value is ignored by the watchdog (reserved for progress counters).
+// The watchdog ignores the value. Bit 31 reports exit to the control plane;
+// ordinary heartbeats must leave it clear.
 static inline void bingo_hw_manager_heartbeat(uint32_t value) {
     asm volatile("csrw " BINGO_HW_HEARTBEAT_STR(BINGO_HW_MANAGER_HEARTBEAT_CSR) ", %0"
                  :

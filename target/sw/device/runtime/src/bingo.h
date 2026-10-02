@@ -414,6 +414,9 @@ inline int32_t bingo_hw_offload_manager(){
                    cur_global_task_id);
             write_bingo_hw_manager_done_queue(cur_global_task_id);
             BINGO_TRACE_MARKER(BINGO_TRACE_MGR_WRITE_DONE_END);
+            // Taken-over exits return SUCC and keep polling, so only a real
+            // exit reports that this physical core is now idle.
+            write_bingo_hw_manager_heartbeat(BINGO_HW_HEARTBEAT_EXIT);
             break;
         } else if (kernel_return_value == BINGO_RET_FAIL){
             // Other error code

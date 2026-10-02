@@ -63,6 +63,10 @@ s18     dma_chain_2cluster, level 2: the cluster-0 DM      three late beats (pre
 s19     as s18, precursors on (two late beats: park)       cluster-0 DM core at risk after task 1
                                                            starts, tasks 2-5 run on cluster 1,
                                                            nothing fenced or replayed, run completes
+s20     sparse late beats, epoch 30k, threshold 2          counts decay between beats, no risk or park
+s21     park after two late beats, host CLEAR after copy 2 copy 2 on cluster 1, copies 3-5 back home
+s22     level 1 only, park + derate level 10               park fails, domain 1 derates, copies stay home
+s23     same sparse beats as s20, but epoch 0              risk trips and parks (decay-off control)
 ======  =================================================  ==========================================
 
 The bingo manager may only move a dead core's tasks to a core of the same type
@@ -364,6 +368,55 @@ SCENARIOS: Dict[str, dict] = {
         expect_core_types={0: 1, 1: 2, 2: 0},
         expect_late=2, expect_risk=True, expect_wd=[], expect_eoc=True, sim_timeout_s=900,
     ),
+    "s20": dict(
+        desc="sparse late beats with a nonzero epoch: count halves between beats, never parks",
+        cfg=HEMAIA_CI_CFG, timeout_cycles=TIGHT_TIMEOUT_CYCLES,
+        confirm_timeout_cycles=CONFIRM_TIMEOUT_CYCLES,
+        extra_cfg=L2_CFG_KEYS, cfg_suffix="_l2",
+        workload="dma_chain_2cluster", fault_stall_cycles=100_000, fault_gid=999,
+        victim=VICTIM,
+        extra_flags=CHAIN_FLAGS + " -DBINGO_RISK_POLICY=0x12 -DBINGO_RISK_EPOCH=30000",
+        expect_core_types={0: 1, 1: 2, 2: 0},
+        expect_chain_clusters=[0] * 6, expect_decay=True,
+        expect_late=7, expect_wd=[], expect_eoc=True, sim_timeout_s=900,
+    ),
+    "s21": dict(
+        desc="host holds risk CLEAR after remapped copy 2: UNPARK, later copies return home",
+        cfg=HEMAIA_CI_CFG, timeout_cycles=TIGHT_TIMEOUT_CYCLES,
+        confirm_timeout_cycles=CONFIRM_TIMEOUT_CYCLES,
+        extra_cfg=L2_CFG_KEYS, cfg_suffix="_l2",
+        workload="dma_chain_2cluster", fault_stall_cycles=100_000, fault_gid=999,
+        victim=VICTIM, substitute=1, substitute_cluster=1, park=True,
+        extra_flags=CHAIN_FLAGS + " -DBINGO_RISK_POLICY=0x12 -DBINGO_CHAIN_CLEAR_TEST",
+        expect_core_types={0: 1, 1: 2, 2: 0},
+        expect_chain_clusters=[0, 0, 1, 0, 0, 0],
+        expect_unpark=True, expect_final_risk=0,
+        expect_late=6, expect_risk=True, expect_wd=[], expect_eoc=True, sim_timeout_s=900,
+    ),
+    "s22": dict(
+        desc="no same-type level-1 substitute: park fails, domain 1 derates to level 10",
+        cfg=HEMAIA_CI_CFG, timeout_cycles=TIGHT_TIMEOUT_CYCLES,
+        confirm_timeout_cycles=CONFIRM_TIMEOUT_CYCLES,
+        extra_cfg={"bingo_substitute_level_mask": "1"}, cfg_suffix="_risk_l1",
+        workload="dma_chain_2cluster", fault_stall_cycles=100_000, fault_gid=999,
+        victim=VICTIM,
+        extra_flags=CHAIN_FLAGS + " -DBINGO_RISK_POLICY=0xa32",
+        expect_core_types={0: 1, 1: 2, 2: 0},
+        expect_chain_clusters=[0] * 6, expect_derate_level=10,
+        expect_late=7, expect_risk=True, expect_wd=[], expect_eoc=True, sim_timeout_s=900,
+    ),
+    "s23": dict(
+        desc="decay-off control for s20: the same sparse late beats trip risk and park",
+        cfg=HEMAIA_CI_CFG, timeout_cycles=TIGHT_TIMEOUT_CYCLES,
+        confirm_timeout_cycles=CONFIRM_TIMEOUT_CYCLES,
+        extra_cfg=L2_CFG_KEYS, cfg_suffix="_l2",
+        workload="dma_chain_2cluster", fault_stall_cycles=100_000, fault_gid=999,
+        victim=VICTIM, substitute=1, substitute_cluster=1, park=True,
+        extra_flags=CHAIN_FLAGS + " -DBINGO_RISK_POLICY=0x12 -DBINGO_RISK_EPOCH=0",
+        expect_core_types={0: 1, 1: 2, 2: 0},
+        expect_chain_clusters=[0, 0, 1, 1, 1, 1],
+        expect_late=2, expect_risk=True, expect_wd=[], expect_eoc=True, sim_timeout_s=900,
+    ),
 }
 
 # fenced= only exists since the replay support; older RTL prints dead_suspect only.
@@ -376,7 +429,7 @@ REPLAY_FIELDS_RE = re.compile(r"\[BINGO_REPLAY\] \d+ chip=(\d+) task=(\d+) type=
 RETIRED_RE = re.compile(r"\[BINGO_RETIRED\] \d+ chip=(\d+) core=(\d+) cluster=(\d+)")
 FENCE_DROP_RE = re.compile(r"\[BINGO_FENCE\] \d+ chip=(\d+) core=(\d+) cluster=(\d+) dropped done task=(\d+)")
 STUCK_RE = re.compile(r"\[BINGO_REPLAY_STUCK\].*")
-PARK_RE = re.compile(r"\[BINGO_PARK\] \d+ chip=(\d+) core=(\d+) cluster=(\d+) (HOLD|FAIL|dropped, fenced|PARKED -> core=(\d+) cluster=(\d+))")
+PARK_RE = re.compile(r"\[BINGO_PARK\] \d+ chip=(\d+) core=(\d+) cluster=(\d+) (HOLD|FAIL|dropped, fenced|PARKED -> core=(\d+) cluster=(\d+)|UNPARKED|UNPARK \(\d+ tasks left elsewhere\))")
 ASSERT_RE = re.compile(r"\[BINGO_ASSERT\].*")
 CSR_RE = re.compile(r"\[BINGO_CSR\].*")
 CHECK_RE = re.compile(r"Check \[([^\]]*)\]: (PASS|FAIL)")
@@ -398,12 +451,14 @@ def evaluate_risk_chain(sc: dict, log_text: str, uart_text: str) -> List[str]:
     """Require the chain's actual placement, host risk bitmap and both goldens."""
     problems: List[str] = []
     chip, core, cluster = sc["victim"]
-    sub, sub_cluster = sc["substitute"], sc["substitute_cluster"]
+    sub, sub_cluster = sc.get("substitute", core), sc.get("substitute_cluster", cluster)
     parked = sc.get("expect_risk", False)
     dispatches = [tuple(map(int, m.groups())) for m in DISPATCH_RE.finditer(log_text)
                   if int(m.group(3)) < 6]
     expected = [(task, core, cluster) for task in range(2 if parked else 4)]
     expected += [(task, sub, sub_cluster) for task in range(2 if parked else 3, 6)]
+    if "expect_chain_clusters" in sc:
+        expected = [(task, core, cl) for task, cl in enumerate(sc["expect_chain_clusters"])]
     if [(d[2], d[3], d[4]) for d in dispatches] != expected or any(
             d[1] != chip for d in dispatches):
         problems.append(f"chain dispatches {dispatches}, expected {expected} on chip {chip}")
@@ -417,11 +472,74 @@ def evaluate_risk_chain(sc: dict, log_text: str, uart_text: str) -> List[str]:
             problems.append("risk must trip during task 1, before task 2 is dispatched")
     host = re.search(r"\[Host\] Bingo status: .* risk=0x([0-9a-fA-F]+)", uart_text)
     expected_risk = (1 << (core + HEMAIA_CI_SLOTS * cluster)) if parked else 0
+    expected_risk = sc.get("expect_final_risk", expected_risk)
     if not host or int(host.group(1), 16) != expected_risk:
         problems.append(f"host risk {host.group(1) if host else None}, expected 0x{expected_risk:x}")
     if sorted(CHECK_RE.findall(uart_text)) != [
             ("A_chain_cluster0", "PASS"), ("A_cluster1", "PASS")]:
         problems.append("expected both DMA-chain host checks to pass exactly once")
+    return problems
+
+
+def evaluate_risk_controls(sc: dict, log_text: str, uart_text: str) -> List[str]:
+    """Check decay, real CSR CLEAR, and fail-before-derate ordering."""
+    problems: List[str] = []
+    chip, core, cluster = sc["victim"]
+    if sc.get("expect_decay"):
+        decay = [tuple(map(int, m)) for m in re.findall(
+            r"\[BINGO_RISK_DECAY\] (\d+) core=(\d+) cluster=(\d+) count=(\d+) -> count=(\d+)",
+            log_text)]
+        late_times = [int(t) for t in re.findall(
+            rf"\[BINGO_LATE\] (\d+) core={core} cluster={cluster}", log_text)]
+        if not decay or any(d[1:] != (core, cluster, 1, 0) for d in decay):
+            problems.append(f"expected victim count 1 -> 0 decay, got {decay}")
+        if any(not any(a < d[0] < b for d in decay)
+               for a, b in zip(late_times, late_times[1:])):
+            problems.append("missing count decay between consecutive late beats")
+    elif "[BINGO_RISK_DECAY]" in log_text:
+        problems.append("unexpected decay with epoch disabled")
+    clear = [(int(t), int(mask, 16)) for t, mask in re.findall(
+        r"\[BINGO_RISK_CLEAR\] (\d+) mask=0x([0-9a-fA-F]+)", log_text)]
+    if sc.get("expect_unpark"):
+        marker = re.findall(
+            r"\[RiskChain\] CLEAR before=0x([0-9a-fA-F]+) mask=0x([0-9a-fA-F]+) "
+            r"held=0x([0-9a-fA-F]+) after=0x([0-9a-fA-F]+)", uart_text)
+        mask = 1 << (core + HEMAIA_CI_SLOTS * cluster)
+        if [tuple(int(v, 16) for v in m) for m in marker] != [(mask, mask, mask, 0)]:
+            problems.append(f"host CLEAR readbacks {marker}, expected {(mask, mask, mask, 0)}")
+        unpark = [int(t) for t in re.findall(
+            rf"\[BINGO_PARK\] (\d+) chip={chip} core={core} cluster={cluster} UNPARKED",
+            log_text)]
+        task2 = [int(t) for t in re.findall(
+            rf"\[BINGO_DISPATCH\] (\d+) chip={chip} task=2 core={core} cluster=1", log_text)]
+        task3 = [int(t) for t in re.findall(
+            rf"\[BINGO_DISPATCH\] (\d+) chip={chip} task=3 core={core} cluster={cluster}", log_text)]
+        if len(clear) != 1 or clear[0][1] != mask or len(unpark) != 1 or \
+                len(task2) != 1 or len(task3) != 1 or not (
+                    task2[0] < clear[0][0] < unpark[0] < task3[0]):
+            problems.append("expected remapped copy 2 < CLEAR < UNPARKED < home copy 3")
+    elif clear or "[RiskChain] CLEAR" in uart_text:
+        problems.append("unexpected host risk CLEAR")
+    if sc.get("expect_derate_level"):
+        park = [m.groups()[:3] + (m.group(4),) for m in PARK_RE.finditer(log_text)]
+        expected = [(str(chip), str(core), str(cluster), state) for state in ("HOLD", "FAIL")]
+        if park != expected:
+            problems.append(f"expected HOLD then FAIL without PARKED, got {park}")
+        fail = [int(t) for t in re.findall(
+            rf"\[BINGO_PARK\] (\d+) chip={chip} core={core} cluster={cluster} FAIL", log_text)]
+        pm = [(int(t), int(level)) for t, level in re.findall(
+            r"\[BINGO_PM\] (\d+) domain=1 level=(\d+)", log_text)]
+        level = sc["expect_derate_level"]
+        derated = [t for t, lvl in pm if lvl == level]
+        if len(fail) != 1 or not derated or derated[0] <= fail[0] or \
+                any(t > derated[0] and lvl < level for t, lvl in pm):
+            problems.append(f"expected domain 1 to derate after FAIL and stay capped: {pm}")
+        host = re.search(r"\[Host\] Bingo status: .* park_fail=0x([0-9a-fA-F]+)", uart_text)
+        mask = 1 << (core + HEMAIA_CI_SLOTS * cluster)
+        if not host or int(host.group(1), 16) != mask:
+            problems.append("host park_fail must contain only the victim")
+    elif not sc.get("park") and "[BINGO_PARK]" in log_text:
+        problems.append("unexpected parking event")
     return problems
 
 
@@ -675,10 +793,12 @@ def evaluate_park(sc: dict, log_text: str, uart_text: str) -> List[str]:
     problems: List[str] = []
     chip, core, cluster = sc["victim"]
     sub, sub_cluster = sc["substitute"], sc["substitute_cluster"]
-    park = [(int(m.group(1)), int(m.group(2)), int(m.group(3)), m.group(4).split(" ->")[0],
+    park = [(int(m.group(1)), int(m.group(2)), int(m.group(3)), m.group(4).split(" ")[0],
              m.group(5), m.group(6)) for m in PARK_RE.finditer(log_text)]
     expected = [(chip, core, cluster, "HOLD", None, None),
                 (chip, core, cluster, "PARKED", str(sub), str(sub_cluster))]
+    if sc.get("expect_unpark"):
+        expected += [(chip, core, cluster, state, None, None) for state in ("UNPARK", "UNPARKED")]
     if park != expected:
         problems.append(f"[BINGO_PARK] events {park}, expected HOLD then PARKED -> core {sub} cluster {sub_cluster}")
     routed = [tuple(int(x) for x in m.groups()) for m in REMAP_FIELDS_RE.finditer(log_text)]
@@ -689,7 +809,8 @@ def evaluate_park(sc: dict, log_text: str, uart_text: str) -> List[str]:
         problems.append(f"remap other than logical core {core} -> {sub} (cluster {sub_cluster}): {wrong[:3]}")
     if REPLAY_RE.findall(log_text) or RETIRED_RE.findall(log_text):
         problems.append("a parked core was replayed or retired")
-    if f"Exit task of cluster {cluster} core {core} taken over" not in uart_text:
+    if not sc.get("expect_unpark") and \
+            f"Exit task of cluster {cluster} core {core} taken over" not in uart_text:
         problems.append(f"no 'Exit task of cluster {cluster} core {core} taken over' in the UART log")
     host = re.search(r"\[Host\] Bingo status: .* park_fail=0x([0-9a-fA-F]+)", uart_text)
     if not host or int(host.group(1), 16) != 0:
@@ -730,6 +851,7 @@ def evaluate(name: str, sc: dict, log_text: str, uart_text: str) -> List[str]:
         problems.append("unexpected CERF fallback in a continuity scenario")
     if sc.get("workload") == "dma_chain_2cluster":
         problems += evaluate_risk_chain(sc, log_text, uart_text)
+        problems += evaluate_risk_controls(sc, log_text, uart_text)
 
     # Fault precursors: late beats and at-risk events only where expected, on the victim
     vc = sc.get("victim", VICTIM)
@@ -740,7 +862,9 @@ def evaluate(name: str, sc: dict, log_text: str, uart_text: str) -> List[str]:
     if risk != ([(vc[1], vc[2])] if sc.get("expect_risk") else []):
         problems.append(f"[BINGO_RISK] events {risk}, expected {'one on the victim' if sc.get('expect_risk') else 'none'}")
     host_risk = re.search(r"\[Host\] Bingo status: .* risk=0x([0-9a-fA-F]+)", uart_text)
-    if host_risk and int(host_risk.group(1), 16) != (1 << (vc[1] + HEMAIA_CI_SLOTS * vc[2]) if sc.get("expect_risk") else 0):
+    expected_risk = sc.get("expect_final_risk",
+                           1 << (vc[1] + HEMAIA_CI_SLOTS * vc[2]) if sc.get("expect_risk") else 0)
+    if host_risk and int(host_risk.group(1), 16) != expected_risk:
         problems.append(f"host risk=0x{host_risk.group(1)}")
 
     if sc["expect_eoc"] and not eoc_ok:
@@ -899,7 +1023,7 @@ def run_scenario(name: str, args: argparse.Namespace) -> bool:
     if sc["fault_stall_cycles"] is not None:
         task["extra_user_flags"] = (f"-DBINGO_WD_FAULT_GID={sc.get('fault_gid', FAULT_GID)} "
                                     f"-DBINGO_WD_FAULT_STALL_CYCLES={sc['fault_stall_cycles']}")
-        if sc.get("substitute") is not None or sc.get("cerf_fallback"):
+        if "victim" in sc or sc.get("substitute") is not None or sc.get("cerf_fallback"):
             # The substitute gets the same task replayed: only the victim misbehaves
             _, core, cluster = sc["victim"]
             task["extra_user_flags"] += f" -DBINGO_WD_FAULT_CLUSTER={cluster} -DBINGO_WD_FAULT_CORE={core}"

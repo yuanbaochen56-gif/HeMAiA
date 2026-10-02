@@ -30,6 +30,7 @@ from bingo_node import BingoNode  # noqa: E402
 from bingo_mem_handle import BingoMemAlloc, BingoMemSymbol  # noqa: E402
 from bingo_kernel_args import (  # noqa: E402
     SnaxBingoKernelIdma1dCopyArgs,
+    HostBingoKernelDummyArgs,
     HostBingoKernelCheckResultArgs,
 )
 from data_utils import format_scalar_definition, format_vector_definition  # noqa: E402
@@ -85,6 +86,10 @@ def get_args():
         default=None,
         help="Output path for the generated data header (e.g. dma_chain_data.h).",
     )
+    parser.add_argument(
+        "--clear-after", type=int, default=None,
+        help="Insert a host risk-CLEAR dependency between this copy and the next.",
+    )
     return parser.parse_args()
 
 
@@ -118,6 +123,7 @@ def emit_header_file(**kwargs):
 
     data_str = [
         "#include <stdint.h>",
+        "uint64_t __host_bingo_kernel_risk_clear(void *arg);",
         format_scalar_definition("uint32_t", "A_size", a_size),
         format_vector_definition("uint8_t", "A_l3", a_data),
     ]
@@ -139,7 +145,7 @@ def define_memory_handles(params):
     return mem_handles
 
 
-def create_dfg(params, mem_handles, platform):
+def create_dfg(params, mem_handles, platform, clear_after=None):
     """Cluster 0: copy 0 -> copy 1 -> ... -> host check; cluster 1: copy -> check."""
     bingo_dfg = BingoDFG(
         num_chiplets=platform["num_chiplets"],
@@ -149,9 +155,12 @@ def create_dfg(params, mem_handles, platform):
         chiplet_ids=platform["chiplet_ids"],
     )
     chunk = params["chunk_size"]
+    if clear_after is not None and not 0 <= clear_after < params["chain_len"] - 1:
+        raise ValueError("clear-after must name a copy with a successor")
 
     # Global task ids follow the order the nodes are added: the copies first
     prev = None
+    copies = []
     for i in range(params["chain_len"]):
         task_copy = BingoNode(
             assigned_chiplet_id=cur_chiplet_id,
@@ -165,6 +174,7 @@ def create_dfg(params, mem_handles, platform):
             ),
         )
         bingo_dfg.bingo_add_node(task_copy)
+        copies.append(task_copy)
         if prev is not None:
             bingo_dfg.bingo_add_edge(prev, task_copy)
         prev = task_copy
@@ -183,6 +193,19 @@ def create_dfg(params, mem_handles, platform):
     )
     bingo_dfg.bingo_add_node(task_copy)
     checks.append((task_copy, "A_cluster1", mem_handles["A_L1_buf_1"], chunk))
+
+    if clear_after is not None:
+        clear = BingoNode(
+            assigned_chiplet_id=cur_chiplet_id,
+            assigned_cluster_id=HOST_CLUSTER_ID,
+            assigned_core_id=HOST_CORE_ID,
+            kernel_name="__host_bingo_kernel_risk_clear",
+            kernel_args=HostBingoKernelDummyArgs(dummy_input=1 << DMA_CORE_ID),
+        )
+        bingo_dfg.bingo_add_node(clear)
+        bingo_dfg.remove_edge(copies[clear_after], copies[clear_after + 1])
+        bingo_dfg.bingo_add_edge(copies[clear_after], clear)
+        bingo_dfg.bingo_add_edge(clear, copies[clear_after + 1])
 
     for pred, name, buf, size in checks:
         task_check = BingoNode(
@@ -225,7 +248,7 @@ def main():
         merged_config, platform, args.output_dir, args.output_offload_file_name
     ):
         return
-    dfg = create_dfg(params, mem_handles, platform)
+    dfg = create_dfg(params, mem_handles, platform, args.clear_after)
     data_header = (
         os.path.basename(args.data_h) if args.data_h is not None else "dma_chain_data.h"
     )

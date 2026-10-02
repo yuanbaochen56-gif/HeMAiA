@@ -531,9 +531,26 @@ module ${name}_quad_ctrl
 `ifndef SYNTHESIS
   // With degradation or late-beat monitoring enabled, log actual dispatches.
   // Check cleared branches and tasks routed away from an at-risk slot.
+  cfg_t bingo_risk_clear_log_q;
+  always @(posedge ${quad_ctrl_axi_lite_xbar.clk} or negedge ${quad_ctrl_axi_lite_xbar.rst}) begin
+    if (!${quad_ctrl_axi_lite_xbar.rst}) bingo_risk_clear_log_q <= '0;
+    else begin
+      bingo_risk_clear_log_q <= bingo_risk_clear;
+      if (bingo_risk_clear != bingo_risk_clear_log_q)
+        $display("[BINGO_RISK_CLEAR] %0t mask=0x%0h", $time, bingo_risk_clear);
+    end
+  end
   for (genvar core = 0; core < BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER; core++) begin : gen_bingo_dispatch_core_log
     for (genvar cluster = 0; cluster < NrClustersPerQuad; cluster++) begin : gen_bingo_dispatch_cluster_log
       always @(posedge ${quad_ctrl_axi_lite_xbar.clk}) begin
+        if (${quad_ctrl_axi_lite_xbar.rst} && i_bingo_hw_manager.i_ctrl.risk_epoch_end &&
+            (i_bingo_hw_manager.i_ctrl.risk_cnt_q[core][cluster] != 0) &&
+            !i_bingo_hw_manager.risk_clear[core][cluster] &&
+            !i_bingo_hw_manager.core_fenced[core][cluster] &&
+            !i_bingo_hw_manager.wd_late[core][cluster])
+          $display("[BINGO_RISK_DECAY] %0t core=%0d cluster=%0d count=%0d -> count=%0d",
+                   $time, core, cluster, i_bingo_hw_manager.i_ctrl.risk_cnt_q[core][cluster],
+                   i_bingo_hw_manager.i_ctrl.risk_cnt_q[core][cluster] >> 1);
         if (${quad_ctrl_axi_lite_xbar.rst} && ((|bingo_cerf_fb_en) || (|bingo_risk_late)) &&
             i_bingo_hw_manager.ready_queue_pop[core][cluster])
           $display("[BINGO_DISPATCH] %0t chip=%0d task=%0d core=%0d cluster=%0d",

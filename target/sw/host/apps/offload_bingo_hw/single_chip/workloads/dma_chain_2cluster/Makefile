@@ -10,7 +10,7 @@ HOST_APP_TYPE = offload_bingo_hw
 CHIP_TYPE     = single_chip
 WORKLOAD      = dma_chain_2cluster
 DEV_APP       = snax-bingo-offload
-SRCS = ../../src/offload_bingo_hw.c
+SRCS = ../../src/offload_bingo_hw.c $(MK_DIR)/risk_clear.c
 BINGO_HOST ?= 1 # True to include the bingo runtime
 INCL_DEVICE_BINARY ?= 1 # True to include the device binary
 
@@ -21,17 +21,27 @@ OFFLOAD_H = $(MK_DIR)/offload_bingo_hw.h
 BENDER   = bender
 SNITCH_ROOT = $(shell $(BENDER) path snitch_cluster)
 PLATFORM_H = $(MK_DIR)/../../../../../../../../target/sw/shared/platform/generated/occamy.h
+CHAIN_CLEAR_TEST = $(if $(findstring -DBINGO_CHAIN_CLEAR_TEST,$(USER_FLAGS)),1,0)
+CHAIN_CONFIG = $(MK_DIR)/build/chain_config
 
 # main_bingo.py reads the cluster count out of PLATFORM_H, so it must re-run when
 # the active RTL cfg changes -- otherwise the first build after switching cfg
 # generates the DFG against a stale occamy.h and guard_cluster_count() rejects it.
-$(DATA_H) $(OFFLOAD_H): $(MK_DIR)/main_bingo.py $(DATA_CFG) $(PLATFORM_H)
+$(DATA_H) $(OFFLOAD_H): $(MK_DIR)/main_bingo.py $(DATA_CFG) $(PLATFORM_H) $(CHAIN_CONFIG)
 	python3 $(MK_DIR)/main_bingo.py \
 		--output_dir $(MK_DIR) \
 		--data_h $(DATA_H) \
 		-c $(DATA_CFG) \
 		--hwcfg $(SNITCH_ROOT)/target/snitch_cluster/cfg/snax_versacore_to_256KB_cluster.hjson \
-		--platformcfg $(PLATFORM_H)
+		--platformcfg $(PLATFORM_H) \
+		$(if $(filter 1,$(CHAIN_CLEAR_TEST)),--clear-after 2,)
+
+# USER_FLAGS can switch the test graph without changing a source timestamp.
+$(CHAIN_CONFIG): FORCE_CHAIN_CONFIG
+	@mkdir -p $(dir $@)
+	@printf '%s\n' '$(CHAIN_CLEAR_TEST)' | cmp -s - $@ || printf '%s\n' '$(CHAIN_CLEAR_TEST)' > $@
+.PHONY: FORCE_CHAIN_CONFIG
+FORCE_CHAIN_CONFIG:
 
 ###############
 # Build settings

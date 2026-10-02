@@ -121,6 +121,8 @@ module ${name}_quad_ctrl
   // Fault precursors: late threshold, policy, epoch, clear, and at-risk slots
   cfg_t                                  bingo_risk_late, bingo_risk_policy, bingo_risk_epoch;
   cfg_t                                  bingo_risk_clear, bingo_risk;
+  // Boost choice: policy, credit per lost core, minimum load
+  cfg_t                                  bingo_boost_policy;
   // CERF degradation table (index: core type) and the types that fired
   logic [${2**bingo_core_type_id_width-1}:0]       bingo_cerf_fb_en, bingo_cerf_fb_evt;
   logic [${2**bingo_core_type_id_width-1}:0][4:0]  bingo_cerf_fb_clear, bingo_cerf_fb_set;
@@ -245,6 +247,7 @@ module ${name}_quad_ctrl
     .bingo_hw_manager_risk_epoch_o            (bingo_risk_epoch                    ),
     .bingo_hw_manager_risk_clear_o            (bingo_risk_clear                    ),
     .bingo_hw_manager_risk_i                  (bingo_risk                          ),
+    .bingo_hw_manager_boost_policy_o          (bingo_boost_policy                  ),
     .bingo_hw_manager_remote_link_error_i     (bingo_remote_link_error             ),
     .bingo_hw_manager_core_dead_suspect_i     (bingo_core_dead_suspect             ),
     .bingo_hw_manager_core_fenced_i           (bingo_core_fenced                   )
@@ -400,6 +403,7 @@ module ${name}_quad_ctrl
     .bingo_hw_manager_enable_idle_pm_i         (bingo_hw_manager_enable_idle_pm              ),
     .bingo_hw_manager_idle_power_level_i       (bingo_hw_manager_idle_power_level            ),
     .bingo_hw_manager_boost_power_level_i      (bingo_hw_manager_boost_power_level           ),
+    .bingo_hw_manager_boost_policy_i           (bingo_boost_policy                           ),
     .bingo_hw_manager_idle_entry_delay_i       (bingo_hw_manager_idle_entry_delay            ),
     .bingo_hw_manager_park_req_i               (bingo_park_req                               ),
     .bingo_hw_manager_park_fail_o              (bingo_park_fail                              ),

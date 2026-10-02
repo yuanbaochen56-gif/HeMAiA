@@ -60,6 +60,8 @@ module occamy_quad_periph import occamy_quad_periph_reg_pkg::*; #(
   output reg_data_t   bingo_hw_manager_risk_epoch_o,
   output reg_data_t   bingo_hw_manager_risk_clear_o,
   input  reg_data_t   bingo_hw_manager_risk_i,
+  // Bingo boost choice (policy, credit per lost core, minimum load)
+  output reg_data_t   bingo_hw_manager_boost_policy_o,
   input  logic [5:0]  bingo_hw_manager_remote_link_error_i,
   input  logic [BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER-1:0][BINGO_HW_MANAGER_NR_CLUSTER-1:0] bingo_hw_manager_core_dead_suspect_i,
   input  logic [BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER-1:0][BINGO_HW_MANAGER_NR_CLUSTER-1:0] bingo_hw_manager_core_fenced_i
@@ -134,6 +136,7 @@ module occamy_quad_periph import occamy_quad_periph_reg_pkg::*; #(
   assign bingo_hw_manager_risk_clear_o               = reg2hw.bingo_risk_clear.q;
   assign hw2reg.bingo_risk.d                         = bingo_hw_manager_risk_i;
   assign hw2reg.bingo_risk.de                        = 1'b1;
+  assign bingo_hw_manager_boost_policy_o             = reg2hw.bingo_boost_policy.q;
   assign hw2reg.bingo_status.remote_done_mismatch.de = 1'b1;
   assign hw2reg.bingo_status.remote_link_error.d     = bingo_hw_manager_remote_link_error_i;
   assign hw2reg.bingo_status.remote_link_error.de    = 1'b1;

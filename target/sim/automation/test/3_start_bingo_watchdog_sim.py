@@ -67,6 +67,11 @@ s20     sparse late beats, epoch 30k, threshold 2          counts decay between 
 s21     park after two late beats, host CLEAR after copy 2 copy 2 on cluster 1, copies 3-5 back home
 s22     level 1 only, park + derate level 10               park fails, domain 1 derates, copies stay home
 s23     same sparse beats as s20, but epoch 0              risk trips and parks (decay-off control)
+s24     s16 with boost level 3, substitute boost policy    as s16; the stuck core has no substitute,
+        (P3b)                                              so no domain is ever boosted
+s25     s16 with boost level 3, capacity policy (one       as s16; domain 2 (the type-1 survivor in
+        domain per lost core)                              cluster 1) boosted after the fallback, never
+                                                           domain 1
 ======  =================================================  ==========================================
 
 The bingo manager may only move a dead core's tasks to a core of the same type
@@ -416,6 +421,31 @@ SCENARIOS: Dict[str, dict] = {
         expect_core_types={0: 1, 1: 2, 2: 0},
         expect_chain_clusters=[0, 0, 1, 1, 1, 1],
         expect_late=2, expect_risk=True, expect_wd=[], expect_eoc=True, sim_timeout_s=900,
+    ),
+    "s24": dict(
+        desc="as s16 with the boost level and the substitute policy: no substitute, no boost",
+        cfg=HEMAIA_CI_CFG, timeout_cycles=TIGHT_TIMEOUT_CYCLES,
+        confirm_timeout_cycles=CONFIRM_TIMEOUT_CYCLES,
+        extra_cfg={"bingo_substitute_level_mask": "1"}, cfg_suffix="_cerf_l1",
+        workload="moe2_2cluster", fault_stall_cycles=0,
+        fault_gid=MOE2_FAULT_GID, victim=(0, 0, 0), cerf_fallback=True,
+        extra_flags=MOE2_FB_FLAGS + " -DBINGO_MOE_EXPECT_EXPERT=1 "
+                    "-DBINGO_PM_BOOST_POWER_LEVEL=3 -DBINGO_BOOST_POLICY=0x0",
+        expect_core_types={0: MOE2_CORE_TYPE, 1: 2, 2: 0}, expect_boost_domains=(),
+        expect_eoc=True, expect_fence=True, expect_host_stuck=True, sim_timeout_s=900,
+    ),
+    "s25": dict(
+        desc="as s16 with the boost level and the capacity policy: the type-1 survivor's domain boosts",
+        cfg=HEMAIA_CI_CFG, timeout_cycles=TIGHT_TIMEOUT_CYCLES,
+        confirm_timeout_cycles=CONFIRM_TIMEOUT_CYCLES,
+        extra_cfg={"bingo_substitute_level_mask": "1"}, cfg_suffix="_cerf_l1",
+        workload="moe2_2cluster", fault_stall_cycles=0,
+        fault_gid=MOE2_FAULT_GID, victim=(0, 0, 0), cerf_fallback=True,
+        # capacity policy, one boosted domain per lost core, no minimum load
+        extra_flags=MOE2_FB_FLAGS + " -DBINGO_MOE_EXPECT_EXPERT=1 "
+                    "-DBINGO_PM_BOOST_POWER_LEVEL=3 -DBINGO_BOOST_POLICY=0x101",
+        expect_core_types={0: MOE2_CORE_TYPE, 1: 2, 2: 0}, expect_boost_domains=(2,),
+        expect_eoc=True, expect_fence=True, expect_host_stuck=True, sim_timeout_s=900,
     ),
 }
 
@@ -1079,6 +1109,19 @@ def run_scenario(name: str, args: argparse.Namespace) -> bool:
                   if int(lvl) == sc["expect_boost_level"]]
         if not fence_t or not any(t >= fence_t[0] for t in boosts):
             problems.append(f"no [BINGO_PM] domain=1 level={sc['expect_boost_level']} after the fence")
+    if "expect_boost_domains" in sc:
+        # Exactly these domains reach the boost level, and only after the fence
+        fence_t = [int(m.group(1)) for m in WD_RE.finditer(log_text) if m.group(6) == "1"]
+        boosted = [(int(t), int(d)) for t, d, lvl in re.findall(r"\[BINGO_PM\] (\d+) domain=(\d+) level=(\d+)", log_text)
+                   if int(lvl) == 3]
+        if {d for _, d in boosted} != set(sc["expect_boost_domains"]):
+            problems.append(f"boosted domains {sorted({d for _, d in boosted})}, expected {sorted(sc['expect_boost_domains'])}")
+        elif boosted and (not fence_t or boosted[0][0] < fence_t[0]):
+            problems.append(f"boost at {boosted[0][0]} before the fence")
+        print(f"[{name}] boost entries (time, domain): {boosted}")
+        host_pm = re.search(r"\[Host\] Bingo PM: .* boost_policy=0x([0-9a-fA-F]+)", uart_text)
+        if not host_pm:
+            problems.append("no boost_policy in the host PM line")
     eoc = re.search(r"All chips finished successfully at (\d+)", log_text)
     if eoc:
         print(f"[{name}] EOC at {int(eoc.group(1)) / 1e9:.3f} ms")

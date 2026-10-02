@@ -491,6 +491,12 @@ void bingo_close_all_clusters(bingo_task_t **task_list, uint32_t num_tasks);
 #ifndef BINGO_PM_BOOST_POWER_LEVEL
 #define BINGO_PM_BOOST_POWER_LEVEL  0
 #endif
+// Which cores get the boost level: [0] 0 = the substitutes of fenced cores,
+// 1 = busy survivors of a core type that lost a core; [11:8] boosted domains
+// per lost core (0 = no limit); [23:16] minimum load of a boosted core
+#ifndef BINGO_BOOST_POLICY
+#define BINGO_BOOST_POLICY          0
+#endif
 // Idle entry delay: quad_ctrl cycles a core must be idle before its power
 // domain may drop to the idle level; 0 = at once
 #ifndef BINGO_PM_IDLE_ENTRY_DELAY

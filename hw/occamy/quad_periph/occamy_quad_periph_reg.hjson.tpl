@@ -550,5 +550,15 @@
         }
       ]
     },
+    { name: "BINGO_BOOST_POLICY",
+      desc: "Bingo boost choice: [0] 0 = the substitutes of fenced cores, 1 = capacity (busy survivors of a core type that lost a core); [11:8] boosted domains per lost core (0 = no limit); [23:16] minimum load (checkout occupancy) of a boosted core.",
+      swaccess: "rw",
+      hwaccess: "hro",
+      fields: [
+        { bits: "31:0", resval: "0", name: "BINGO_BOOST_POLICY",
+          desc: '''Policy, credit and minimum load (see bingo_hw_manager_top).'''
+        }
+      ]
+    },
   ]
 }

@@ -263,6 +263,11 @@ inline uintptr_t quad_ctrl_bingo_risk_addr(){
     return QUAD_AXI_LITE_NARROW_PERIPHERALS_BASE_ADDR + OCCAMY_QUAD_PERIPH_BINGO_RISK_REG_OFFSET;
 }
 
+// Bingo boost choice: [0] policy, [11:8] credit per lost core, [23:16] minimum load
+inline uintptr_t quad_ctrl_bingo_boost_policy_addr(){
+    return QUAD_AXI_LITE_NARROW_PERIPHERALS_BASE_ADDR + OCCAMY_QUAD_PERIPH_BINGO_BOOST_POLICY_REG_OFFSET;
+}
+
 inline uintptr_t quad_ctrl_bingo_core_dead_suspect_addr(){
     return QUAD_AXI_LITE_NARROW_PERIPHERALS_BASE_ADDR + OCCAMY_QUAD_PERIPH_BINGO_CORE_DEAD_SUSPECT_REG_OFFSET;
 }

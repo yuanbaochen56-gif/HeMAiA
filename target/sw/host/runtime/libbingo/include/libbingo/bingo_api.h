@@ -511,6 +511,15 @@ void bingo_close_all_clusters(bingo_task_t **task_list, uint32_t num_tasks);
 #ifndef BINGO_PARK_REQ
 #define BINGO_PARK_REQ              0
 #endif
+// CERF degradation, programmed at init when BINGO_CERF_FB_CLUSTER is defined:
+// once a slot of the core type of (BINGO_CERF_FB_CLUSTER, BINGO_CERF_FB_CORE)
+// is stuck or rejected, the manager clears CERF group BINGO_CERF_FB_CLEAR and
+// sets BINGO_CERF_FB_SET. Undefined (default) = table off.
+#ifdef BINGO_CERF_FB_CLUSTER
+#ifndef BINGO_CERF_FB_CORE
+#error "BINGO_CERF_FB_CLUSTER needs BINGO_CERF_FB_CORE, BINGO_CERF_FB_CLEAR and BINGO_CERF_FB_SET"
+#endif
+#endif
 
 // Configure the power-management registers (idle/normal power levels, per-core
 // power domains, EN_IDLE_PM) without starting a task offload. Exposed so a test
@@ -535,3 +544,12 @@ void bingo_cerf_update(uint32_t controlled_mask, uint32_t write_mask);
 
 // Clear all CERF groups (full reset between inference batches)
 void bingo_cerf_clear_all(void);
+
+// CERF degradation table, one entry per core type (BINGO_CORE_TYPE_ID in
+// occamy.h): when a slot of an enabled type is stuck or rejected, the manager
+// clears group clear_group and sets group set_group, once per enable.
+void bingo_cerf_fb_set(uint32_t core_type, uint32_t clear_group, uint32_t set_group);
+// Enable bit t for core type t; clearing a bit clears its event and re-arms it
+void bingo_cerf_fb_enable(uint32_t type_mask);
+// Core types whose degradation was applied (bit t = core type t)
+uint32_t bingo_cerf_fb_evt(void);

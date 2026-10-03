@@ -571,7 +571,7 @@
       ]
     },
     { name: "BINGO_RISK_CONFIRM",
-      desc: "At-risk busy-slot confirm threshold in the existing watchdog timer's ticks. 0 disables it; only H < R < C with C nonzero is valid.",
+      desc: "At-risk busy-slot confirm threshold in watchdog ticks. 0 disables it; only H_eff(type) < R < C_eff(type) with C nonzero is valid.",
       swaccess: "rw",
       hwaccess: "hro",
       fields: [
@@ -580,5 +580,31 @@
         }
       ]
     },
+    { multireg: {
+      name: "BINGO_WD_TYPE_H",
+      desc: "Per-type suspect threshold in watchdog ticks. 0 or values above parameter H use H.",
+      swaccess: "rw",
+      hwaccess: "hro",
+      count: "NumBingoCoreTypes",
+      cname: "bingo_wd_type_h",
+      fields: [
+        { bits: "31:0", resval: "0", name: "THRESHOLD",
+          desc: "Only shortens H. Global late_cycles is unchanged; host must choose late_cycles below C_eff for late reporting before fence."
+        }
+      ]
+    }},
+    { multireg: {
+      name: "BINGO_WD_TYPE_C",
+      desc: "Per-type fence threshold in watchdog ticks. Only nonzero values at most C and above H_eff apply; C=0 never fences.",
+      swaccess: "rw",
+      hwaccess: "hro",
+      count: "NumBingoCoreTypes",
+      cname: "bingo_wd_type_c",
+      fields: [
+        { bits: "31:0", resval: "0", name: "THRESHOLD",
+          desc: "Invalid values use parameter C. Global late_cycles is unchanged; host must choose late_cycles below C_eff."
+        }
+      ]
+    }},
   ]
 }

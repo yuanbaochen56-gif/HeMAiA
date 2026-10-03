@@ -665,7 +665,21 @@ SCENARIOS["tch0"] = dict(
     SCENARIOS["s18"], t1=True, desc="healthy test-configuration DMA chain, all controls off",
     fault_stall_cycles=None, extra_flags="", expect_late=0, expect_fence=False,
     expect_takeover=False, substitute=None, expect_chain_clusters=[0] * 6, healthy_test_cfg=True,
+    dispatch_log=True,
 )
+SCENARIOS["tch3"] = dict(
+    SCENARIOS["s18"], t1=True, dispatch_log=True, extra_flags="", expect_late=0,
+    desc="DMA task 3 hangs without PRE_STALL or risk controls; parameter watchdog baseline",
+)
+for _name, _baseline, _type in (("t50", "tch3", 2), ("t51", "tch0", 2), ("t52", "tch3", 1)):
+    _h, _c = [0] * 16, [0] * 16
+    _h[_type], _c[_type] = 20000, 40000
+    SCENARIOS[_name] = dict(
+        SCENARIOS[_baseline], wd_type_h=_h, wd_type_c=_c,
+        desc=f"{_baseline} with type {_type} watchdog thresholds 20k/40k",
+        expect_type_confirm=(_name == "t50"),
+    )
+A5_FAMILY = ("tch0", "tch3", "t50", "t51", "t52")
 
 TEST_CFG_FIELDS = (
     "magic", "version", "fault_gid", "fault_stall_cycles", "fault_cluster", "fault_core",
@@ -691,16 +705,23 @@ TEST_CFG_MACROS = {
 }
 
 
-def test_cfg_defaults() -> dict:
+def test_cfg_defaults(version: int = 2) -> dict:
+    if version not in (1, 2):
+        raise ValueError("unsupported test configuration version")
     cfg = dict.fromkeys(TEST_CFG_FIELDS, 0)
-    cfg.update(magic=0x42475431, version=1, fault_gid=0xFFFFFFFF,
+    cfg.update(magic=0x42475431, version=version, fault_gid=0xFFFFFFFF,
                fault_cluster=0xFFFFFFFF, fault_core=0xFFFFFFFF)
+    if version == 2:
+        cfg.update(wd_type_h=[0] * 16, wd_type_c=[0] * 16)
     return cfg
 
 
 def scenario_test_cfg(sc: dict, extra_flags: str = "") -> dict:
     """Translate only data controls. Unknown flags must never change a T1 graph."""
     cfg = test_cfg_defaults()
+    for field in ("wd_type_h", "wd_type_c"):
+        if field in sc:
+            cfg[field] = list(sc[field])
     if sc["fault_stall_cycles"] is not None:
         cfg.update(fault_gid=sc.get("fault_gid", FAULT_GID),
                    fault_stall_cycles=sc["fault_stall_cycles"])
@@ -727,13 +748,14 @@ def scenario_test_cfg(sc: dict, extra_flags: str = "") -> dict:
 
 def test_cfg_bytes(cfg: dict) -> bytes:
     version = cfg["version"]
-    if version not in (1, 2) or set(cfg) - set(TEST_CFG_FIELDS) - {"wd_type_h", "wd_type_c"}:
+    if (version not in (1, 2) or set(cfg) - set(TEST_CFG_FIELDS) - {"wd_type_h", "wd_type_c"}
+            or version == 1 and any(field in cfg for field in ("wd_type_h", "wd_type_c"))):
         raise ValueError("unsupported test configuration layout")
     words = [cfg[field] for field in TEST_CFG_FIELDS] + [0] * 9
     if version == 2:
         for field in ("wd_type_h", "wd_type_c"):
             values = cfg.get(field, [0] * 16)
-            if len(values) != 16:
+            if len(values) != 16 or any(not isinstance(v, int) or not 0 <= v <= 0xFFFFFFFF for v in values):
                 raise ValueError(f"{field} must have sixteen words")
             words += values
     return struct.pack("<" + "I" * len(words), *words)
@@ -856,6 +878,93 @@ LATE_RE = re.compile(r"\[BINGO_LATE\] \d+ core=(\d+) cluster=(\d+)")
 RISK_RE = re.compile(r"\[BINGO_RISK\] \d+ core=(\d+) cluster=(\d+) at risk")
 CERF_FB_RE = re.compile(r"\[BINGO_CERF_FB\] (\d+) type (\d+) clear g(\d+) set g(\d+)")
 DISPATCH_RE = re.compile(r"\[BINGO_DISPATCH\] (\d+) chip=(\d+) task=(\d+) core=(\d+) cluster=(\d+)")
+DONE_RE = re.compile(r"\[BINGO_DONE\] (\d+) chip=(\d+) task=(\d+) core=(\d+) cluster=(\d+)")
+TYPE_CONFIRM_RE = re.compile(
+    r"\[BINGO_TYPE_CONFIRM\] (\d+) core=(\d+) cluster=(\d+) type=(\d+) threshold=(\d+)")
+
+
+def dispatch_host_slot() -> Tuple[int, int, int]:
+    """Read the host slot, checking the generated watchdog mask excludes it."""
+    header = (_REPO_ROOT / "target/sw/shared/platform/generated/occamy.h").read_text()
+    cores = re.findall(r"^#define\s+N_CORES_PER_CLUSTER\s+(\d+)\s*$", header, re.M)
+    rtl = (_REPO_ROOT / QUAD_CTRL_RTL).read_text()
+    mask = ("{{NrClustersPerQuad{1'b0}}, "
+            "{((BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER-1)*NrClustersPerQuad){1'b1}}}")
+    if len(cores) != 1 or mask not in rtl:
+        raise ValueError("cannot confirm generated host slot and watchdog mask")
+    return (0, int(cores[0]), 0)
+
+
+def dispatch_done_pairs(log_text: str, allowed_pending=(), *, graph_csv=None,
+                        host_slot=None, checker_passed=False, pairing_evidence=None) -> List[dict]:
+    """Pair real busy transitions; only a checked terminal host exit may lack DONE.
+
+    allowed_pending is the pre-existing, explicit permanently fenced fault
+    expectation, not an exemption for other monitored-slot dispatches.
+    """
+    pending, pairs = {}, []
+    for line in log_text.splitlines():
+        dispatch, done = DISPATCH_RE.search(line), DONE_RE.search(line)
+        match = dispatch or done
+        if not match:
+            continue
+        time, chip, task, core, cluster = map(int, match.groups())
+        slot = (chip, core, cluster)
+        if dispatch:
+            if slot in pending:
+                raise ValueError(f"two dispatches without done on slot {slot}")
+            pending[slot] = (time, task)
+        else:
+            if slot not in pending:
+                raise ValueError(f"done without dispatch on slot {slot}")
+            start, dispatched = pending.pop(slot)
+            if dispatched != task or time <= start:
+                raise ValueError(f"done does not match dispatched task on slot {slot}")
+            pairs.append(dict(chip=chip, core=core, cluster=cluster, task=task,
+                              dispatch_ps=start, done_ps=time))
+    unresolved = {(*slot, task) for slot, (time, task) in pending.items()}
+    expected_faults = set(allowed_pending)
+    if not expected_faults <= unresolved:
+        raise ValueError(f"unpaired dispatches {sorted(unresolved)}")
+    terminal = unresolved - expected_faults
+    if terminal:
+        if len(terminal) != 1 or host_slot is None or graph_csv is None:
+            raise ValueError(f"unpaired dispatches {sorted(unresolved)}")
+        chip, core, cluster, task = next(iter(terminal))
+        if (chip, core, cluster) != host_slot:
+            raise ValueError(f"unpaired device dispatch {(chip, core, cluster, task)}")
+        with Path(graph_csv).open(newline="") as stream:
+            rows = [row for row in csv.DictReader(stream) if int(row["ID"]) == task]
+        if len(rows) != 1 or rows[0]["Kernel"] != "__host_bingo_kernel_exit" or (
+                int(rows[0]["Chiplet"], 16), int(rows[0]["Core"]), int(rows[0]["Cluster"])) != host_slot:
+            raise ValueError(f"unpaired host task {task} is not the generated host exit")
+        # A subsequent dispatch on this slot already fails the alternating
+        # transition check above, so this pending dispatch is necessarily last.
+        start = pending[host_slot][0]
+        eocs = re.findall(r"All chips finished successfully at (\d+)", log_text)
+        if (not checker_passed or len(eocs) != 1 or int(eocs[0]) <= start or
+                SIM_ERR_MARKER in log_text):
+            raise ValueError("unpaired host exit requires EOC and a passing checker")
+        if pairing_evidence is not None:
+            pairing_evidence.append(dict(chip=chip, core=core, cluster=cluster, task=task,
+                                         dispatch_ps=start, kernel=rows[0]["Kernel"],
+                                         graph_csv=str(graph_csv), terminal_host_exit=True))
+    return pairs
+
+
+def evaluate_type_threshold(sc: dict, log_text: str) -> List[str]:
+    causes = [tuple(map(int, match.groups())) for match in TYPE_CONFIRM_RE.finditer(log_text)]
+    if not sc.get("expect_type_confirm"):
+        return ["unexpected type-confirm cause"] if causes else []
+    chip, core, cluster = sc["victim"]
+    fences = [int(m.group(1)) for m in WD_RE.finditer(log_text)
+              if tuple(map(int, m.groups()[1:4])) == (chip, core, cluster) and m.group(6) == "1"]
+    c = sc["wd_type_c"][2]
+    if len(fences) != 1 or len(causes) != 1 or causes[0][1:] != (core, cluster, 2, c):
+        return [f"wrong type-confirm cause: {causes}"]
+    if causes[0][0] >= fences[0] or "[BINGO_RISK_CONFIRM]" in log_text:
+        return ["type-confirm cause must precede fence status without an R cause"]
+    return []
 
 
 def evaluate_risk_chain(sc: dict, log_text: str, uart_text: str) -> List[str]:
@@ -870,8 +979,8 @@ def evaluate_risk_chain(sc: dict, log_text: str, uart_text: str) -> List[str]:
     expected += [(task, sub, sub_cluster) for task in range(2 if parked else 3, 6)]
     if "expect_chain_clusters" in sc:
         expected = [(task, core, cl) for task, cl in enumerate(sc["expect_chain_clusters"])]
-    # All-off tch0 has no dispatch logging (the existing RTL log gate is off).
-    check_dispatches = not sc.get("healthy_test_cfg") or bool(dispatches)
+    # The v1 hardware gate and G1b-off run intentionally omit dispatch logging.
+    check_dispatches = sc.get("dispatch_log") or not sc.get("healthy_test_cfg") or bool(dispatches)
     if check_dispatches and ([(d[2], d[3], d[4]) for d in dispatches] != expected or any(
             d[1] != chip for d in dispatches)):
         problems.append(f"chain dispatches {dispatches}, expected {expected} on chip {chip}")
@@ -1658,6 +1767,8 @@ def check_core_types(expected: Dict[int, int]) -> List[str]:
 def evaluate(name: str, sc: dict, log_text: str, uart_text: str) -> List[str]:
     """Return the list of failed expectations (empty = pass)."""
     problems: List[str] = []
+    if name in A5_FAMILY:
+        problems += evaluate_type_threshold(sc, log_text)
     eoc_ok = SIM_OK_MARKER in log_text and SIM_ERR_MARKER not in log_text
     # (time, chip, core, cluster, dead_suspect, fenced)
     events = [tuple(int(x) if x is not None else 0 for x in m.groups()) for m in WD_RE.finditer(log_text)]
@@ -1807,6 +1918,14 @@ def evaluate(name: str, sc: dict, log_text: str, uart_text: str) -> List[str]:
         if victim_events != expected:
             problems.append(f"victim {victim} (dead_suspect, fenced) sequence {victim_events}, expected {expected}")
 
+    if sc.get("dispatch_log"):
+        # The injected permanently hung task remains pending on its fenced slot.
+        pending = [(*sc["victim"], sc["fault_gid"])] if sc.get("expect_fence") else []
+        try:
+            dispatch_done_pairs(log_text, pending, graph_csv=sc.get("dispatch_graph_csv"),
+                                host_slot=dispatch_host_slot(), checker_passed=not problems)
+        except (OSError, ValueError, KeyError) as error:
+            problems.append(str(error))
     print(f"[{name}] eoc_ok={eoc_ok} wd_events={events} remaps={len(remaps)} "
           f"replays={len(replays)} csr_unknown={len(csr)} checks={checks}")
     return problems
@@ -1907,7 +2026,8 @@ class TestCfgSimRunner(NoTraceSimRunner):
         banks = task_dir / "bin/app_chip_0_0"
         unpatched = read_bank_image(banks)
         (self.output_dir / "test_cfg_unpatched.bin").write_bytes(unpatched)
-        if unpatched[location["offset"]:location["offset"] + location["size"]] != test_cfg_bytes(test_cfg_defaults()):
+        if unpatched[location["offset"]:location["offset"] + location["size"]] != test_cfg_bytes(
+                test_cfg_defaults(self.test_cfg["version"])):
             raise ValueError("unpatched image does not contain the default test configuration")
         self.test_cfg_record = patch_test_cfg(banks, location, self.test_cfg)
         (self.output_dir / "test_cfg.json").write_text(json.dumps(self.test_cfg_record, indent=2) + "\n")
@@ -1981,6 +2101,11 @@ def run_scenario(name: str, args: argparse.Namespace) -> bool:
     uart_path = bin_dir / "uart_chip_0_0.log"
     log_text = log_path.read_text(errors="replace") if log_path.exists() else ""
     uart_text = uart_path.read_text(errors="replace") if uart_path.exists() else ""
+    if sc.get("dispatch_log"):
+        graph_csv = (_REPO_ROOT / "target/sw/host/apps/offload_bingo_hw/single_chip/workloads"
+                     / sc["workload"] / "final_dfg.csv")
+        sc["dispatch_graph_csv"] = out_dir / "final_dfg.csv"
+        shutil.copyfile(graph_csv, sc["dispatch_graph_csv"])
     if sc.get("replay_safety"):
         graph_csv = (_REPO_ROOT / "target/sw/host/apps/offload_bingo_hw/single_chip/workloads"
                      / sc["workload"] / "final_dfg.csv")

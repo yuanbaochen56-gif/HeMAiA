@@ -122,6 +122,7 @@ module ${name}_quad_ctrl
   cfg_t                                  bingo_risk_late, bingo_risk_policy, bingo_risk_epoch;
   cfg_t                                  bingo_risk_clear, bingo_risk;
   cfg_t                                  bingo_risk_confirm;
+  logic [${2**bingo_core_type_id_width-1}:0][31:0] bingo_wd_type_h, bingo_wd_type_c;
   // Boost choice: policy, credit per lost core, minimum load
   cfg_t                                  bingo_boost_policy;
   // CERF degradation table (index: core type) and the types that fired
@@ -248,6 +249,8 @@ module ${name}_quad_ctrl
     .bingo_hw_manager_risk_policy_o           (bingo_risk_policy                   ),
     .bingo_hw_manager_risk_epoch_o            (bingo_risk_epoch                    ),
     .bingo_hw_manager_risk_confirm_o          (bingo_risk_confirm                  ),
+    .bingo_hw_manager_wd_type_h_o             (bingo_wd_type_h                     ),
+    .bingo_hw_manager_wd_type_c_o             (bingo_wd_type_c                     ),
     .bingo_hw_manager_risk_clear_o            (bingo_risk_clear                    ),
     .bingo_hw_manager_risk_i                  (bingo_risk                          ),
     .bingo_hw_manager_boost_policy_o          (bingo_boost_policy                  ),
@@ -415,6 +418,8 @@ module ${name}_quad_ctrl
     .bingo_hw_manager_risk_policy_i            (bingo_risk_policy                            ),
     .bingo_hw_manager_risk_epoch_i             (bingo_risk_epoch                             ),
     .bingo_hw_manager_risk_confirm_i           (bingo_risk_confirm                           ),
+    .wd_type_h_i                              (bingo_wd_type_h                              ),
+    .wd_type_c_i                              (bingo_wd_type_c                              ),
     .bingo_hw_manager_risk_clear_i             (bingo_risk_clear                             ),
     .bingo_hw_manager_risk_o                   (bingo_risk                                   ),
     .bingo_hw_manager_cluster_access_i         (bingo_cluster_access_i                       ),

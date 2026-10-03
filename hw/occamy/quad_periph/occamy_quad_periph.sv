@@ -59,6 +59,8 @@ module occamy_quad_periph import occamy_quad_periph_reg_pkg::*; #(
   output reg_data_t   bingo_hw_manager_risk_policy_o,
   output reg_data_t   bingo_hw_manager_risk_epoch_o,
   output reg_data_t   bingo_hw_manager_risk_confirm_o,
+  output logic [NumBingoCoreTypes-1:0][31:0] bingo_hw_manager_wd_type_h_o,
+  output logic [NumBingoCoreTypes-1:0][31:0] bingo_hw_manager_wd_type_c_o,
   output reg_data_t   bingo_hw_manager_risk_clear_o,
   input  reg_data_t   bingo_hw_manager_risk_i,
   // Bingo boost choice (policy, credit per lost core, minimum load)
@@ -136,6 +138,10 @@ module occamy_quad_periph import occamy_quad_periph_reg_pkg::*; #(
   assign bingo_hw_manager_risk_policy_o              = reg2hw.bingo_risk_policy.q;
   assign bingo_hw_manager_risk_epoch_o               = reg2hw.bingo_risk_epoch.q;
   assign bingo_hw_manager_risk_confirm_o             = reg2hw.bingo_risk_confirm.q;
+  for (genvar t = 0; t < NumBingoCoreTypes; t++) begin : gen_bingo_wd_type
+    assign bingo_hw_manager_wd_type_h_o[t] = reg2hw.bingo_wd_type_h[t].q;
+    assign bingo_hw_manager_wd_type_c_o[t] = reg2hw.bingo_wd_type_c[t].q;
+  end
   assign bingo_hw_manager_risk_clear_o               = reg2hw.bingo_risk_clear.q;
   assign hw2reg.bingo_risk.d                         = bingo_hw_manager_risk_i;
   assign hw2reg.bingo_risk.de                        = 1'b1;

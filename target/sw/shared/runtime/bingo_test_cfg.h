@@ -5,9 +5,9 @@
 
 #include <stdint.h>
 
-// Test-only, little-endian image data. One row spans all sixteen 64-bit banks.
+// Test-only, little-endian image data. Each row spans sixteen 64-bit banks.
 #define BINGO_TEST_CFG_MAGIC 0x42475431u
-#define BINGO_TEST_CFG_VERSION 1u
+#define BINGO_TEST_CFG_VERSION 2u
 
 typedef struct __attribute__((aligned(128))) {
     uint32_t magic;
@@ -34,6 +34,8 @@ typedef struct __attribute__((aligned(128))) {
     uint32_t cerf_fb_clear;
     uint32_t cerf_fb_set;
     uint32_t reserved[9];
+    uint32_t wd_type_h[16];
+    uint32_t wd_type_c[16];
 } bingo_test_cfg_t;
 
 #define BINGO_TEST_CFG_INITIALIZER { \
@@ -41,4 +43,4 @@ typedef struct __attribute__((aligned(128))) {
     .fault_gid = UINT32_MAX, .fault_cluster = UINT32_MAX, .fault_core = UINT32_MAX \
 }
 
-_Static_assert(sizeof(bingo_test_cfg_t) == 128, "v1 test configuration must fit one row");
+_Static_assert(sizeof(bingo_test_cfg_t) == 256, "v2 test configuration must fit two rows");

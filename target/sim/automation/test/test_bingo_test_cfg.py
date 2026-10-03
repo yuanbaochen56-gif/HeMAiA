@@ -50,6 +50,9 @@ class TestConfigurationTests(unittest.TestCase):
         source += 'printf("%zu %zu\\n", sizeof(cfg), _Alignof(bingo_test_cfg_t));\n'
         for field in fields:
             source += f'printf("{field} %zu %u\\n", offsetof(bingo_test_cfg_t, {field}), cfg.{field});\n'
+        source += 'printf("wd_type_h %zu\\n", offsetof(bingo_test_cfg_t, wd_type_h));\n'
+        source += 'printf("wd_type_c %zu\\n", offsetof(bingo_test_cfg_t, wd_type_c));\n'
+        source += 'for (int i=0; i<16; ++i) if (cfg.wd_type_h[i] || cfg.wd_type_c[i]) return 1;\n'
         source += 'for (int i=0; i<9; ++i) if (cfg.reserved[i]) return 1;\nreturn 0; }\n'
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory)
@@ -58,12 +61,13 @@ class TestConfigurationTests(unittest.TestCase):
                             "-I", str(ROOT / "target/sw/shared/runtime"),
                             str(path / "layout.c"), "-o", str(path / "layout")], check=True)
             output = subprocess.check_output([str(path / "layout")], text=True).splitlines()
-        self.assertEqual(output[0], "128 128")
+        self.assertEqual(output[0], "256 128")
         defaults = watchdog.test_cfg_defaults()
-        for index, line in enumerate(output[1:]):
+        for index, line in enumerate(output[1:1 + len(fields)]):
             name, offset, value = line.split()
             self.assertEqual((name, int(offset), int(value)),
                              (fields[index], index * 4, defaults[name]))
+        self.assertEqual(output[-2:], ["wd_type_h 128", "wd_type_c 192"])
 
     def test_macro_defaults_match_initializer(self):
         paths = (ROOT / "target/sw/host/runtime/libbingo/include/libbingo/bingo_api.h",
@@ -106,7 +110,7 @@ class TestConfigurationTests(unittest.TestCase):
     def test_patch_default_unchanged_one_row_and_round_trip(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory)
-            defaults = watchdog.test_cfg_defaults()
+            defaults = watchdog.test_cfg_defaults(1)
             data = bytes(range(128)) + watchdog.test_cfg_bytes(defaults) + bytes(range(128))
             write_banks(path, data)
             location = dict(offset=128, size=128, address=0x90000080, load_base=0x90000000)
@@ -129,7 +133,7 @@ class TestConfigurationTests(unittest.TestCase):
     def test_bad_magic_version_bounds_and_v2_two_rows(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory)
-            defaults = watchdog.test_cfg_defaults()
+            defaults = watchdog.test_cfg_defaults(1)
             location = dict(offset=0, size=128)
             for bad in (dict(defaults, magic=0), dict(defaults, version=2)):
                 write_banks(path, watchdog.test_cfg_bytes(bad))
@@ -138,7 +142,7 @@ class TestConfigurationTests(unittest.TestCase):
             write_banks(path, watchdog.test_cfg_bytes(defaults))
             with self.assertRaises(ValueError):
                 watchdog.patch_test_cfg(path, dict(offset=128, size=128), defaults)
-            v2 = dict(defaults, version=2)
+            v2 = watchdog.test_cfg_defaults()
             write_banks(path, watchdog.test_cfg_bytes(v2))
             changed = dict(v2, fault_gid=7, wd_type_h=[0, 8] + [0] * 14,
                            wd_type_c=[0, 30] + [0] * 14)
@@ -186,7 +190,7 @@ class TestConfigurationTests(unittest.TestCase):
         self.assertNotIn("-e", execute.call_args.args[0])
 
     def test_all_off_checker_requires_both_goldens_without_dispatch_trace(self):
-        sc = watchdog.SCENARIOS["tch0"]
+        sc = dict(watchdog.SCENARIOS["tch0"], dispatch_log=False)
         uart = ("[Host] Bingo status: fenced=0x0 risk=0x0\n"
                 "[Host] Check [A_chain_cluster0]: PASS\n[Host] Check [A_cluster1]: PASS\n")
         self.assertEqual(watchdog.evaluate_risk_chain(sc, "", uart), [])
@@ -216,7 +220,7 @@ class TestConfigurationTests(unittest.TestCase):
                     patch.object(watchdog, "early_exit_task_ids", return_value={"gemm2": 108}), \
                     patch.object(watchdog.shutil, "copyfile"), \
                     patch.object(watchdog, "test_cfg_elf_location",
-                                 return_value=dict(offset=0, size=128)):
+                                 return_value=dict(offset=0, size=256)):
                 runner.build_apps_and_stage([{}])
             build.assert_called_once()
             self.assertEqual(runner.test_cfg_record["configuration"]["fault_gid"], 108)

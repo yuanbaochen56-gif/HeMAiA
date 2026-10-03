@@ -535,7 +535,7 @@ void bingo_close_all_clusters(bingo_task_t **task_list, uint32_t num_tasks);
 #define BINGO_RISK_EPOCH            0
 #endif
 // Shorter confirm threshold for registered at-risk busy slots. Same watchdog
-// timer/ticks as H and C; 0 (default) disables it. Only H < R < C is valid.
+// timer/ticks as H and C; 0 disables it. Only H_eff(type) < R < C_eff(type) is valid.
 #ifndef BINGO_RISK_CONFIRM
 #define BINGO_RISK_CONFIRM          0
 #endif
@@ -549,6 +549,11 @@ void bingo_close_all_clusters(bingo_task_t **task_list, uint32_t num_tasks);
 // power domains, EN_IDLE_PM) without starting a task offload. Exposed so a test
 // can arm the PM + DVFS on a single chiplet.
 void bingo_hw_scheduler_init_pm(void);
+
+// Per-type watchdog thresholds only shorten the parameter H/C; 0 disables.
+// Global late_cycles is unchanged and must be below C_eff for late reporting.
+#define BINGO_WD_NUM_TYPES 16
+void bingo_wd_type_set(uint32_t type, uint32_t h, uint32_t c);
 
 void bingo_hw_scheduler_init(uint64_t dev_arg_base_addr, uint64_t dev_kernel_base_addr, uint32_t num_dev_tasks, uint64_t global_task_id_to_dev_task_id_base_addr, uint32_t num_total_tasks, uint64_t bingo_hw_scheduler_task_desc_list_base, uint32_t bingo_hw_scheduler_num_task_desc);
 

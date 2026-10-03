@@ -1969,6 +1969,7 @@ def run_scenario(name: str, args: argparse.Namespace) -> bool:
         fail_on_task_failure=False,
         timeout_seconds=sc["sim_timeout_s"],
         extra_mounts=[Path(args.bingo_repo)],
+        plusargs=["+bingo_dispatch_log"] if sc.get("dispatch_log", False) else [],
     )
     runner.run([task])
     if sc.get("early_exit"):
@@ -2050,6 +2051,7 @@ def run_scenario(name: str, args: argparse.Namespace) -> bool:
     lines += [l for l in log_text.splitlines() if "[BINGO_" in l][:50]
     lines += ["```"]
     lines.append("- SW build: `PYTHONHASHSEED=0` (forwarded to the container)")
+    lines.append(f"- dispatch_log: {bool(sc.get('dispatch_log', False))}")
     if sc.get("t1"):
         lines += [f"- image ID: `{runner.test_cfg_record['image_id']}`",
                   f"- changed bank lines: {runner.test_cfg_record['changed_bank_line_count']}",

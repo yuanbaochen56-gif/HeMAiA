@@ -641,6 +641,7 @@ class HeMAiASimRunner:
         fail_on_task_failure: bool = False,
         timeout_seconds: int = SIM_TIMEOUT_SECONDS,
         extra_mounts: Optional[List[Path]] = None,
+        plusargs: Optional[Sequence[str]] = None,
     ) -> None:
         if engine not in ENGINES:
             raise ValueError(f"Unknown engine {engine!r}; choose from {sorted(ENGINES)}")
@@ -692,6 +693,9 @@ class HeMAiASimRunner:
         # Host directories outside the repo that the build container must see
         # (e.g. a Bender path dependency such as ../bingo_hw_manager).
         self.extra_mounts = [Path(p).resolve() for p in (extra_mounts or [])]
+        self.plusargs = list(plusargs or [])
+        if any(not arg.startswith("+") or any(ch.isspace() for ch in arg) for arg in self.plusargs):
+            raise ValueError("Simulation plusargs must be single +arguments")
 
     # -- helpers -----------------------------------------------------------
 
@@ -1422,6 +1426,10 @@ class HeMAiASimRunner:
         """
         results: Dict[str, Tuple[bool, float]] = {}
         binary_name = self.spec["binary"]
+        # The Questa launcher reserves $1 for the payload and forwards $2 to
+        # vsim. Other backends accept plusargs directly.
+        launcher_args = (["", " ".join(self.plusargs)] if self.engine == "vsim" and self.plusargs
+                         else self.plusargs)
 
         def _worker(task_dir: Path, ci_name: str):
             sim_binary = task_dir / "bin" / binary_name
@@ -1438,7 +1446,7 @@ class HeMAiASimRunner:
                 # start_new_session=True makes the child a session/group leader,
                 # so all descendants share that group and can be killed as a unit.
                 proc = subprocess.Popen(
-                    [str(sim_binary), *self.spec.get("run_args", [])],
+                    [str(sim_binary), *self.spec.get("run_args", []), *launcher_args],
                     cwd=task_dir / "bin",
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,

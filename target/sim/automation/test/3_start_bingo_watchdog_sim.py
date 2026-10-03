@@ -609,6 +609,28 @@ SCENARIOS: Dict[str, dict] = {
         expect_late=3, expect_risk=True, expect_final_risk=0, risk_confirm=125000,
         expect_eoc=True, expect_fence=True, sim_timeout_s=900,
     ),
+    "s43": dict(
+        desc="GEMM2 hangs: publish the already computed shallow logits via CERF",
+        cfg=HEMAIA_CI_CFG, timeout_cycles=TIGHT_TIMEOUT_CYCLES,
+        confirm_timeout_cycles=CONFIRM_TIMEOUT_CYCLES,
+        extra_cfg={"bingo_substitute_level_mask": "1"}, cfg_suffix="_cerf_l1",
+        workload="early_exit_2cluster", fault_stall_cycles=0,
+        victim=(0, 0, 0), early_exit=True,
+        extra_flags="-DBINGO_EE_EXPECT_SHALLOW=1",
+        expect_core_types={0: 1, 1: 2, 2: 0},
+        expect_eoc=True, expect_fence=True, expect_host_stuck=True, sim_timeout_s=900,
+    ),
+    "s44": dict(
+        desc="healthy GEMM chain: deep output, no shallow copy dispatch",
+        cfg=HEMAIA_CI_CFG, timeout_cycles=TIGHT_TIMEOUT_CYCLES,
+        confirm_timeout_cycles=CONFIRM_TIMEOUT_CYCLES,
+        extra_cfg={"bingo_substitute_level_mask": "1"}, cfg_suffix="_cerf_l1",
+        workload="early_exit_2cluster", fault_stall_cycles=None,
+        victim=(0, 0, 0), early_exit=True,
+        extra_flags="-DBINGO_EE_EXPECT_SHALLOW=0",
+        expect_core_types={0: 1, 1: 2, 2: 0},
+        expect_eoc=True, sim_timeout_s=900,
+    ),
     "s42": dict(
         desc="healthy registered-risk chain: progress strictly between H and R",
         cfg=HEMAIA_CI_CFG, timeout_cycles=TIGHT_TIMEOUT_CYCLES,
@@ -949,6 +971,89 @@ def evaluate_dma_cerf(sc: dict, log_text: str, uart_text: str) -> List[str]:
         problems.append("missing gating / join completion marker")
     print(f"[dma_cerf] events={fb} dispatches={slots}")
     return problems
+
+def early_exit_task_ids(path: Path) -> dict:
+    """Read the chain kernels and output stores from the generated graph."""
+    with path.open() as stream:
+        rows = list(csv.DictReader(stream))
+    result = {}
+    kernels = {
+        "gemm1": ("__snax_bingo_kernel_gemm_full", 0, 1),
+        "gemm2": ("__snax_bingo_kernel_gemm_full", 0, 0),
+        "requant": ("__host_bingo_kernel_early_exit_requant", 2, 0),
+        "backup": ("__host_bingo_kernel_idma", 2, 0),
+        "join": ("__host_bingo_kernel_dummy", 2, 0),
+        "primary_exit": ("__snax_bingo_kernel_exit", 0, 0),
+        "prefix_exit": ("__snax_bingo_kernel_exit", 0, 1),
+    }
+    for name, (kernel, core, cluster) in kernels.items():
+        matches = [row for row in rows if row["Kernel"] == kernel
+                   and (int(row["Core"]), int(row["Cluster"])) == (core, cluster)]
+        if len(matches) != 1:
+            raise ValueError(f"expected one {name} in generated early-exit graph")
+        result[name] = int(matches[0]["ID"])
+    for name, cluster, predecessor in (
+        ("prefix_store", 1, "gemm1"), ("deep_store", 0, "gemm2"),
+    ):
+        matches = [row for row in rows if row["Kernel"] == "__snax_bingo_kernel_idma_1d_copy"
+                   and int(row["Cluster"]) == cluster and int(row["ID"]) > result[predecessor]]
+        if len(matches) != 1:
+            raise ValueError(f"expected one {name} after its GEMM in early-exit graph")
+        result[name] = int(matches[0]["ID"])
+    return result
+
+
+def evaluate_early_exit(sc: dict, log_text: str, uart_text: str) -> List[str]:
+    ids = sc.get("early_exit_task_ids")
+    if not ids:
+        return ["missing task IDs from generated early-exit graph"]
+    shallow = sc["fault_stall_cycles"] is not None
+    problems = []
+    fb = [tuple(map(int, match.groups())) for match in CERF_FB_RE.finditer(log_text)]
+    if len(fb) != int(shallow) or any(event[1:] != (1, 0, 1) for event in fb):
+        problems.append("expected one type 1 g0 -> g1 only on a deep-layer fault")
+    seen = {}
+    for match in DISPATCH_RE.finditer(log_text):
+        time, chip, task, core, cluster = map(int, match.groups())
+        seen.setdefault(task, []).append((chip, core, cluster, time))
+    expected = dict(gemm1=[(0, 0, 1)], prefix_store=[(0, 1, 1)],
+                    requant=[(0, 2, 0)], gemm2=[(0, 0, 0)],
+                    deep_store=[] if shallow else [(0, 1, 0)],
+                    backup=[(0, 2, 0)] if shallow else [], join=[(0, 2, 0)],
+                    primary_exit=[] if shallow else [(0, 0, 0)],
+                    prefix_exit=[] if shallow else [(0, 0, 1)])
+    for name, want in expected.items():
+        if [event[:3] for event in seen.get(ids[name], [])] != want:
+            problems.append(f"wrong early-exit {name} dispatch count or slot")
+    if all(len(seen.get(ids[name], [])) == 1 for name in ("gemm1", "prefix_store", "requant", "gemm2")):
+        times = [seen[ids[name]][0][3] for name in ("gemm1", "prefix_store", "requant", "gemm2")]
+        if times != sorted(set(times)):
+            problems.append("expected GEMM1 < store h < requant < GEMM2")
+    if shallow:
+        fences = [int(match.group(1)) for match in WD_RE.finditer(log_text)
+                  if match.groups()[1:] == ("0", "0", "0", "1", "1")]
+        stuck = [int(t) for t in re.findall(
+            rf"\[BINGO_REPLAY_STUCK\] (\d+) chip=0 core=0 cluster=0: no live core may run task {ids['gemm2']} ", log_text)]
+        if (len(fences) != 1 or len(stuck) != 1 or len(fb) != 1
+                or len(seen.get(ids["backup"], [])) != 1 or len(seen.get(ids["join"], [])) != 1
+                or not seen.get(ids["gemm2"])
+                or not seen[ids["gemm2"]][0][3] < fences[0] <= stuck[0] <= fb[0][0]
+                       < seen[ids["backup"]][0][3] < seen[ids["join"]][0][3]):
+            problems.append("expected GEMM2 < fence <= stuck <= CERF < shallow copy < join")
+    elif all(len(seen.get(ids[name], [])) == 1 for name in ("gemm2", "deep_store", "join")):
+        times = [seen[ids[name]][0][3] for name in ("gemm2", "deep_store", "join")]
+        if times != sorted(set(times)):
+            problems.append("expected healthy GEMM2 < store deep output < join")
+    host = re.search(r"\[Host\] Bingo status: .* cerf=0x([0-9a-fA-F]+) "
+                     r"cerf_fb_en=0x([0-9a-fA-F]+) cerf_fb_evt=0x([0-9a-fA-F]+)", uart_text)
+    if not host or tuple(int(value, 16) for value in host.groups()) != (2 if shallow else 1, 2, 2 if shallow else 0):
+        problems.append("wrong early-exit CERF/enable/event status")
+    if CHECK_RE.findall(uart_text) != [("shallow_out" if shallow else "deep_out", "PASS")]:
+        problems.append("wrong early-exit output branch or data check")
+    if f"[EarlyExit] join complete; shallow={int(shallow)}" not in uart_text:
+        problems.append("missing early-exit branch completion marker")
+    return problems
+
 
 def replay_safety_task_ids(path: Path) -> dict:
     """Read the unique workload kernels and protected exits from the compiled CSV."""
@@ -1383,7 +1488,9 @@ def evaluate(name: str, sc: dict, log_text: str, uart_text: str) -> List[str]:
                                log_text, flags=re.M)
     csr = CSR_RE.findall(log_text)
     checks = CHECK_RE.findall(uart_text)
-    if sc.get("replay_safety"):
+    if sc.get("early_exit"):
+        problems += evaluate_early_exit(sc, log_text, uart_text)
+    elif sc.get("replay_safety"):
         problems += evaluate_replay_safety(sc, log_text, uart_text)
     elif sc.get("cerf_fallback"):
         problems += evaluate_cerf_fallback(sc, log_text, uart_text)
@@ -1559,6 +1666,32 @@ class NoTraceSimRunner(CoreTypeCheckedSimRunner):
         return super().run_simulations(tasks_info)
 
 
+class EarlyExitSimRunner(NoTraceSimRunner):
+    """Generate the graph first, then inject GEMM2 using its actual task ID."""
+
+    def __init__(self, *, inject_fault=False, **kwargs):
+        super().__init__(**kwargs)
+        self.inject_fault = inject_fault
+        self.early_exit_task_ids = {}
+
+    def build_apps_and_stage(self, tasks):
+        info = super().build_apps_and_stage(tasks)
+        graph_csv = (_REPO_ROOT / "target/sw/host/apps/offload_bingo_hw/single_chip/workloads"
+                     "/early_exit_2cluster/final_dfg.csv")
+        self.early_exit_task_ids = early_exit_task_ids(graph_csv)
+        if self.inject_fault:
+            clean_app_builds("early_exit_2cluster")
+            task = dict(tasks[0])
+            task["extra_user_flags"] = (task.get("extra_user_flags", "") +
+                f" -DBINGO_WD_FAULT_GID={self.early_exit_task_ids['gemm2']}"
+                " -DBINGO_WD_FAULT_STALL_CYCLES=0 -DBINGO_WD_FAULT_CLUSTER=0 -DBINGO_WD_FAULT_CORE=0")
+            info = super().build_apps_and_stage([task])
+            if early_exit_task_ids(graph_csv) != self.early_exit_task_ids:
+                raise ValueError("early-exit task IDs changed during injection rebuild")
+        shutil.copyfile(graph_csv, self.output_dir / "early_exit_final_dfg.csv")
+        return info
+
+
 def run_scenario(name: str, args: argparse.Namespace) -> bool:
     sc = dict(SCENARIOS[name])
     if args.wd_timeout is not None and sc.get("timeout_cycles") is not None:
@@ -1574,7 +1707,7 @@ def run_scenario(name: str, args: argparse.Namespace) -> bool:
 
     task = make_task(host_app_type="offload_bingo_hw", chip_type="single_chip",
                      workload=sc["workload"], dev_app="snax-bingo-offload")
-    if sc["fault_stall_cycles"] is not None:
+    if sc["fault_stall_cycles"] is not None and not sc.get("early_exit"):
         task["extra_user_flags"] = (f"-DBINGO_WD_FAULT_GID={sc.get('fault_gid', FAULT_GID)} "
                                     f"-DBINGO_WD_FAULT_STALL_CYCLES={sc['fault_stall_cycles']}")
         if not sc.get("fault_any_core") and (
@@ -1587,8 +1720,10 @@ def run_scenario(name: str, args: argparse.Namespace) -> bool:
         if flags:
             task["extra_user_flags"] = (task.get("extra_user_flags", "") + " " + flags).strip()
 
-    runner_cls = CoreTypeCheckedSimRunner if args.keep_traces else NoTraceSimRunner
+    runner_cls = (EarlyExitSimRunner if sc.get("early_exit") else
+                  CoreTypeCheckedSimRunner if args.keep_traces else NoTraceSimRunner)
     runner = runner_cls(
+        **({"inject_fault": sc["fault_stall_cycles"] is not None} if sc.get("early_exit") else {}),
         expected_core_types=sc.get("expect_core_types"),
         repo_root=_REPO_ROOT,
         output_dir=out_dir,
@@ -1607,6 +1742,9 @@ def run_scenario(name: str, args: argparse.Namespace) -> bool:
         extra_mounts=[Path(args.bingo_repo)],
     )
     runner.run([task])
+    if sc.get("early_exit"):
+        sc["early_exit_task_ids"] = runner.early_exit_task_ids
+        sc["fault_gid"] = runner.early_exit_task_ids["gemm2"]
 
     bin_dir = out_dir / task_dir_name(0, task["ci_name"]) / "bin"
     log_path = bin_dir / "sim_run.log"

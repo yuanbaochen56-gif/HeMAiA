@@ -1,0 +1,6 @@
+build/
+__pycache__/
+*.png
+*.csv
+early_exit_data.h
+offload_bingo_hw.h

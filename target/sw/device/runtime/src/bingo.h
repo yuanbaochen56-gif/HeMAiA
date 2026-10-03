@@ -5,6 +5,9 @@
 // Fanchen Kong <fanchen.kong@kuleuven.be>
 
 #include "bingo_hw_heartbeat.h"
+#if BINGO_TEST_CFG
+#include "bingo_test_cfg.h"
+#endif
 
 #define BINGO_RET_SUCC 0
 #define BINGO_RET_EXIT 1
@@ -268,6 +271,15 @@ inline void write_bingo_hw_manager_heartbeat(uint32_t value){
     bingo_hw_manager_heartbeat(value);
 }
 
+#if BINGO_TEST_CFG
+inline void bingo_wd_fault_stall(uint32_t cycles){
+    uint32_t start, now;
+    asm volatile("csrr %0, mcycle" : "=r"(start));
+    do {
+        asm volatile("csrr %0, mcycle" : "=r"(now));
+    } while (cycles == 0 || (now - start) < cycles);
+}
+#else
 #ifdef BINGO_WD_FAULT_GID
 // Test-only fault injection for the bingo HW watchdog (compiled out unless
 // BINGO_WD_FAULT_GID is defined): the core that receives global task
@@ -301,6 +313,7 @@ inline void bingo_wd_fault_stall(uint32_t cycles){
         asm volatile("csrr %0, mcycle" : "=r"(now));
     } while (cycles == 0 || (now - start) < cycles);
 }
+#endif
 #endif
 
 /**
@@ -339,7 +352,13 @@ inline uint32_t bingo_hw_offload_get_arg_ptr(uint32_t dev_task_id){
     return readw((uintptr_t)(get_bingo_hw_offload_unit()->dev_arg_list_ptr + dev_task_id * sizeof(uint32_t))); 
 }
 
+#if BINGO_TEST_CFG
+inline int32_t bingo_hw_offload_manager(uint32_t fault_gid, uint32_t fault_stall_cycles,
+        uint32_t fault_cluster, uint32_t fault_core, uint32_t fault_pre_stall_cycles,
+        uint32_t fault_after_kernel){
+#else
 inline int32_t bingo_hw_offload_manager(){
+#endif
     // Step 1: Get the arg_list and fn_list ptrs from the quad ctrl CFG
     uint32_t cur_arg_ptr;
     uint32_t cur_kernel_ptr;
@@ -382,6 +401,16 @@ inline int32_t bingo_hw_offload_manager(){
                cur_global_task_id);
         // 3. Execute the function
         BINGO_TRACE_MARKER(BINGO_TRACE_MGR_RUN_KERNEL_START);
+#if BINGO_TEST_CFG
+        if ((fault_cluster == UINT32_MAX || snrt_cluster_idx() == fault_cluster) &&
+            (fault_core == UINT32_MAX || snrt_cluster_core_idx() == fault_core)) {
+            if (cur_global_task_id == fault_gid) {
+                if (!fault_after_kernel) bingo_wd_fault_stall(fault_stall_cycles);
+            } else if (fault_pre_stall_cycles != 0) {
+                bingo_wd_fault_stall(fault_pre_stall_cycles);
+            }
+        }
+#else
 #ifdef BINGO_WD_FAULT_GID
         if (((BINGO_WD_FAULT_CLUSTER < 0) || (snrt_cluster_idx() == (uint32_t)BINGO_WD_FAULT_CLUSTER)) &&
             ((BINGO_WD_FAULT_CORE < 0) || (snrt_cluster_core_idx() == (uint32_t)BINGO_WD_FAULT_CORE))) {
@@ -394,15 +423,25 @@ inline int32_t bingo_hw_offload_manager(){
             }
         }
 #endif
+#endif
         // Start-of-task beat: reset watchdog after dispatch into ready queue.
         write_bingo_hw_manager_heartbeat(1);
         kernel_return_value = ((uint32_t (*)(uint32_t))cur_kernel_ptr)(cur_arg_ptr);
+#if BINGO_TEST_CFG
+        if (fault_after_kernel &&
+            (fault_cluster == UINT32_MAX || snrt_cluster_idx() == fault_cluster) &&
+            (fault_core == UINT32_MAX || snrt_cluster_core_idx() == fault_core) &&
+            cur_global_task_id == fault_gid) {
+            bingo_wd_fault_stall(fault_stall_cycles);
+        }
+#else
 #if defined(BINGO_WD_FAULT_GID) && BINGO_WD_FAULT_AFTER_KERNEL
         if (((BINGO_WD_FAULT_CLUSTER < 0) || (snrt_cluster_idx() == (uint32_t)BINGO_WD_FAULT_CLUSTER)) &&
             ((BINGO_WD_FAULT_CORE < 0) || (snrt_cluster_core_idx() == (uint32_t)BINGO_WD_FAULT_CORE)) &&
             cur_global_task_id == BINGO_WD_FAULT_GID) {
             bingo_wd_fault_stall(BINGO_WD_FAULT_STALL_CYCLES);
         }
+#endif
 #endif
         // End-of-task beat before done (covers kernels that never poll in a wait loop).
         write_bingo_hw_manager_heartbeat(1);
@@ -471,13 +510,28 @@ inline int32_t bingo_offload_manager(){
     // SW offload = 1
     // HW offload = 2
     uint32_t offload_type = readw(soc_ctrl_kernel_tab_scratch_addr(3));
+#if BINGO_TEST_CFG
+    const volatile bingo_test_cfg_t *cfg =
+        (const volatile bingo_test_cfg_t *)(uintptr_t)readw(soc_ctrl_scratch_addr(3));
+    uint32_t fault_gid = cfg->fault_gid;
+    uint32_t fault_stall_cycles = cfg->fault_stall_cycles;
+    uint32_t fault_cluster = cfg->fault_cluster;
+    uint32_t fault_core = cfg->fault_core;
+    uint32_t fault_pre_stall_cycles = cfg->fault_pre_stall_cycles;
+    uint32_t fault_after_kernel = cfg->fault_after_kernel;
+#endif
 
     if (offload_type == 1){
         // Software offload
         return bingo_sw_offload_manager();
     } else if (offload_type == 2){
         // Hardware offload
+#if BINGO_TEST_CFG
+        return bingo_hw_offload_manager(fault_gid, fault_stall_cycles, fault_cluster,
+            fault_core, fault_pre_stall_cycles, fault_after_kernel);
+#else
         return bingo_hw_offload_manager();
+#endif
     } else {
         // Invalid offload type
         printf_safe("[Cluster %d] Error: Invalid offload type %d\r\n", snrt_cluster_idx(), offload_type);

@@ -310,8 +310,11 @@ def run_in_container(
     Prefers ``podman`` when available; otherwise falls back to ``apptainer exec``.
     """
     mounts = [repo_root] + list(extra_mounts or [])
+    seed = os.environ.get("PYTHONHASHSEED")
     if shutil.which("podman") is not None:
         runner_cmd: List[str] = ["podman", "run", "--rm"]
+        if seed is not None:
+            runner_cmd += ["-e", f"PYTHONHASHSEED={seed}"]
         for mount in mounts:
             runner_cmd += ["-v", f"{mount}:{mount}"]
         runner_cmd += ["-w", str(working_dir), docker_image]
@@ -323,6 +326,8 @@ def run_in_container(
         ]
         for mount in mounts:
             runner_cmd += ["-B", f"{mount}:{mount}"]
+        if seed is not None:
+            runner_cmd += ["--env", f"PYTHONHASHSEED={seed}"]
         runner_cmd.append(f"docker://{docker_image}")
     else:
         raise RuntimeError(

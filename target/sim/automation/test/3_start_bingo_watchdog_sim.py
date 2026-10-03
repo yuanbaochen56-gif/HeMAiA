@@ -124,8 +124,13 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
+import json
+import os
 import re
+import shlex
 import shutil
+import struct
 import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -650,6 +655,181 @@ SCENARIOS: Dict[str, dict] = {
     ),
 }
 
+T1_FAMILIES = {
+    "F1": ("tch0", "t18", "t19", "t40", "t41", "t42"),
+    "F2": ("t43", "t44"),
+}
+for _number in (18, 19, 40, 41, 42, 43, 44):
+    SCENARIOS[f"t{_number}"] = dict(SCENARIOS[f"s{_number}"], t1=True)
+SCENARIOS["tch0"] = dict(
+    SCENARIOS["s18"], t1=True, desc="healthy test-configuration DMA chain, all controls off",
+    fault_stall_cycles=None, extra_flags="", expect_late=0, expect_fence=False,
+    expect_takeover=False, substitute=None, expect_chain_clusters=[0] * 6, healthy_test_cfg=True,
+)
+
+TEST_CFG_FIELDS = (
+    "magic", "version", "fault_gid", "fault_stall_cycles", "fault_cluster", "fault_core",
+    "fault_pre_stall_cycles", "fault_after_kernel", "risk_late", "risk_policy",
+    "risk_epoch", "risk_confirm", "pm_boost_power_level", "boost_policy",
+    "pm_idle_entry_delay", "pm_access_wake_hold", "remote_proxy_timeout", "park_req",
+    "cerf_fb_enable", "cerf_fb_cluster", "cerf_fb_core", "cerf_fb_clear", "cerf_fb_set",
+)
+TEST_CFG_MACROS = {
+    "BINGO_WD_FAULT_GID": "fault_gid",
+    "BINGO_WD_FAULT_STALL_CYCLES": "fault_stall_cycles",
+    "BINGO_WD_FAULT_CLUSTER": "fault_cluster", "BINGO_WD_FAULT_CORE": "fault_core",
+    "BINGO_WD_FAULT_PRE_STALL_CYCLES": "fault_pre_stall_cycles",
+    "BINGO_WD_FAULT_AFTER_KERNEL": "fault_after_kernel",
+    "BINGO_RISK_LATE": "risk_late", "BINGO_RISK_POLICY": "risk_policy",
+    "BINGO_RISK_EPOCH": "risk_epoch", "BINGO_RISK_CONFIRM": "risk_confirm",
+    "BINGO_PM_BOOST_POWER_LEVEL": "pm_boost_power_level", "BINGO_BOOST_POLICY": "boost_policy",
+    "BINGO_PM_IDLE_ENTRY_DELAY": "pm_idle_entry_delay",
+    "BINGO_PM_ACCESS_WAKE_HOLD": "pm_access_wake_hold",
+    "BINGO_REMOTE_PROXY_TIMEOUT": "remote_proxy_timeout", "BINGO_PARK_REQ": "park_req",
+    "BINGO_CERF_FB_CLUSTER": "cerf_fb_cluster", "BINGO_CERF_FB_CORE": "cerf_fb_core",
+    "BINGO_CERF_FB_CLEAR": "cerf_fb_clear", "BINGO_CERF_FB_SET": "cerf_fb_set",
+}
+
+
+def test_cfg_defaults() -> dict:
+    cfg = dict.fromkeys(TEST_CFG_FIELDS, 0)
+    cfg.update(magic=0x42475431, version=1, fault_gid=0xFFFFFFFF,
+               fault_cluster=0xFFFFFFFF, fault_core=0xFFFFFFFF)
+    return cfg
+
+
+def scenario_test_cfg(sc: dict, extra_flags: str = "") -> dict:
+    """Translate only data controls. Unknown flags must never change a T1 graph."""
+    cfg = test_cfg_defaults()
+    if sc["fault_stall_cycles"] is not None:
+        cfg.update(fault_gid=sc.get("fault_gid", FAULT_GID),
+                   fault_stall_cycles=sc["fault_stall_cycles"])
+        if not sc.get("fault_any_core"):
+            _, core, cluster = sc.get("victim", VICTIM)
+            cfg.update(fault_cluster=cluster, fault_core=core)
+    for flag in shlex.split(sc.get("extra_flags", "") + " " + extra_flags):
+        match = re.fullmatch(r"-D([A-Za-z_]\w*)(?:=(.+))?", flag)
+        if not match:
+            raise ValueError(f"unsupported T1 build flag: {flag}")
+        macro, value = match.groups()
+        if re.fullmatch(r"BINGO_\w+_EXPECT_\w+", macro):
+            continue
+        if macro not in TEST_CFG_MACROS:
+            raise ValueError(f"unknown T1 configuration macro: {macro}")
+        number = int((value or "1").rstrip("uUlL"), 0)
+        if not -1 <= number <= 0xFFFFFFFF:
+            raise ValueError(f"T1 value outside uint32: {flag}")
+        cfg[TEST_CFG_MACROS[macro]] = number & 0xFFFFFFFF
+        if macro.startswith("BINGO_CERF_FB_"):
+            cfg["cerf_fb_enable"] = 1
+    return cfg
+
+
+def test_cfg_bytes(cfg: dict) -> bytes:
+    version = cfg["version"]
+    if version not in (1, 2) or set(cfg) - set(TEST_CFG_FIELDS) - {"wd_type_h", "wd_type_c"}:
+        raise ValueError("unsupported test configuration layout")
+    words = [cfg[field] for field in TEST_CFG_FIELDS] + [0] * 9
+    if version == 2:
+        for field in ("wd_type_h", "wd_type_c"):
+            values = cfg.get(field, [0] * 16)
+            if len(values) != 16:
+                raise ValueError(f"{field} must have sixteen words")
+            words += values
+    return struct.pack("<" + "I" * len(words), *words)
+
+
+def test_cfg_elf_location(elf: Path) -> dict:
+    """Read the RV64 ELF's symbol and actual file-backed LOAD geometry."""
+    data = elf.read_bytes()
+    if data[:6] != b"\x7fELF\x02\x01":
+        raise ValueError("test configuration requires a little-endian ELF64")
+    header = struct.unpack_from("<16sHHIQQQIHHHHHH", data)
+    phoff, shoff, phsize, phnum, shsize, shnum = (
+        header[5], header[6], header[9], header[10], header[11], header[12])
+    loads = [struct.unpack_from("<IIQQQQQQ", data, phoff + i * phsize)
+             for i in range(phnum)]
+    loads = [p for p in loads if p[0] == 1 and p[5]]
+    sections = [struct.unpack_from("<IIQQQQIIQQ", data, shoff + i * shsize)
+                for i in range(shnum)]
+    symbols = []
+    for section in sections:
+        if section[1] != 2:  # SHT_SYMTAB
+            continue
+        strings = sections[section[6]]
+        names = data[strings[4]:strings[4] + strings[5]]
+        for offset in range(section[4], section[4] + section[5], section[9]):
+            name, info, other, index, address, size = struct.unpack_from("<IBBHQQ", data, offset)
+            if names[name:].split(b"\0", 1)[0] == b"bingo_test_cfg":
+                symbols.append((index, address, size))
+    if len(symbols) != 1 or not loads:
+        raise ValueError("expected one initialized bingo_test_cfg symbol and a LOAD segment")
+    index, address, size = symbols[0]
+    if index >= len(sections) or sections[index][1] != 1 or (sections[index][2] & 3) != 3:
+        raise ValueError("bingo_test_cfg is not in initialized writable image data")
+    containing = [p for p in loads if p[3] <= address and address + size <= p[3] + p[5]]
+    if len(containing) != 1:
+        raise ValueError("bingo_test_cfg is not entirely file-backed by a LOAD segment")
+    if any(p[3] != p[4] for p in loads):
+        raise ValueError("unsupported LOAD virtual/physical address mapping")
+    base = min(p[4] for p in loads)
+    offset = address - base
+    if size not in (128, 256) or address % 128 or offset % 128:
+        raise ValueError("test configuration must occupy aligned complete bank rows")
+    return dict(address=address, load_base=base, offset=offset, size=size)
+
+
+def read_bank_image(directory: Path) -> bytes:
+    banks = [(directory / f"bank_{bank}.hex").read_text().splitlines()
+             for bank in range(16)]
+    if len({len(bank) for bank in banks}) != 1:
+        raise ValueError("unequal bank image lengths")
+    return b"".join(int(banks[bank][row], 16).to_bytes(8, "little")
+                    for row in range(len(banks[0])) for bank in range(16))
+
+
+def patch_test_cfg(directory: Path, location: dict, cfg: dict) -> dict:
+    """Preserve every unchanged bank line, including its original formatting."""
+    before = read_bank_image(directory)
+    offset = location["offset"]
+    replacement = test_cfg_bytes(cfg)
+    if len(replacement) != location["size"] or offset + len(replacement) > len(before):
+        raise ValueError("test configuration is outside the staged image or has the wrong size")
+    if struct.unpack_from("<II", before, offset) != (0x42475431, cfg["version"]):
+        raise ValueError("staged test configuration magic/version mismatch")
+    changed = []
+    for bank in range(16):
+        path = directory / f"bank_{bank}.hex"
+        lines = path.read_text().splitlines(keepends=True)
+        for local in range(bank * 8, len(replacement), 128):
+            row = (offset + local) // 128
+            word = int.from_bytes(replacement[local:local + 8], "little")
+            if int(lines[row], 16) != word:
+                lines[row] = f"{word:08X}\n"
+                changed.append([bank, row])
+        if any(b == bank for b, row in changed):
+            path.write_text("".join(lines))
+    after = read_bank_image(directory)
+    if before[:offset] != after[:offset] or before[offset + len(replacement):] != after[offset + len(replacement):]:
+        raise ValueError("patch changed data outside the test configuration")
+    if after[offset:offset + len(replacement)] != replacement:
+        raise ValueError("test configuration patch did not round-trip")
+    return dict(image_id=hashlib.sha256(before).hexdigest(), configuration=cfg,
+                location=location, changed_bank_lines=changed, changed_bank_line_count=len(changed),
+                changed_rows=sorted({row for bank, row in changed}), PYTHONHASHSEED="0")
+
+
+def check_t1_family(records: List[dict]) -> None:
+    if len({record["image_id"] for record in records}) != 1:
+        raise ValueError("T1 family does not share one unpatched image ID")
+    if len({json.dumps(record["location"], sort_keys=True) for record in records}) != 1:
+        raise ValueError("T1 family configuration locations differ")
+    for record in records:
+        first = record["location"]["offset"] // 128
+        count = record["location"]["size"] // 128
+        if not set(record["changed_rows"]) <= set(range(first, first + count)):
+            raise ValueError("T1 family patch escaped its configuration rows")
+
 # fenced= only exists since the replay support; older RTL prints dead_suspect only.
 WD_RE = re.compile(r"\[BINGO_WD\] (\d+) chip=(\d+) core=(\d+) cluster=(\d+) dead_suspect=(\d)(?: fenced=(\d))?")
 REMAP_RE = re.compile(r"\[BINGO_REMAP\].*")
@@ -690,8 +870,10 @@ def evaluate_risk_chain(sc: dict, log_text: str, uart_text: str) -> List[str]:
     expected += [(task, sub, sub_cluster) for task in range(2 if parked else 3, 6)]
     if "expect_chain_clusters" in sc:
         expected = [(task, core, cl) for task, cl in enumerate(sc["expect_chain_clusters"])]
-    if [(d[2], d[3], d[4]) for d in dispatches] != expected or any(
-            d[1] != chip for d in dispatches):
+    # All-off tch0 has no dispatch logging (the existing RTL log gate is off).
+    check_dispatches = not sc.get("healthy_test_cfg") or bool(dispatches)
+    if check_dispatches and ([(d[2], d[3], d[4]) for d in dispatches] != expected or any(
+            d[1] != chip for d in dispatches)):
         problems.append(f"chain dispatches {dispatches}, expected {expected} on chip {chip}")
     if sc.get("expect_risk", False):
         risk_times = [int(t) for t in re.findall(
@@ -1638,6 +1820,10 @@ class CoreTypeCheckedSimRunner(HeMAiASimRunner):
         self.expected_core_types = expected_core_types
         self.core_type_problems = []
 
+    def build_apps_and_stage(self, tasks):
+        os.environ["PYTHONHASHSEED"] = "0"
+        return super().build_apps_and_stage(tasks)
+
     def run_simulations(self, tasks_info):
         # Generated RTL is shared by builds and may be overwritten while vsim
         # runs. Keep the check result for this build, not the next one's RTL.
@@ -1692,7 +1878,44 @@ class EarlyExitSimRunner(NoTraceSimRunner):
         return info
 
 
+class TestCfgSimRunner(NoTraceSimRunner):
+    """Build once, discover graph IDs, then patch only the staged image data."""
+
+    def __init__(self, *, test_cfg, early_exit=False, inject_fault=False, **kwargs):
+        super().__init__(**kwargs)
+        self.test_cfg = dict(test_cfg)
+        self.early_exit = early_exit
+        self.inject_fault = inject_fault
+        self.early_exit_task_ids = {}
+        self.test_cfg_record = {}
+
+    def build_apps_and_stage(self, tasks):
+        info = super().build_apps_and_stage(tasks)
+        if self.early_exit:
+            graph_csv = (self.repo_root / "target/sw/host/apps/offload_bingo_hw/single_chip"
+                         "/workloads/early_exit_2cluster/final_dfg.csv")
+            self.early_exit_task_ids = early_exit_task_ids(graph_csv)
+            if self.inject_fault:
+                self.test_cfg["fault_gid"] = self.early_exit_task_ids["gemm2"]
+            shutil.copyfile(graph_csv, self.output_dir / "early_exit_final_dfg.csv")
+        if len(info) != 1:
+            raise ValueError("T1 runner expects exactly one staged task")
+        task_dir, ci_name = info[0]
+        elf = self.repo_root / "target/sim/apps" / f"{ci_name}.elf"
+        shutil.copyfile(elf, self.output_dir / "test_cfg_host.elf")
+        location = test_cfg_elf_location(elf)
+        banks = task_dir / "bin/app_chip_0_0"
+        unpatched = read_bank_image(banks)
+        (self.output_dir / "test_cfg_unpatched.bin").write_bytes(unpatched)
+        if unpatched[location["offset"]:location["offset"] + location["size"]] != test_cfg_bytes(test_cfg_defaults()):
+            raise ValueError("unpatched image does not contain the default test configuration")
+        self.test_cfg_record = patch_test_cfg(banks, location, self.test_cfg)
+        (self.output_dir / "test_cfg.json").write_text(json.dumps(self.test_cfg_record, indent=2) + "\n")
+        return info
+
+
 def run_scenario(name: str, args: argparse.Namespace) -> bool:
+    os.environ["PYTHONHASHSEED"] = "0"
     sc = dict(SCENARIOS[name])
     if args.wd_timeout is not None and sc.get("timeout_cycles") is not None:
         # Sweep: other watchdog timeouts (the confirm timeout stays twice as long)
@@ -1720,10 +1943,16 @@ def run_scenario(name: str, args: argparse.Namespace) -> bool:
         if flags:
             task["extra_user_flags"] = (task.get("extra_user_flags", "") + " " + flags).strip()
 
-    runner_cls = (EarlyExitSimRunner if sc.get("early_exit") else
+    if sc.get("t1"):
+        test_cfg = scenario_test_cfg(sc, args.extra_flags)
+        task["extra_user_flags"] = "-DBINGO_TEST_CFG=1"
+    runner_cls = (TestCfgSimRunner if sc.get("t1") else
+                  EarlyExitSimRunner if sc.get("early_exit") else
                   CoreTypeCheckedSimRunner if args.keep_traces else NoTraceSimRunner)
     runner = runner_cls(
-        **({"inject_fault": sc["fault_stall_cycles"] is not None} if sc.get("early_exit") else {}),
+        **({"test_cfg": test_cfg, "early_exit": sc.get("early_exit", False),
+            "inject_fault": sc["fault_stall_cycles"] is not None} if sc.get("t1") else
+           {"inject_fault": sc["fault_stall_cycles"] is not None} if sc.get("early_exit") else {}),
         expected_core_types=sc.get("expect_core_types"),
         repo_root=_REPO_ROOT,
         output_dir=out_dir,
@@ -1820,6 +2049,11 @@ def run_scenario(name: str, args: argparse.Namespace) -> bool:
     lines += ["", "## [BINGO_*] lines", "```"]
     lines += [l for l in log_text.splitlines() if "[BINGO_" in l][:50]
     lines += ["```"]
+    lines.append("- SW build: `PYTHONHASHSEED=0` (forwarded to the container)")
+    if sc.get("t1"):
+        lines += [f"- image ID: `{runner.test_cfg_record['image_id']}`",
+                  f"- changed bank lines: {runner.test_cfg_record['changed_bank_line_count']}",
+                  "- configuration: `" + json.dumps(runner.test_cfg_record["configuration"], sort_keys=True) + "`"]
     (out_dir / "result.md").write_text("\n".join(lines) + "\n")
     print(f"[{name}] {status}" + "".join(f"\n  - {p}" for p in problems))
     return not problems
@@ -1850,7 +2084,17 @@ def main() -> None:
     if shutil.which("vsim") is None:
         sys.exit("vsim not found: source the Questa setup script first")
 
-    results = {name: run_scenario(name, args) for name in args.scenario}
+    results = {}
+    for name in args.scenario:
+        results[name] = run_scenario(name, args)
+        if not results[name]:
+            break
+    for family, names in T1_FAMILIES.items():
+        selected = [name for name in names if name in results]
+        if selected:
+            records = [json.loads((Path(args.out_root) / name / "test_cfg.json").read_text())
+                       for name in selected]
+            check_t1_family(records)
     print("\n===== summary =====")
     for name, ok in results.items():
         print(f"{name}: {'PASS' if ok else 'FAIL'}  ({SCENARIOS[name]['desc']})")

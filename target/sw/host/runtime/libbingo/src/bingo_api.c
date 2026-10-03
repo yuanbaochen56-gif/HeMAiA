@@ -10,6 +10,11 @@
 #include <stdlib.h>  // NULL
 #include <stdio.h>
 #include "heterogeneous_runtime.h"
+#if BINGO_TEST_CFG
+#include "bingo_test_cfg.h"
+volatile bingo_test_cfg_t bingo_test_cfg __attribute__((section(".data"), used)) =
+    BINGO_TEST_CFG_INITIALIZER;
+#endif
 uint64_t global_task_id = 0; // Internal monotonically increasing id source, notice this is used in each chiplet
 
 // Non-zero exit code reported when a heap allocation cannot be satisfied. A
@@ -736,6 +741,14 @@ void bingo_hw_scheduler_init_pm(){
     // For chip testing, we should choose another value derived from the 4Ghz PLL
     writew(BINGO_PM_NORMAL_POWER_LEVEL,  (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_norm_power_level_addr()));
     // 2b. quad_ctrl_boost_power_level_addr: level while a core runs a dead core's tasks (0 = off)
+#if BINGO_TEST_CFG
+    writew(bingo_test_cfg.pm_boost_power_level, (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_boost_power_level_addr()));
+    writew(bingo_test_cfg.boost_policy, (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_bingo_boost_policy_addr()));
+    writew(bingo_test_cfg.pm_idle_entry_delay, (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_idle_entry_delay_addr()));
+    writew(bingo_test_cfg.pm_access_wake_hold, (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_access_wake_hold_addr()));
+    printf_safe("Chip(%x, %x): [Host] Bingo PM: test configuration\r\n",
+                get_current_chip_loc_x(), get_current_chip_loc_y());
+#else
     writew(BINGO_PM_BOOST_POWER_LEVEL,   (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_boost_power_level_addr()));
     writew(BINGO_BOOST_POLICY,           (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_bingo_boost_policy_addr()));
     // 2c. quad_ctrl_idle_entry_delay_addr: cycles of idleness before a domain drops to the idle level (0 = at once)
@@ -747,6 +760,7 @@ void bingo_hw_scheduler_init_pm(){
                 BINGO_PM_IDLE_POWER_LEVEL, BINGO_PM_NORMAL_POWER_LEVEL,
                 BINGO_PM_BOOST_POWER_LEVEL, BINGO_PM_IDLE_ENTRY_DELAY, BINGO_PM_ACCESS_WAKE_HOLD,
                 BINGO_BOOST_POLICY);
+#endif
     // 3. quad_ctrl_pm_base_hi_addr: set to the high 32 bits of the power manager base address
     uint64_t CLK_CONTROLLER_ADDR = chiplet_addr_transform(HEMAIA_CLK_RST_CONTROLLER_BASE_ADDR);
     writew((uint32_t)(CLK_CONTROLLER_ADDR>>32),       (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_pm_base_hi_addr()));
@@ -832,6 +846,19 @@ void bingo_hw_scheduler_init(uint64_t dev_arg_base_addr, uint64_t dev_kernel_bas
     // Init the power manager
     bingo_hw_scheduler_init_pm();
     // Level 3: proxy timeout (0 = wait forever for a remote done)
+#if BINGO_TEST_CFG
+    writew(bingo_test_cfg.remote_proxy_timeout, (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_remote_proxy_timeout_addr()));
+    writew(bingo_test_cfg.park_req, (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_bingo_park_req_addr()));
+    writew(bingo_test_cfg.risk_late, (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_bingo_risk_late_addr()));
+    writew(bingo_test_cfg.risk_epoch, (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_bingo_risk_epoch_addr()));
+    writew(bingo_test_cfg.risk_policy, (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_bingo_risk_policy_addr()));
+    writew(bingo_test_cfg.risk_confirm, (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_bingo_risk_confirm_addr()));
+    if (bingo_test_cfg.cerf_fb_enable) {
+        uint32_t type = BINGO_CORE_TYPE_ID(bingo_test_cfg.cerf_fb_cluster, bingo_test_cfg.cerf_fb_core);
+        bingo_cerf_fb_set(type, bingo_test_cfg.cerf_fb_clear, bingo_test_cfg.cerf_fb_set);
+        bingo_cerf_fb_enable(1u << type);
+    }
+#else
     writew(BINGO_REMOTE_PROXY_TIMEOUT, (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_remote_proxy_timeout_addr()));
     // Core parking (0 = none): the slots drain before any task is offloaded
     writew(BINGO_PARK_REQ,             (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_bingo_park_req_addr()));
@@ -846,6 +873,7 @@ void bingo_hw_scheduler_init(uint64_t dev_arg_base_addr, uint64_t dev_kernel_bas
                       BINGO_CERF_FB_CLEAR, BINGO_CERF_FB_SET);
     bingo_cerf_fb_enable(1u << BINGO_CORE_TYPE_ID(BINGO_CERF_FB_CLUSTER, BINGO_CERF_FB_CORE));
 #endif
+#endif
     // Init the task desc list base and num tasks
     writew(bingo_hw_scheduler_task_desc_list_base>>32,       (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_task_desc_base_hi_addr()));
     writew((uint32_t)bingo_hw_scheduler_task_desc_list_base, (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_task_desc_base_lo_addr()));
@@ -853,6 +881,10 @@ void bingo_hw_scheduler_init(uint64_t dev_arg_base_addr, uint64_t dev_kernel_bas
     // Start the HW scheduler to load the task list
     writew(1,                             (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_start_bingo_hw_manager_addr()));
     // Tell the device that the host init is done
+#if BINGO_TEST_CFG
+    writew((uint32_t)(uintptr_t)&bingo_test_cfg,
+           (uintptr_t)chiplet_addr_transform((uint64_t)soc_ctrl_scratch_addr(3)));
+#endif
     writew(1,                             (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_host_init_done_addr()));
     asm volatile("fence" ::: "memory");
 }

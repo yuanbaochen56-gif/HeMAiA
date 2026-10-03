@@ -8,7 +8,7 @@ import warnings
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from bingo_dfg import BingoDFG
+from bingo_dfg import BingoDFG, region
 from bingo_kernel_args import (
     SnaxBingoKernelGemmFullArgs, SnaxBingoKernelGemmMinimalArgs,
     SnaxBingoKernelGemmI8I8I32M1K16N32Args,
@@ -39,6 +39,26 @@ def copy(src, dst):
 
 
 class ReplaySafetyTests(unittest.TestCase):
+    def test_bare_address_error_describes_both_checks(self):
+        with self.assertRaisesRegex(
+                ValueError, "Replay-safety and host-fallback checks need memory handles"):
+            region(1234)
+
+    def test_unsafe_replay_warns_once_per_node_even_when_packed_again(self):
+        shared = BingoMemAlloc("shared", 32)
+        first, second = copy(shared, shared), copy(shared, shared)
+        first.non_idempotent = second.non_idempotent = False
+        g = graph(allow_unsafe_replay=True)
+        with warnings.catch_warnings(record=True) as emitted:
+            warnings.simplefilter("always")
+            for node in (first, first, second, second, first):
+                self.assertFalse(g._node_no_replay(node))
+                g.bingo_pack_node(node)
+        self.assertEqual(len(emitted), 2)
+        self.assertTrue(all("unsafe replay" in str(w.message) for w in emitted))
+        with self.assertWarns(UserWarning):
+            graph(allow_unsafe_replay=True)._node_no_replay(first)
+
     def test_add_overlap_either_input_and_disjoint(self):
         shared = BingoMemAlloc("shared", 64)
         other = BingoMemAlloc("other", 64)

@@ -83,7 +83,7 @@ def region(handle):
         return ("symbol", handle.symbol_name), handle.offset
     if isinstance(handle, BingoMemFixedAddr):
         return ("fixed",), handle.address
-    raise ValueError("Host fallback copy needs memory handles, not bare integer addresses")
+    raise ValueError("Replay-safety and host-fallback checks need memory handles, not bare integer addresses")
 
 
 def _regions_overlap(left, right, size):
@@ -169,6 +169,7 @@ class BingoDFG(DiGraphWrapper[BingoNode]):
         self._host_fallbacks: dict[BingoNode, BingoNode] = {}
         self._host_fallback_masks: dict[int, tuple[int, int]] = {}
         self.allow_unsafe_replay = allow_unsafe_replay
+        self._unsafe_replay_warned: set[BingoNode] = set()
 
     def _node_no_replay(self, node: BingoNode) -> bool:
         """Resolve opt-in/automatic protection without changing the node's override."""
@@ -192,7 +193,9 @@ class BingoDFG(DiGraphWrapper[BingoNode]):
             message = f"Task '{node.node_name}' is non-idempotent but explicitly permits unsafe replay"
             if not self.allow_unsafe_replay:
                 raise ValueError(message)
-            warnings.warn(message, UserWarning, stacklevel=2)
+            if node not in self._unsafe_replay_warned:
+                warnings.warn(message, UserWarning, stacklevel=2)
+                self._unsafe_replay_warned.add(node)
         return hazardous if node.non_idempotent is None else node.non_idempotent
 
     def bingo_add_node(self, node_obj: BingoNode) -> None:

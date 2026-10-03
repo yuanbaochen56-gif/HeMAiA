@@ -44,6 +44,29 @@ from bingo_kernel_args import (
     _SnaxBingoKernelGemmQuantArgs,
 )
 
+def _deterministic_bipartite_matching(graph, count):
+    """Kuhn matching with ascending left nodes and right neighbors."""
+    right_to_left = {}
+
+    def augment(left, seen):
+        for _, right in sorted(graph[("L", left)]):
+            if right in seen:
+                continue
+            seen.add(right)
+            if right not in right_to_left or augment(right_to_left[right], seen):
+                right_to_left[right] = left
+                return True
+        return False
+
+    for left in range(count):
+        augment(left, set())
+    match = {}
+    for right, left in sorted(right_to_left.items()):
+        match[("L", left)] = ("R", right)
+        match[("R", right)] = ("L", left)
+    return match
+
+
 # Explicit equivalents only; do not infer host kernels from their names.
 _HOST_FALLBACK_KERNELS = {
     ("__snax_bingo_kernel_idma_1d_copy", SnaxBingoKernelIdma1dCopyArgs):
@@ -1043,9 +1066,7 @@ class BingoDFG(DiGraphWrapper[BingoNode]):
                     # in the happens-before (incl. same-core HOL) order.
                     if edges[b][0] is edges[a][1] or edges[b][0] in reach[a]:
                         B.add_edge(("L", a), ("R", b))
-            match = (nx.algorithms.bipartite.hopcroft_karp_matching(
-                         B, top_nodes=[("L", a) for a in range(n)])
-                     if B.number_of_edges() else {})
+            match = _deterministic_bipartite_matching(B, n)
             succ, has_pred = {}, set()
             for node, m in match.items():
                 if node[0] == "L":

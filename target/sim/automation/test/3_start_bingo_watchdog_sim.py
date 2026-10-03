@@ -131,6 +131,7 @@ import re
 import shlex
 import shutil
 import struct
+import subprocess
 import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -1701,6 +1702,42 @@ def make_cfg(base_cfg: str, timeout_cycles: Optional[int],
     return str(dst.relative_to(_REPO_ROOT))
 
 
+def workload_generated_outputs(workload_dir: Path) -> List[Path]:
+    """Read the output targets of the workload's main_bingo generation rule.
+
+    Only literal paths and simple Make variable references are accepted. Do not
+    execute Makefile shell expressions just to decide which files to delete.
+    """
+    text = (workload_dir / "Makefile").read_text().replace("\\\n", " ")
+    variables = dict(re.findall(r"^([A-Za-z_]\w*)\s*(?::=|\?=|=)\s*(.*?)\s*$", text, re.M))
+    variables["MK_DIR"] = str(workload_dir)
+
+    def expand(value, seen=()):
+        def replace(match):
+            key = match[1]
+            if key in seen or key not in variables:
+                raise ValueError(f"Cannot resolve generated output variable: {key}")
+            return expand(variables[key], (*seen, key))
+        value = re.sub(r"\$\(([A-Za-z_]\w*)\)", replace, value)
+        if "$" in value:
+            raise ValueError(f"Unsupported generated output expression: {value}")
+        return value
+
+    targets = re.findall(r"^([^\t\n:#]+):[^\n]*\bmain_bingo\.py\b[^\n]*$", text, re.M)
+    if not targets:
+        raise ValueError(f"No main_bingo.py generation rule in {workload_dir}")
+    outputs = set()
+    for target in targets:
+        for name in expand(target).split():
+            path = Path(name)
+            if not path.is_absolute():
+                path = workload_dir / path
+            if path.parent.resolve() != workload_dir.resolve():
+                raise ValueError(f"Generated output is outside workload directory: {path}")
+            outputs.add(path)
+    return sorted(outputs)
+
+
 def clean_app_builds(workload: str) -> None:
     """Force a fresh SW build: objects and libraries do not depend on USER_FLAGS.
 
@@ -1708,7 +1745,26 @@ def clean_app_builds(workload: str) -> None:
     (bingo_hw_offload_manager, a C99 inline function) is linked from
     libsnRuntime.a, not from the app's own translation unit. So does the host's
     libbingo: BINGO_PM_* (idle entry delay, boost level) are compiled into it.
+    Generated headers also lack dependencies on compiler sources, so remove
+    the generation rule's outputs before rebuilding. Fail closed if Git cannot
+    verify that every output is untracked, before deleting any file.
     """
+    workload_dir = (_REPO_ROOT / "target/sw/host/apps/offload_bingo_hw/single_chip/workloads"
+                    / workload)
+    if workload_dir.parent.resolve() != (
+            _REPO_ROOT / "target/sw/host/apps/offload_bingo_hw/single_chip/workloads").resolve():
+        raise ValueError(f"Invalid workload path: {workload}")
+    outputs = workload_generated_outputs(workload_dir)
+    tracked = subprocess.run(
+        ["git", "-C", str(_REPO_ROOT), "ls-files", "-z", "--",
+         *[str(path.relative_to(_REPO_ROOT)) for path in outputs]],
+        check=True, stdout=subprocess.PIPE).stdout.decode().split("\0")
+    if any(tracked):
+        raise ValueError(f"Refusing to delete tracked generated outputs: {tracked}")
+    if any(path.is_dir() and not path.is_symlink() for path in outputs):
+        raise ValueError("Expected generated files, not directories")
+    for path in outputs:
+        path.unlink(missing_ok=True)
     for build_dir in (
         _REPO_ROOT / "target/sw/device/runtime/build",
         _REPO_ROOT / "target/sw/host/runtime/libbingo/build",

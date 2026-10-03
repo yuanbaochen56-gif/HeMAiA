@@ -50,10 +50,13 @@ class TestConfigurationTests(unittest.TestCase):
         source += 'printf("%zu %zu\\n", sizeof(cfg), _Alignof(bingo_test_cfg_t));\n'
         for field in fields:
             source += f'printf("{field} %zu %u\\n", offsetof(bingo_test_cfg_t, {field}), cfg.{field});\n'
+        source += 'printf("user %zu\\n", offsetof(bingo_test_cfg_t, user));\n'
+        source += 'printf("reserved %zu\\n", offsetof(bingo_test_cfg_t, reserved));\n'
         source += 'printf("wd_type_h %zu\\n", offsetof(bingo_test_cfg_t, wd_type_h));\n'
         source += 'printf("wd_type_c %zu\\n", offsetof(bingo_test_cfg_t, wd_type_c));\n'
         source += 'for (int i=0; i<16; ++i) if (cfg.wd_type_h[i] || cfg.wd_type_c[i]) return 1;\n'
-        source += 'for (int i=0; i<9; ++i) if (cfg.reserved[i]) return 1;\nreturn 0; }\n'
+        source += 'for (int i=0; i<4; ++i) if (cfg.user[i]) return 1;\n'
+        source += 'for (int i=0; i<5; ++i) if (cfg.reserved[i]) return 1;\nreturn 0; }\n'
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory)
             (path / "layout.c").write_text(source)
@@ -67,7 +70,63 @@ class TestConfigurationTests(unittest.TestCase):
             name, offset, value = line.split()
             self.assertEqual((name, int(offset), int(value)),
                              (fields[index], index * 4, defaults[name]))
-        self.assertEqual(output[-2:], ["wd_type_h 128", "wd_type_c 192"])
+        self.assertEqual(output[-4:], ["user 92", "reserved 108", "wd_type_h 128", "wd_type_c 192"])
+
+    def test_user_defaults_preserve_v1_and_v2_bytes(self):
+        for version in (1, 2):
+            cfg = watchdog.test_cfg_defaults(version)
+            self.assertEqual(cfg["user"], [0] * 4)
+            words = [cfg[field] for field in watchdog.TEST_CFG_FIELDS] + [0] * 9
+            if version == 2:
+                words += [0] * 32
+            self.assertEqual(watchdog.test_cfg_bytes(cfg), struct.pack("<" + "I" * len(words), *words))
+            self.assertEqual(watchdog.test_cfg_bytes(cfg),
+                             watchdog.test_cfg_bytes({k: v for k, v in cfg.items() if k != "user"}))
+
+    def test_user_converter_and_validation(self):
+        values = [1, 7, 0xFFFFFFFF, 0]
+        sc = dict(watchdog.SCENARIOS["tch0"], t1_user=values)
+        cfg = watchdog.scenario_test_cfg(sc)
+        self.assertEqual(cfg["user"], values)
+        self.assertIsNot(cfg["user"], values)
+        self.assertEqual(struct.unpack_from("<4I", watchdog.test_cfg_bytes(cfg), 92), tuple(values))
+        for bad in ([1], [0] * 5, [-1, 0, 0, 0], [0x100000000, 0, 0, 0], ["1", 0, 0, 0]):
+            with self.assertRaisesRegex(ValueError, "user must have four uint32 words"):
+                watchdog.scenario_test_cfg(dict(sc, t1_user=bad))
+
+    def test_user_patch_is_confined_to_first_configuration_row(self):
+        for version in (1, 2):
+            with tempfile.TemporaryDirectory() as directory:
+                path = Path(directory)
+                cfg = watchdog.test_cfg_defaults(version)
+                data = bytes(range(128)) + watchdog.test_cfg_bytes(cfg) + bytes(range(128))
+                write_banks(path, data)
+                before = {p.name: p.read_bytes() for p in path.iterdir()}
+                location = dict(offset=128, size=128 * version)
+                changed = dict(cfg, user=[1, 2, 3, 4])
+                record = watchdog.patch_test_cfg(path, location, changed)
+                self.assertEqual(record["changed_rows"], [1])
+                self.assertEqual(watchdog.read_bank_image(path),
+                                 data[:128] + watchdog.test_cfg_bytes(changed) + data[128 + 128 * version:])
+                watchdog.patch_test_cfg(path, location, cfg)
+                self.assertEqual(before, {p.name: p.read_bytes() for p in path.iterdir()})
+
+    def test_native_user_accessor_reads_volatile_instance(self):
+        source = ('#include "bingo_test_cfg.h"\n'
+                  'volatile bingo_test_cfg_t bingo_test_cfg = BINGO_TEST_CFG_INITIALIZER;\n'
+                  'int main(void) { for (unsigned i=0; i<4; ++i) {\n'
+                  'bingo_test_cfg.user[i] = 17+i;\n'
+                  'if (bingo_test_cfg_user(i) != 17+i) return 1;\n'
+                  'bingo_test_cfg.user[i] = 31+i;\n'
+                  'if (bingo_test_cfg_user(i) != 31+i) return 1;\n'
+                  '} return 0; }\n')
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)
+            (path / "user.c").write_text(source)
+            subprocess.run(["cc", "-std=c11", "-O2", "-Wall", "-Wextra", "-Werror",
+                            "-DBINGO_TEST_CFG=1", "-I", str(ROOT / "target/sw/shared/runtime"),
+                            str(path / "user.c"), "-o", str(path / "user")], check=True)
+            subprocess.run([str(path / "user")], check=True)
 
     def test_macro_defaults_match_initializer(self):
         paths = (ROOT / "target/sw/host/runtime/libbingo/include/libbingo/bingo_api.h",

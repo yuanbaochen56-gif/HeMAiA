@@ -710,7 +710,7 @@ def test_cfg_defaults(version: int = 2) -> dict:
         raise ValueError("unsupported test configuration version")
     cfg = dict.fromkeys(TEST_CFG_FIELDS, 0)
     cfg.update(magic=0x42475431, version=version, fault_gid=0xFFFFFFFF,
-               fault_cluster=0xFFFFFFFF, fault_core=0xFFFFFFFF)
+               fault_cluster=0xFFFFFFFF, fault_core=0xFFFFFFFF, user=[0] * 4)
     if version == 2:
         cfg.update(wd_type_h=[0] * 16, wd_type_c=[0] * 16)
     return cfg
@@ -719,6 +719,8 @@ def test_cfg_defaults(version: int = 2) -> dict:
 def scenario_test_cfg(sc: dict, extra_flags: str = "") -> dict:
     """Translate only data controls. Unknown flags must never change a T1 graph."""
     cfg = test_cfg_defaults()
+    if "t1_user" in sc:
+        cfg["user"] = list(sc["t1_user"])
     for field in ("wd_type_h", "wd_type_c"):
         if field in sc:
             cfg[field] = list(sc[field])
@@ -743,15 +745,19 @@ def scenario_test_cfg(sc: dict, extra_flags: str = "") -> dict:
         cfg[TEST_CFG_MACROS[macro]] = number & 0xFFFFFFFF
         if macro.startswith("BINGO_CERF_FB_"):
             cfg["cerf_fb_enable"] = 1
+    test_cfg_bytes(cfg)
     return cfg
 
 
 def test_cfg_bytes(cfg: dict) -> bytes:
     version = cfg["version"]
-    if (version not in (1, 2) or set(cfg) - set(TEST_CFG_FIELDS) - {"wd_type_h", "wd_type_c"}
+    if (version not in (1, 2) or set(cfg) - set(TEST_CFG_FIELDS) - {"user", "wd_type_h", "wd_type_c"}
             or version == 1 and any(field in cfg for field in ("wd_type_h", "wd_type_c"))):
         raise ValueError("unsupported test configuration layout")
-    words = [cfg[field] for field in TEST_CFG_FIELDS] + [0] * 9
+    user = cfg.get("user", [0] * 4)
+    if len(user) != 4 or any(not isinstance(v, int) or not 0 <= v <= 0xFFFFFFFF for v in user):
+        raise ValueError("user must have four uint32 words")
+    words = [cfg[field] for field in TEST_CFG_FIELDS] + list(user) + [0] * 5
     if version == 2:
         for field in ("wd_type_h", "wd_type_c"):
             values = cfg.get(field, [0] * 16)

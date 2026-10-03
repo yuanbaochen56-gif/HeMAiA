@@ -33,7 +33,8 @@ typedef struct __attribute__((aligned(128))) {
     uint32_t cerf_fb_core;
     uint32_t cerf_fb_clear;
     uint32_t cerf_fb_set;
-    uint32_t reserved[9];
+    uint32_t user[4];
+    uint32_t reserved[5];
     uint32_t wd_type_h[16];
     uint32_t wd_type_c[16];
 } bingo_test_cfg_t;
@@ -44,3 +45,11 @@ typedef struct __attribute__((aligned(128))) {
 }
 
 _Static_assert(sizeof(bingo_test_cfg_t) == 256, "v2 test configuration must fit two rows");
+
+#if BINGO_TEST_CFG
+extern volatile bingo_test_cfg_t bingo_test_cfg;
+
+static inline uint32_t bingo_test_cfg_user(uint32_t index) {
+    return bingo_test_cfg.user[index];
+}
+#endif

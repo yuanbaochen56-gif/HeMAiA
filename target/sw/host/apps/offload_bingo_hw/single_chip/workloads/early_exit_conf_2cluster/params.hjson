@@ -1,0 +1,9 @@
+{
+    num_clusters: 2
+    array_shape: 1
+    M: 1
+    K: 2
+    N: 1
+    shift: 2
+    threshold: 16
+}

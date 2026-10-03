@@ -681,6 +681,21 @@ for _name, _baseline, _type in (("t50", "tch3", 2), ("t51", "tch0", 2), ("t52", 
     )
 A5_FAMILY = ("tch0", "tch3", "t50", "t51", "t52")
 
+for _name, _sample, _fault in (("t45", 1, False), ("t46", 0, False),
+                              ("t47", 0, True), ("t48", 1, True)):
+    SCENARIOS[_name] = dict(
+        SCENARIOS["t44"], early_exit=False, early_exit_conf=True,
+        workload="early_exit_conf_2cluster", extra_flags="", t1_user=[_sample, 0, 0, 0],
+        fault_stall_cycles=0 if _fault else None,
+        fault_slot_from_gemm2=True,
+        expect_fence=(_name == "t47"), expect_host_stuck=(_name == "t47"),
+        expect_wd=[(1, 0), (1, 1)] if _name == "t47" else [],
+        desc=f"confidence early exit sample {_sample}, deep fault={_fault}",
+    )
+SCENARIOS["t48"]["early_exit_conf_pair"] = "t45"
+SCENARIOS["t48"]["same_as"] = "t45"
+T1_FAMILIES["F3"] = ("t45", "t46", "t47", "t48")
+
 TEST_CFG_FIELDS = (
     "magic", "version", "fault_gid", "fault_stall_cycles", "fault_cluster", "fault_core",
     "fault_pre_stall_cycles", "fault_after_kernel", "risk_late", "risk_policy",
@@ -716,7 +731,16 @@ def test_cfg_defaults(version: int = 2) -> dict:
     return cfg
 
 
-def scenario_test_cfg(sc: dict, extra_flags: str = "") -> dict:
+def check_same_ps_fault_cfg(first: dict, second: dict) -> None:
+    """Only the GID may differ in a declared same-image timing pair."""
+    fields = ("fault_cluster", "fault_core", "fault_stall_cycles",
+              "fault_pre_stall_cycles", "fault_after_kernel")
+    different = [field for field in fields if first[field] != second[field]]
+    if different:
+        raise ValueError("same-ps pair has different fault fields: " + ", ".join(different))
+
+
+def scenario_test_cfg(sc: dict, extra_flags: str = "", *, check_pair: bool = True) -> dict:
     """Translate only data controls. Unknown flags must never change a T1 graph."""
     cfg = test_cfg_defaults()
     if "t1_user" in sc:
@@ -727,9 +751,9 @@ def scenario_test_cfg(sc: dict, extra_flags: str = "") -> dict:
     if sc["fault_stall_cycles"] is not None:
         cfg.update(fault_gid=sc.get("fault_gid", FAULT_GID),
                    fault_stall_cycles=sc["fault_stall_cycles"])
-        if not sc.get("fault_any_core"):
-            _, core, cluster = sc.get("victim", VICTIM)
-            cfg.update(fault_cluster=cluster, fault_core=core)
+    if (sc["fault_stall_cycles"] is not None or sc.get("fault_slot_from_gemm2")) and not sc.get("fault_any_core"):
+        _, core, cluster = sc.get("victim", VICTIM)
+        cfg.update(fault_cluster=cluster, fault_core=core)
     for flag in shlex.split(sc.get("extra_flags", "") + " " + extra_flags):
         match = re.fullmatch(r"-D([A-Za-z_]\w*)(?:=(.+))?", flag)
         if not match:
@@ -746,6 +770,11 @@ def scenario_test_cfg(sc: dict, extra_flags: str = "") -> dict:
         if macro.startswith("BINGO_CERF_FB_"):
             cfg["cerf_fb_enable"] = 1
     test_cfg_bytes(cfg)
+    if check_pair and sc.get("same_as"):
+        reference = SCENARIOS[sc["same_as"]]
+        if not sc.get("t1") or not reference.get("t1"):
+            raise ValueError("same-ps configuration pairs require T1 scenarios")
+        check_same_ps_fault_cfg(cfg, scenario_test_cfg(reference, extra_flags, check_pair=False))
     return cfg
 
 
@@ -1352,6 +1381,99 @@ def evaluate_early_exit(sc: dict, log_text: str, uart_text: str) -> List[str]:
     return problems
 
 
+def early_exit_conf_task_ids(path: Path) -> dict:
+    result = early_exit_task_ids(path)
+    with path.open() as stream:
+        rows = list(csv.DictReader(stream))
+    for name, kernel in (("select", "__host_bingo_kernel_ee_select"),
+                         ("gate", "__host_bingo_kernel_ee_conf_gate")):
+        matches = [row for row in rows if row["Kernel"] == kernel
+                   and (int(row["Core"]), int(row["Cluster"])) == (2, 0)]
+        if len(matches) != 1:
+            raise ValueError(f"expected one {name} in confidence early-exit graph")
+        result[name] = int(matches[0]["ID"])
+    return result
+
+
+def evaluate_early_exit_conf(sc: dict, log_text: str, uart_text: str) -> List[str]:
+    ids, data = sc.get("early_exit_task_ids"), sc.get("early_exit_conf_data")
+    if not ids or not data:
+        return ["missing confidence graph IDs or generated margin data"]
+    sample = sc["t1_user"][0]
+    if sample not in (0, 1) or len(data["margins"]) != 2:
+        return ["invalid confidence sample or margin data"]
+    decision = int(data["margins"][sample] >= data["threshold"])
+    faulty = sc["fault_stall_cycles"] is not None and not decision
+    shallow = int(decision or faulty)
+    problems = []
+    marker = re.findall(r"\[EarlyExitConf\] sample=(\d+) decision=(\d+) fault_evt=(\d+) shallow=(\d+)",
+                        uart_text)
+    if [tuple(map(int, values)) for values in marker] != [(sample, decision, int(faulty), shallow)]:
+        problems.append("confidence decision/branch disagrees with generated margin or fault event")
+    fb = [tuple(map(int, match.groups())) for match in CERF_FB_RE.finditer(log_text)]
+    if len(fb) != int(faulty) or any(event[1:] != (1, 0, 1) for event in fb):
+        problems.append("expected one type 1 g0 -> g1 only for a dispatched deep fault")
+    seen = {}
+    for match in DISPATCH_RE.finditer(log_text):
+        time, chip, task, core, cluster = map(int, match.groups())
+        seen.setdefault(task, []).append((chip, core, cluster, time))
+    expected = dict(select=[(0, 2, 0)], gemm1=[(0, 0, 1)], prefix_store=[(0, 1, 1)],
+                    requant=[(0, 2, 0)], gate=[(0, 2, 0)],
+                    gemm2=[] if decision else [(0, 0, 0)],
+                    deep_store=[] if shallow else [(0, 1, 0)],
+                    backup=[(0, 2, 0)] if shallow else [], join=[(0, 2, 0)],
+                    primary_exit=[] if shallow else [(0, 0, 0)],
+                    prefix_exit=[] if shallow else [(0, 0, 1)])
+    for name, want in expected.items():
+        if [event[:3] for event in seen.get(ids[name], [])] != want:
+            problems.append(f"wrong confidence {name} dispatch count or slot")
+    prefix = ("select", "gemm1", "prefix_store", "requant", "gate")
+    if all(len(seen.get(ids[name], [])) == 1 for name in prefix):
+        times = [seen[ids[name]][0][3] for name in prefix]
+        if times != sorted(set(times)):
+            problems.append("expected select < GEMM1 < store h < requant < confidence gate")
+    if faulty:
+        fences = [int(match.group(1)) for match in WD_RE.finditer(log_text)
+                  if match.groups()[1:] == ("0", "0", "0", "1", "1")]
+        stuck = [int(t) for t in re.findall(
+            rf"\[BINGO_REPLAY_STUCK\] (\d+) chip=0 core=0 cluster=0: no live core may run task {ids['gemm2']} ",
+            log_text)]
+        ordered = ("gate", "gemm2", "backup", "join")
+        if (len(fences) != 1 or len(stuck) != 1 or len(fb) != 1
+                or not all(len(seen.get(ids[name], [])) == 1 for name in ordered)
+                or not seen[ids["gate"]][0][3] < seen[ids["gemm2"]][0][3] < fences[0]
+                       <= stuck[0] <= fb[0][0] < seen[ids["backup"]][0][3] < seen[ids["join"]][0][3]):
+            problems.append("expected gate < GEMM2 < fence <= stuck <= CERF < shallow copy < join")
+    else:
+        branch = ("gate", "backup", "join") if shallow else ("gate", "gemm2", "deep_store", "join")
+        if all(len(seen.get(ids[name], [])) == 1 for name in branch):
+            times = [seen[ids[name]][0][3] for name in branch]
+            if times != sorted(set(times)):
+                problems.append("wrong confidence branch execution order")
+        if WD_RE.search(log_text):
+            problems.append("unexpected watchdog event without a dispatched deep fault")
+    host = re.search(r"\[Host\] Bingo status: .* cerf=0x([0-9a-fA-F]+) "
+                     r"cerf_fb_en=0x([0-9a-fA-F]+) cerf_fb_evt=0x([0-9a-fA-F]+)", uart_text)
+    if not host or tuple(int(value, 16) for value in host.groups()) != (2 if shallow else 1, 2, 2 if faulty else 0):
+        problems.append("wrong confidence CERF/enable/event status")
+    if CHECK_RE.findall(uart_text) != [("shallow_out" if shallow else "deep_out", "PASS")]:
+        problems.append("wrong confidence output branch or golden check")
+    return problems
+
+
+def check_early_exit_conf_pair(first_log: str, first_uart: str,
+                               second_log: str, second_uart: str) -> List[str]:
+    """The skipped deep fault must leave every event, UART byte and EOC unchanged."""
+    def events(log):
+        return [line[line.index("[BINGO_"):] for line in log.splitlines() if "[BINGO_" in line]
+    first_eoc = re.findall(r"All chips finished successfully at (\d+)", first_log)
+    second_eoc = re.findall(r"All chips finished successfully at (\d+)", second_log)
+    if (events(first_log) != events(second_log) or first_uart != second_uart
+            or len(first_eoc) != 1 or first_eoc != second_eoc):
+        return ["t48 and t45 must have identical timed BINGO events, UART and EOC"]
+    return []
+
+
 def replay_safety_task_ids(path: Path) -> dict:
     """Read the unique workload kernels and protected exits from the compiled CSV."""
     with path.open() as stream:
@@ -1787,7 +1909,9 @@ def evaluate(name: str, sc: dict, log_text: str, uart_text: str) -> List[str]:
                                log_text, flags=re.M)
     csr = CSR_RE.findall(log_text)
     checks = CHECK_RE.findall(uart_text)
-    if sc.get("early_exit"):
+    if sc.get("early_exit_conf"):
+        problems += evaluate_early_exit_conf(sc, log_text, uart_text)
+    elif sc.get("early_exit"):
         problems += evaluate_early_exit(sc, log_text, uart_text)
     elif sc.get("replay_safety"):
         problems += evaluate_replay_safety(sc, log_text, uart_text)
@@ -2006,10 +2130,12 @@ class EarlyExitSimRunner(NoTraceSimRunner):
 class TestCfgSimRunner(NoTraceSimRunner):
     """Build once, discover graph IDs, then patch only the staged image data."""
 
-    def __init__(self, *, test_cfg, early_exit=False, inject_fault=False, **kwargs):
+    def __init__(self, *, test_cfg, early_exit=False, early_exit_conf=False, inject_fault=False, **kwargs):
         super().__init__(**kwargs)
         self.test_cfg = dict(test_cfg)
-        self.early_exit = early_exit
+        self.early_exit = early_exit or early_exit_conf
+        self.early_exit_conf = early_exit_conf
+        self.early_exit_conf_data = {}
         self.inject_fault = inject_fault
         self.early_exit_task_ids = {}
         self.test_cfg_record = {}
@@ -2017,9 +2143,22 @@ class TestCfgSimRunner(NoTraceSimRunner):
     def build_apps_and_stage(self, tasks):
         info = super().build_apps_and_stage(tasks)
         if self.early_exit:
+            workload = "early_exit_conf_2cluster" if self.early_exit_conf else "early_exit_2cluster"
             graph_csv = (self.repo_root / "target/sw/host/apps/offload_bingo_hw/single_chip"
-                         "/workloads/early_exit_2cluster/final_dfg.csv")
-            self.early_exit_task_ids = early_exit_task_ids(graph_csv)
+                         / "workloads" / workload / "final_dfg.csv")
+            self.early_exit_task_ids = (early_exit_conf_task_ids(graph_csv) if self.early_exit_conf else
+                                       early_exit_task_ids(graph_csv))
+            if self.early_exit_conf:
+                with graph_csv.open() as stream:
+                    gemm2 = [row for row in csv.DictReader(stream)
+                             if int(row["ID"]) == self.early_exit_task_ids["gemm2"]]
+                if len(gemm2) != 1:
+                    raise ValueError("expected one GEMM2 fault slot in generated graph")
+                self.test_cfg.update(fault_cluster=int(gemm2[0]["Cluster"]),
+                                     fault_core=int(gemm2[0]["Core"]))
+                data_path = graph_csv.with_name("early_exit_conf_data.json")
+                self.early_exit_conf_data = json.loads(data_path.read_text())
+                shutil.copyfile(data_path, self.output_dir / data_path.name)
             if self.inject_fault:
                 self.test_cfg["fault_gid"] = self.early_exit_task_ids["gemm2"]
             shutil.copyfile(graph_csv, self.output_dir / "early_exit_final_dfg.csv")
@@ -2048,6 +2187,8 @@ def run_scenario(name: str, args: argparse.Namespace) -> bool:
         sc["timeout_cycles"] = args.wd_timeout
         if sc.get("confirm_timeout_cycles"):
             sc["confirm_timeout_cycles"] = 2 * args.wd_timeout
+    if sc.get("t1"):
+        test_cfg = scenario_test_cfg(sc, args.extra_flags)
     out_dir = Path(args.out_root) / name
     print(f"\n===== {name}: {sc['desc']} =====")
     cfg = make_cfg(sc["cfg"], sc["timeout_cycles"], sc.get("cluster_swap"),
@@ -2070,13 +2211,13 @@ def run_scenario(name: str, args: argparse.Namespace) -> bool:
             task["extra_user_flags"] = (task.get("extra_user_flags", "") + " " + flags).strip()
 
     if sc.get("t1"):
-        test_cfg = scenario_test_cfg(sc, args.extra_flags)
         task["extra_user_flags"] = "-DBINGO_TEST_CFG=1"
     runner_cls = (TestCfgSimRunner if sc.get("t1") else
                   EarlyExitSimRunner if sc.get("early_exit") else
                   CoreTypeCheckedSimRunner if args.keep_traces else NoTraceSimRunner)
     runner = runner_cls(
         **({"test_cfg": test_cfg, "early_exit": sc.get("early_exit", False),
+            "early_exit_conf": sc.get("early_exit_conf", False),
             "inject_fault": sc["fault_stall_cycles"] is not None} if sc.get("t1") else
            {"inject_fault": sc["fault_stall_cycles"] is not None} if sc.get("early_exit") else {}),
         expected_core_types=sc.get("expect_core_types"),
@@ -2098,9 +2239,11 @@ def run_scenario(name: str, args: argparse.Namespace) -> bool:
         plusargs=["+bingo_dispatch_log"] if sc.get("dispatch_log", False) else [],
     )
     runner.run([task])
-    if sc.get("early_exit"):
+    if sc.get("early_exit") or sc.get("early_exit_conf"):
         sc["early_exit_task_ids"] = runner.early_exit_task_ids
         sc["fault_gid"] = runner.early_exit_task_ids["gemm2"]
+        if sc.get("early_exit_conf"):
+            sc["early_exit_conf_data"] = runner.early_exit_conf_data
 
     bin_dir = out_dir / task_dir_name(0, task["ci_name"]) / "bin"
     log_path = bin_dir / "sim_run.log"
@@ -2134,6 +2277,14 @@ def run_scenario(name: str, args: argparse.Namespace) -> bool:
             print(f"[{name}] cannot load generated host fallback graph: {error}")
     problems = evaluate(name, sc, log_text, uart_text)
     problems += runner.core_type_problems
+    if sc.get("early_exit_conf_pair"):
+        reference = Path(args.out_root) / sc["early_exit_conf_pair"] / task_dir_name(0, task["ci_name"]) / "bin"
+        try:
+            first_log = (reference / "sim_run.log").read_text()
+            first_uart = (reference / "uart_chip_0_0.log").read_bytes()
+            problems += check_early_exit_conf_pair(first_log, first_uart, log_text, uart_path.read_bytes())
+        except OSError as error:
+            problems.append(f"cannot read confidence pair reference: {error}")
     if sc["expect_eoc"] and log_text:
         # The host prints the manager's status at the end; its fenced bitmap must
         # match the last [BINGO_STATUS] of the RTL (register order; 0 without

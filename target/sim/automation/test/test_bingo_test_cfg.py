@@ -166,6 +166,42 @@ class TestConfigurationTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 watchdog.scenario_test_cfg(watchdog.SCENARIOS["tch0"], flags)
 
+    def test_same_ps_pair_allows_only_fault_gid_to_differ(self):
+        reference = dict(watchdog.SCENARIOS["tch0"], fault_stall_cycles=0,
+                         fault_gid=0xFFFFFFFF, victim=(0, 0, 0),
+                         extra_flags="-DBINGO_WD_FAULT_PRE_STALL_CYCLES=17")
+        paired = dict(reference, same_as="healthy_pair", fault_gid=9)
+        with patch.dict(watchdog.SCENARIOS, {"healthy_pair": reference}):
+            cfg = watchdog.scenario_test_cfg(paired)
+            self.assertEqual(cfg["fault_gid"], 9)
+            self.assertEqual(cfg["fault_pre_stall_cycles"], 17)
+            for victim in ((0, 1, 0), (0, 0, 1)):
+                with self.assertRaisesRegex(ValueError, "same-ps pair.*fault_(core|cluster)"):
+                    watchdog.scenario_test_cfg(dict(paired, victim=victim))
+            for flags, field in (
+                ("-DBINGO_WD_FAULT_PRE_STALL_CYCLES=18", "fault_pre_stall_cycles"),
+                ("-DBINGO_WD_FAULT_AFTER_KERNEL=1 -DBINGO_WD_FAULT_PRE_STALL_CYCLES=17",
+                 "fault_after_kernel"),
+            ):
+                with self.assertRaisesRegex(ValueError, f"same-ps pair.*{field}"):
+                    watchdog.scenario_test_cfg(dict(paired, extra_flags=flags))
+            with self.assertRaisesRegex(ValueError, "same-ps pair.*fault_stall_cycles"):
+                watchdog.scenario_test_cfg(dict(paired, fault_stall_cycles=1))
+
+    def test_same_ps_guard_runs_before_build_cleanup(self):
+        from types import SimpleNamespace
+
+        reference = dict(watchdog.SCENARIOS["tch0"], fault_stall_cycles=0, victim=(0, 0, 0))
+        paired = dict(reference, same_as="guard_reference", victim=(0, 1, 0))
+        args = SimpleNamespace(extra_flags="", wd_timeout=None)
+        with patch.dict(watchdog.SCENARIOS, {"guard_reference": reference, "guard_bad": paired}), \
+                patch.object(watchdog, "make_cfg") as configure, \
+                patch.object(watchdog, "clean_app_builds") as clean:
+            with self.assertRaisesRegex(ValueError, "same-ps pair.*fault_core"):
+                watchdog.run_scenario("guard_bad", args)
+        configure.assert_not_called()
+        clean.assert_not_called()
+
     def test_patch_default_unchanged_one_row_and_round_trip(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory)

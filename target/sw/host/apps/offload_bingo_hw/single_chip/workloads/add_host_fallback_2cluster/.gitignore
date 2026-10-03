@@ -1,0 +1,6 @@
+build/
+__pycache__/
+*.png
+*.csv
+add_host_fallback_data.h
+offload_bingo_hw.h

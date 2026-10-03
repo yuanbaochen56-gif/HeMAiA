@@ -37,6 +37,7 @@ from bingo_kernel_args import (
     BINGO_GATING_MODE_STATIC,
     SnaxBingoKernelIdma1dCopyArgs,
     HostBingoKernelIdmaArgs,
+    HostBingoKernelAraAddI32Args,
     SnaxBingoKernelInt32AddArgs,
     SnaxBingoKernelGemmFullArgs,
     SnaxBingoKernelGemmMinimalArgs,
@@ -67,12 +68,6 @@ def _deterministic_bipartite_matching(graph, count):
     return match
 
 
-# Explicit equivalents only; do not infer host kernels from their names.
-_HOST_FALLBACK_KERNELS = {
-    ("__snax_bingo_kernel_idma_1d_copy", SnaxBingoKernelIdma1dCopyArgs):
-        ("__host_bingo_kernel_idma", HostBingoKernelIdmaArgs),
-}
-
 def region(handle):
     # Match _process_addr: a view offset is relative to the raw allocation.
     if isinstance(handle, BingoMemAlloc):
@@ -84,6 +79,39 @@ def region(handle):
     if isinstance(handle, BingoMemFixedAddr):
         return ("fixed",), handle.address
     raise ValueError("Replay-safety and host-fallback checks need memory handles, not bare integer addresses")
+
+
+def _validate_host_copy(args):
+    if not isinstance(args.size, int) or args.size <= 0:
+        raise ValueError("Host fallback copy size must be a positive integer")
+    src, src_offset = region(args.src_addr)
+    dst, dst_offset = region(args.dst_addr)
+    if src == dst and max(src_offset, dst_offset) < min(
+            src_offset + args.size, dst_offset + args.size):
+        raise ValueError("Host fallback copy source and destination overlap in the same allocation")
+
+
+def _validate_host_add(args):
+    if type(args.num_elements) is not int or args.num_elements <= 0:
+        raise ValueError("Host fallback int32 add num_elements must be a positive integer")
+    output, offset = region(args.c_addr)
+    size = 4 * args.num_elements
+    for source in (args.a_addr, args.b_addr):
+        base, source_offset = region(source)
+        if output == base and max(offset, source_offset) < min(offset + size, source_offset + size):
+            raise ValueError("Host fallback int32 add output overlaps an input in the same allocation")
+
+
+# Explicit equivalents, field mappings and per-kernel checks only.
+_HOST_FALLBACK_KERNELS = {
+    ("__snax_bingo_kernel_idma_1d_copy", SnaxBingoKernelIdma1dCopyArgs):
+        ("__host_bingo_kernel_idma", HostBingoKernelIdmaArgs,
+         {"src_addr": "src_addr", "dst_addr": "dst_addr", "size": "size"}, _validate_host_copy),
+    ("__snax_bingo_kernel_int32_add", SnaxBingoKernelInt32AddArgs):
+        ("__host_bingo_kernel_add_i32", HostBingoKernelAraAddI32Args,
+         {"input_a_addr": "a_addr", "input_b_addr": "b_addr", "output_addr": "c_addr",
+          "num_elements": "num_elements"}, _validate_host_add),
+}
 
 
 def _regions_overlap(left, right, size):
@@ -249,9 +277,11 @@ class BingoDFG(DiGraphWrapper[BingoNode]):
                 or any(data.get("cond", False) for _, _, data in
                        list(self.in_edges(node, data=True)) + list(self.out_edges(node, data=True)))):
             raise ValueError("Host fallback requires an ordinary unconditional device task")
+        key = (node.kernel_name, type(node.kernel_args))
+        if key == ("__snax_bingo_kernel_int32_add", SnaxBingoKernelInt32AddArgs):
+            _validate_host_add(node.kernel_args)
         if self._node_no_replay(node):
             raise ValueError("Host fallback cannot replay a non-idempotent task (overlap or explicit marking)")
-        key = (node.kernel_name, type(node.kernel_args))
         if key not in _HOST_FALLBACK_KERNELS:
             raise ValueError(f"Host fallback kernel/args not whitelisted: {node.kernel_name}")
         type_id = self.core_type_ids.get((node.assigned_cluster_id, node.assigned_core_id))
@@ -272,19 +302,11 @@ class BingoDFG(DiGraphWrapper[BingoNode]):
                         (primary.assigned_cluster_id, primary.assigned_core_id)) == type_id):
                 raise ValueError("Host fallback conflicts with a handwritten CERF fallback for this type")
 
-        args = node.kernel_args
-        if not isinstance(args.size, int) or args.size <= 0:
-            raise ValueError("Host fallback copy size must be a positive integer")
-
-        src, src_offset = region(args.src_addr)
-        dst, dst_offset = region(args.dst_addr)
-        if src == dst and max(src_offset, dst_offset) < min(
-                src_offset + args.size, dst_offset + args.size):
-            raise ValueError("Host fallback copy source and destination overlap in the same allocation")
+        _HOST_FALLBACK_KERNELS[key][3](node.kernel_args)
         return type_id
 
     def bingo_add_host_fallback(self, node: BingoNode) -> BingoNode:
-        """Protect one whitelisted iDMA copy with an equivalent type-0 host copy.
+        """Protect one whitelisted task with an equivalent type-0 host task.
 
         The compiler shares the source and output handles, orders the backup
         before all consumers, and registers the CERF fallback. Repeated calls
@@ -296,12 +318,12 @@ class BingoDFG(DiGraphWrapper[BingoNode]):
         if node in self._host_fallbacks:
             return self._host_fallbacks[node]
         self._validate_host_fallback(node)
-        kernel, args_type = _HOST_FALLBACK_KERNELS[(node.kernel_name, type(node.kernel_args))]
+        kernel, args_type, fields, _ = _HOST_FALLBACK_KERNELS[(node.kernel_name, type(node.kernel_args))]
         args = node.kernel_args
         backup = BingoNode(
             node.assigned_chiplet_id, 0, self.num_cores_per_cluster - 1,
             node_name=f"__host_fallback_{node.node_name}", kernel_name=kernel,
-            kernel_args=args_type(src_addr=args.src_addr, dst_addr=args.dst_addr, size=args.size))
+            kernel_args=args_type(**{target: getattr(args, source) for target, source in fields.items()}))
         self.bingo_add_node(backup)
         self._host_fallbacks[node] = backup
         return backup

@@ -696,6 +696,13 @@ for _name, _sample, _fault in (("t45", 1, False), ("t46", 0, False),
 SCENARIOS["t48"]["early_exit_conf_pair"] = "t45"
 SCENARIOS["t48"]["same_as"] = "t45"
 T1_FAMILIES["F3"] = ("t45", "t46", "t47", "t48")
+for _name, _baseline in (("t53", "s34"), ("t54", "s35"), ("t55", "s36")):
+    SCENARIOS[_name] = dict(
+        SCENARIOS[_baseline], t1=True, workload="add_host_fallback_2cluster",
+        add_host_fallback=True, extra_flags="",
+        desc=f"automatic int32 add host fallback ({_baseline} fault configuration)",
+    )
+T1_FAMILIES["F4"] = ("t53", "t54", "t55")
 
 TEST_CFG_FIELDS = (
     "magic", "version", "fault_gid", "fault_stall_cycles", "fault_cluster", "fault_core",
@@ -1568,13 +1575,15 @@ def evaluate_replay_safety(sc: dict, log_text: str, uart_text: str) -> List[str]
     return problems
 
 
-def host_fallback_task_ids(path: Path) -> dict:
+def host_fallback_task_ids(path: Path, *, add=False) -> dict:
     """Read task IDs from the actual compiled graph, not the old s28/s29 layout."""
     with path.open() as stream:
         rows = list(csv.DictReader(stream))
     kernels = {"copy": "__snax_bingo_kernel_idma_1d_copy",
                "backup": "__host_bingo_kernel_idma",
                "check": "__host_bingo_kernel_check_result"}
+    if add:
+        kernels.update(copy="__snax_bingo_kernel_int32_add", backup="__host_bingo_kernel_add_i32")
     result = {}
     for name, kernel in kernels.items():
         matches = [row for row in rows if row["Kernel"] == kernel]
@@ -1639,9 +1648,11 @@ def evaluate_host_fallback(sc: dict, log_text: str, uart_text: str) -> List[str]
     expected_status = (2 if double else 1, 4, 4 if double else 0)
     if not host or tuple(int(v, 16) for v in host.groups()) != expected_status:
         problems.append(f"automatic host fallback CERF/en/evt expected {expected_status}")
-    if CHECK_RE.findall(uart_text) != [("A_L1", "PASS")]:
-        problems.append("expected exactly one Check [A_L1]: PASS")
-    if f"[DmaHostFallback] check complete; host fallback {int(double)}" not in uart_text:
+    output = "C_l3" if sc.get("add_host_fallback") else "A_L1"
+    marker = "AddHostFallback" if sc.get("add_host_fallback") else "DmaHostFallback"
+    if CHECK_RE.findall(uart_text) != [(output, "PASS")]:
+        problems.append(f"expected exactly one Check [{output}]: PASS")
+    if f"[{marker}] check complete; host fallback {int(double)}" not in uart_text:
         problems.append("missing automatic host fallback completion marker")
     print(f"[host_fallback] task_ids={ids} events={fb}")
     return problems
@@ -2325,7 +2336,8 @@ def run_scenario(name: str, args: argparse.Namespace) -> bool:
         graph_csv = (_REPO_ROOT / "target/sw/host/apps/offload_bingo_hw/single_chip/workloads"
                      / sc["workload"] / "final_dfg.csv")
         try:
-            sc["host_fallback_task_ids"] = host_fallback_task_ids(graph_csv)
+            sc["host_fallback_task_ids"] = host_fallback_task_ids(
+                graph_csv, add=sc.get("add_host_fallback", False))
             shutil.copyfile(graph_csv, out_dir / "host_fallback_final_dfg.csv")
             if sc.get("fault_gid", HOST_FALLBACK_FAULT_GID) != sc["host_fallback_task_ids"]["copy"]:
                 raise ValueError("fault_gid differs from the generated copy task ID")

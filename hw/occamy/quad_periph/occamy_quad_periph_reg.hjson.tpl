@@ -570,5 +570,15 @@
         }
       ]
     },
+    { name: "BINGO_RISK_CONFIRM",
+      desc: "At-risk busy-slot confirm threshold in the existing watchdog timer's ticks. 0 disables it; only H < R < C with C nonzero is valid.",
+      swaccess: "rw",
+      hwaccess: "hro",
+      fields: [
+        { bits: "31:0", resval: "0", name: "BINGO_RISK_CONFIRM",
+          desc: '''Uses registered risk, not suspicion. Does not restart the timer; done and heartbeat retain priority.'''
+        }
+      ]
+    },
   ]
 }

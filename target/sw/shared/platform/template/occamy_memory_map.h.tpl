@@ -272,6 +272,10 @@ inline uintptr_t quad_ctrl_bingo_replay_blocked_addr(){
     return QUAD_AXI_LITE_NARROW_PERIPHERALS_BASE_ADDR + OCCAMY_QUAD_PERIPH_BINGO_REPLAY_BLOCKED_REG_OFFSET;
 }
 
+inline uintptr_t quad_ctrl_bingo_risk_confirm_addr(){
+    return QUAD_AXI_LITE_NARROW_PERIPHERALS_BASE_ADDR + OCCAMY_QUAD_PERIPH_BINGO_RISK_CONFIRM_REG_OFFSET;
+}
+
 inline uintptr_t quad_ctrl_bingo_core_dead_suspect_addr(){
     return QUAD_AXI_LITE_NARROW_PERIPHERALS_BASE_ADDR + OCCAMY_QUAD_PERIPH_BINGO_CORE_DEAD_SUSPECT_REG_OFFSET;
 }

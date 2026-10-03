@@ -121,6 +121,7 @@ module ${name}_quad_ctrl
   // Fault precursors: late threshold, policy, epoch, clear, and at-risk slots
   cfg_t                                  bingo_risk_late, bingo_risk_policy, bingo_risk_epoch;
   cfg_t                                  bingo_risk_clear, bingo_risk;
+  cfg_t                                  bingo_risk_confirm;
   // Boost choice: policy, credit per lost core, minimum load
   cfg_t                                  bingo_boost_policy;
   // CERF degradation table (index: core type) and the types that fired
@@ -246,6 +247,7 @@ module ${name}_quad_ctrl
     .bingo_hw_manager_risk_late_o             (bingo_risk_late                     ),
     .bingo_hw_manager_risk_policy_o           (bingo_risk_policy                   ),
     .bingo_hw_manager_risk_epoch_o            (bingo_risk_epoch                    ),
+    .bingo_hw_manager_risk_confirm_o          (bingo_risk_confirm                  ),
     .bingo_hw_manager_risk_clear_o            (bingo_risk_clear                    ),
     .bingo_hw_manager_risk_i                  (bingo_risk                          ),
     .bingo_hw_manager_boost_policy_o          (bingo_boost_policy                  ),
@@ -412,6 +414,7 @@ module ${name}_quad_ctrl
     .bingo_hw_manager_risk_late_i              (bingo_risk_late                              ),
     .bingo_hw_manager_risk_policy_i            (bingo_risk_policy                            ),
     .bingo_hw_manager_risk_epoch_i             (bingo_risk_epoch                             ),
+    .bingo_hw_manager_risk_confirm_i           (bingo_risk_confirm                           ),
     .bingo_hw_manager_risk_clear_i             (bingo_risk_clear                             ),
     .bingo_hw_manager_risk_o                   (bingo_risk                                   ),
     .bingo_hw_manager_cluster_access_i         (bingo_cluster_access_i                       ),

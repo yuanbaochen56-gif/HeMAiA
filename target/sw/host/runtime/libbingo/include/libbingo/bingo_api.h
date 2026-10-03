@@ -534,6 +534,11 @@ void bingo_close_all_clusters(bingo_task_t **task_list, uint32_t num_tasks);
 #ifndef BINGO_RISK_EPOCH
 #define BINGO_RISK_EPOCH            0
 #endif
+// Shorter confirm threshold for registered at-risk busy slots. Same watchdog
+// timer/ticks as H and C; 0 (default) disables it. Only H < R < C is valid.
+#ifndef BINGO_RISK_CONFIRM
+#define BINGO_RISK_CONFIRM          0
+#endif
 #ifdef BINGO_CERF_FB_CLUSTER
 #ifndef BINGO_CERF_FB_CORE
 #error "BINGO_CERF_FB_CLUSTER needs BINGO_CERF_FB_CORE, BINGO_CERF_FB_CLEAR and BINGO_CERF_FB_SET"

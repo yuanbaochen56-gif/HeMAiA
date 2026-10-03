@@ -839,6 +839,7 @@ void bingo_hw_scheduler_init(uint64_t dev_arg_base_addr, uint64_t dev_kernel_bas
     writew(BINGO_RISK_LATE,            (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_bingo_risk_late_addr()));
     writew(BINGO_RISK_EPOCH,           (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_bingo_risk_epoch_addr()));
     writew(BINGO_RISK_POLICY,          (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_bingo_risk_policy_addr()));
+    writew(BINGO_RISK_CONFIRM,         (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_bingo_risk_confirm_addr()));
 #ifdef BINGO_CERF_FB_CLUSTER
     // CERF degradation for the core type of one slot (off unless defined)
     bingo_cerf_fb_set(BINGO_CORE_TYPE_ID(BINGO_CERF_FB_CLUSTER, BINGO_CERF_FB_CORE),

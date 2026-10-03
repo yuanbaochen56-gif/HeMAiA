@@ -585,6 +585,47 @@ SCENARIOS: Dict[str, dict] = {
         expect_core_types={0: 1, 1: 2, 2: 0},
         expect_eoc=True, sim_timeout_s=1200,
     ),
+    "s40": dict(
+        desc="registered risk, R=0: confirm at the unchanged C threshold",
+        cfg=HEMAIA_CI_CFG, timeout_cycles=TIGHT_TIMEOUT_CYCLES,
+        confirm_timeout_cycles=CONFIRM_TIMEOUT_CYCLES,
+        extra_cfg=L2_CFG_KEYS, cfg_suffix="_l2",
+        workload="dma_chain_2cluster", fault_stall_cycles=0, fault_gid=CHAIN_FAULT_GID,
+        victim=VICTIM, substitute=1, substitute_cluster=1, expect_takeover=True,
+        extra_flags=CHAIN_FLAGS + " -DBINGO_RISK_POLICY=2 -DBINGO_RISK_CONFIRM=0",
+        expect_core_types={0: 1, 1: 2, 2: 0},
+        expect_late=3, expect_risk=True, expect_final_risk=0, risk_confirm=0,
+        expect_eoc=True, expect_fence=True, sim_timeout_s=900,
+    ),
+    "s41": dict(
+        desc="registered risk, R=125000: earlier fence and level-2 replay",
+        cfg=HEMAIA_CI_CFG, timeout_cycles=TIGHT_TIMEOUT_CYCLES,
+        confirm_timeout_cycles=CONFIRM_TIMEOUT_CYCLES,
+        extra_cfg=L2_CFG_KEYS, cfg_suffix="_l2",
+        workload="dma_chain_2cluster", fault_stall_cycles=0, fault_gid=CHAIN_FAULT_GID,
+        victim=VICTIM, substitute=1, substitute_cluster=1, expect_takeover=True,
+        extra_flags=CHAIN_FLAGS + " -DBINGO_RISK_POLICY=2 -DBINGO_RISK_CONFIRM=125000",
+        expect_core_types={0: 1, 1: 2, 2: 0},
+        expect_late=3, expect_risk=True, expect_final_risk=0, risk_confirm=125000,
+        expect_eoc=True, expect_fence=True, sim_timeout_s=900,
+    ),
+    "s42": dict(
+        desc="healthy registered-risk chain: progress strictly between H and R",
+        cfg=HEMAIA_CI_CFG, timeout_cycles=TIGHT_TIMEOUT_CYCLES,
+        confirm_timeout_cycles=CONFIRM_TIMEOUT_CYCLES,
+        extra_cfg=L2_CFG_KEYS, cfg_suffix="_l2",
+        workload="dma_chain_2cluster", fault_stall_cycles=100000, fault_gid=999,
+        victim=VICTIM,
+        # s18/s20 measured ~1.2001 ms per 100k core cycles at 28 ns/quad tick.
+        # 260k -> ~111430 ticks, >1.05*H and <0.95*R. Check actual intervals.
+        extra_flags="-DBINGO_WD_FAULT_PRE_STALL_CYCLES=260000 -DBINGO_RISK_LATE=30000 "
+                    "-DBINGO_RISK_POLICY=2 -DBINGO_RISK_CONFIRM=125000",
+        expect_core_types={0: 1, 1: 2, 2: 0},
+        expect_chain_clusters=[0] * 6,
+        expect_late=7, expect_risk=True, expect_final_risk=2, risk_confirm=125000,
+        healthy_risk_confirm=True, expect_wd=[(1, 0), (0, 0)] * 7,
+        expect_eoc=True, expect_fence=False, sim_timeout_s=900,
+    ),
 }
 
 # fenced= only exists since the replay support; older RTL prints dead_suspect only.
@@ -620,7 +661,7 @@ def evaluate_risk_chain(sc: dict, log_text: str, uart_text: str) -> List[str]:
     problems: List[str] = []
     chip, core, cluster = sc["victim"]
     sub, sub_cluster = sc.get("substitute", core), sc.get("substitute_cluster", cluster)
-    parked = sc.get("expect_risk", False)
+    parked = sc.get("expect_risk", False) and sc.get("park", False)
     dispatches = [tuple(map(int, m.groups())) for m in DISPATCH_RE.finditer(log_text)
                   if int(m.group(3)) < 6]
     expected = [(task, core, cluster) for task in range(2 if parked else 4)]
@@ -630,7 +671,7 @@ def evaluate_risk_chain(sc: dict, log_text: str, uart_text: str) -> List[str]:
     if [(d[2], d[3], d[4]) for d in dispatches] != expected or any(
             d[1] != chip for d in dispatches):
         problems.append(f"chain dispatches {dispatches}, expected {expected} on chip {chip}")
-    if parked:
+    if sc.get("expect_risk", False):
         risk_times = [int(t) for t in re.findall(
             r"\[BINGO_RISK\] (\d+) core=\d+ cluster=\d+ at risk", log_text)]
         task1 = [d[0] for d in dispatches if d[2] == 1]
@@ -639,13 +680,73 @@ def evaluate_risk_chain(sc: dict, log_text: str, uart_text: str) -> List[str]:
                 task1[0] < risk_times[0] < task2[0]):
             problems.append("risk must trip during task 1, before task 2 is dispatched")
     host = re.search(r"\[Host\] Bingo status: .* risk=0x([0-9a-fA-F]+)", uart_text)
-    expected_risk = (1 << (core + HEMAIA_CI_SLOTS * cluster)) if parked else 0
+    expected_risk = (1 << (core + HEMAIA_CI_SLOTS * cluster)) if sc.get("expect_risk") else 0
     expected_risk = sc.get("expect_final_risk", expected_risk)
     if not host or int(host.group(1), 16) != expected_risk:
         problems.append(f"host risk {host.group(1) if host else None}, expected 0x{expected_risk:x}")
     if sorted(CHECK_RE.findall(uart_text)) != [
             ("A_chain_cluster0", "PASS"), ("A_cluster1", "PASS")]:
         problems.append("expected both DMA-chain host checks to pass exactly once")
+    return problems
+
+
+def evaluate_risk_confirm(sc: dict, log_text: str) -> List[str]:
+    """Check the R cause, actual timer latency and the healthy H..R window."""
+    problems: List[str] = []
+    chip, core, cluster = sc["victim"]
+    r = sc["risk_confirm"]
+    tick_ps = 28000  # measured quad-control tick in s18/s20, unchanged configuration
+    h, c = sc["timeout_cycles"], sc["confirm_timeout_cycles"]
+    causes = [tuple(map(int, m)) for m in re.findall(
+        r"\[BINGO_RISK_CONFIRM\] (\d+) core=(\d+) cluster=(\d+) threshold=(\d+)",
+        log_text)]
+    wd = [tuple(map(int, m.groups())) for m in WD_RE.finditer(log_text)
+          if tuple(map(int, m.groups()[1:4])) == (chip, core, cluster)]
+    if sc.get("healthy_risk_confirm"):
+        if causes or any(e[5] for e in wd) or "[BINGO_REPLAY]" in log_text:
+            problems.append("healthy at-risk progress was fenced or replayed")
+        dispatches = [tuple(map(int, m.groups())) for m in DISPATCH_RE.finditer(log_text)
+                      if tuple(map(int, (m.group(2), m.group(4), m.group(5)))) ==
+                      (chip, core, cluster)]
+        late_times = [int(t) for t in re.findall(
+            rf"\[BINGO_LATE\] (\d+) core={core} cluster={cluster}", log_text)]
+        intervals = {}
+        for d in dispatches:
+            if d[2] not in range(6):
+                continue
+            next_dispatch = min((x[0] for x in dispatches if x[0] > d[0]), default=float("inf"))
+            progress = [t for t in late_times if d[0] < t < next_dispatch]
+            if len(progress) != 1:
+                problems.append(f"copy {d[2]} lacks exactly one actual late progress beat")
+                continue
+            elapsed = progress[0] - d[0]
+            intervals[d[2]] = elapsed / tick_ps
+            if not 105*h*tick_ps <= 100*elapsed <= 95*r*tick_ps:
+                problems.append(f"copy {d[2]} progress at {elapsed/tick_ps:.3f} ticks "
+                                "outside the 5%-margin H..R window")
+        if set(intervals) != set(range(6)):
+            problems.append("missing actual progress intervals for the six healthy copies")
+        print(f"[risk_confirm] healthy progress ticks={intervals}")
+    else:
+        suspects = [e[0] for e in wd if e[4:] == (1, 0)]
+        fences = [e[0] for e in wd if e[4:] == (1, 1)]
+        if len(suspects) != 1 or len(fences) != 1:
+            problems.append("expected one suspicion and one fence of the victim")
+        else:
+            # The existing WD status logger observes timer changes one tick later.
+            last_progress = suspects[0] - (h+1)*tick_ps
+            elapsed = fences[0] - last_progress
+            expected = r or c
+            if abs(elapsed - expected*tick_ps) > expected*tick_ps//20:
+                problems.append(f"last-progress-to-fence {elapsed/tick_ps:.3f} ticks "
+                                f"not within 5% of {expected}")
+            if r:
+                if causes != [(fences[0]-tick_ps, core, cluster, r)]:
+                    problems.append(f"wrong actual R fence cause: {causes}")
+            elif causes:
+                problems.append("R=0 must not print an R fence cause")
+            print(f"[risk_confirm] inferred last progress={last_progress} "
+                  f"fence={fences[0]} elapsed_ticks={elapsed/tick_ps:.3f} threshold={expected}")
     return problems
 
 
@@ -1297,6 +1398,8 @@ def evaluate(name: str, sc: dict, log_text: str, uart_text: str) -> List[str]:
     if sc.get("workload") == "dma_chain_2cluster":
         problems += evaluate_risk_chain(sc, log_text, uart_text)
         problems += evaluate_risk_controls(sc, log_text, uart_text)
+    if "risk_confirm" in sc:
+        problems += evaluate_risk_confirm(sc, log_text)
 
     # Fault precursors: late beats and at-risk events only where expected, on the victim
     vc = sc.get("victim", VICTIM)

@@ -65,6 +65,8 @@ class C2Tests(unittest.TestCase):
         self.assertTrue(result["identical_abs"])
         self.assertTrue(result["identical_rel"])
         self.assertEqual(result["first_diffs"], [])
+        self.assertIsNone(result["first_diff_earliest"])
+        self.assertIsNone(result["first_diff_earliest_rel"])
         cross = compare_cross_image(self.a, self.a, task_mapping(self.a, self.a))
         self.assertTrue(cross["identical_rel"])
         self.assertEqual(cross["max_abs_d_busy_ps"], 0)
@@ -101,6 +103,39 @@ class C2Tests(unittest.TestCase):
             dict(self.a["tasks"][0], task=3)])
         with self.assertRaisesRegex(ValueError, "unmatched tasks"):
             task_mapping(self.a, b, allow_fallback_only=True)
+
+    def test_first_difference_earliest_uses_time_not_stream_order(self):
+        log = LOG.replace("[BINGO_DONE] 150", "[BINGO_DONE] 151")
+        log = log.replace("[EVLOG_BEGIN] 220", "[EVLOG_BEGIN] 225")
+        b = run_metrics(log, UART, self.graph, self.pm)
+        result = compare_same_image(self.a, b)
+        self.assertEqual(result["first_diffs"][0]["stream"], "global:T_evlog")
+        for field, time in (("first_diff_earliest", 150), ("first_diff_earliest_rel", 50)):
+            diff = result[field]
+            self.assertEqual((diff["stream"], diff["index"], diff["a_time_ps"]),
+                             ("slot:0:0:1:DISPATCH_DONE", 1, time))
+            self.assertIn("[BINGO_DONE] 150", diff["a"])
+        cross = compare_cross_image(self.a, b, task_mapping(self.a, b))
+        self.assertIsNone(cross["first_diff_earliest"])
+        diff = cross["first_diff_earliest_rel"]
+        self.assertEqual((diff["stream"], diff["index"], diff["a_time_ps"]),
+                         ("task:0->0", 1, 50))
+        self.assertIn("[BINGO_DONE] 151", diff["b"])
+
+    def test_first_difference_earliest_uses_smaller_side_and_relative_time(self):
+        import copy
+        b = copy.deepcopy(self.a)
+        b["T0_ps"] = 110
+        b["streams"]["pm:1"][0].update(time_ps=80, raw="# [BINGO_PM] 80 domain=1 level=6")
+        b["streams"]["slot:0:0:1:DISPATCH_DONE"][0].update(
+            time_ps=40, raw="# [BINGO_DISPATCH] 40 chip=0 task=0 core=1 cluster=0")
+        result = compare_same_image(self.a, b)
+        self.assertEqual(result["first_diff_earliest"]["b_time_ps"], 40)
+        self.assertEqual(result["first_diff_earliest_rel"]["b_time_ps"], -70)
+        b["streams"]["slot:0:0:1:DISPATCH_DONE"] = []
+        diff = compare_same_image(self.a, b)["first_diff_earliest"]
+        self.assertEqual((diff["stream"], diff["a_time_ps"], diff["b_time_ps"]),
+                         ("pm:1", 50, 80))
 
     def test_fallback_only_is_explicit_and_reported(self):
         a = dict(self.a, tasks=self.a["tasks"] + [
@@ -177,26 +212,39 @@ class C2Tests(unittest.TestCase):
 
     def test_scenes_and_data(self):
         scenes = watchdog.c2_scenarios({"chain": 2})
-        self.assertEqual(len(scenes), 15)
+        self.assertEqual(len(scenes), 17)
         for name, scene in scenes.items():
             self.assertTrue(scene["t1"] and scene["dispatch_log"] and scene["expect_eoc"])
             self.assertIsNone(scene["fault_stall_cycles"])
             self.assertEqual(scene["evlog_enable"], 1)
             self.assertFalse(scene["evlog_pair"])
             data = watchdog.scenario_test_cfg(scene)
-            if scene["c2_variant"] != "on":
+            if scene["c2_variant"] not in ("on", "cerf"):
                 expected = watchdog.test_cfg_defaults()
                 expected["evlog_enable"] = 1
                 self.assertEqual(data, expected, name)
-            else:
+            elif scene["c2_variant"] == "on":
                 k = 2 if "chain" in name else 1
                 self.assertEqual((data["risk_late"], data["risk_confirm"],
                                   data["wd_type_h"][2], data["wd_type_c"][2]),
                                  (30000 * k, 125000 * k, 20000 * k, 40000 * k))
                 self.assertEqual((data["risk_policy"], data["boost_policy"],
-                                  data["pm_boost_power_level"], data["cerf_fb_enable"],
-                                  data["cerf_fb_clear"], data["cerf_fb_set"],
-                                  data["recovery_hold"]), (2, 0x10101, 3, 1, 31, 30, 1000))
+                                  data["pm_boost_power_level"], data["recovery_hold"]),
+                                 (2, 0x10101, 3, 1000))
+            if scene["c2_variant"] in ("on", "cerf") and scene["c2_workload"] in ("chain", "dummy"):
+                self.assertEqual((data["cerf_fb_enable"], data["cerf_fb_cluster"],
+                                  data["cerf_fb_core"], data["cerf_fb_clear"], data["cerf_fb_set"]),
+                                 (1, 0, 1, 31, 30))
+            if scene["c2_variant"] == "cerf":
+                expected = watchdog.test_cfg_defaults()
+                expected.update(evlog_enable=1, cerf_fb_enable=1, cerf_fb_cluster=0,
+                                cerf_fb_core=1, cerf_fb_clear=31, cerf_fb_set=30)
+                self.assertEqual(data, expected)
+                self.assertEqual(scene["c2_part"], 1)
+                for key in ("timeout_cycles", "confirm_timeout_cycles", "extra_cfg", "cfg_suffix"):
+                    self.assertEqual(scene[key], scenes[f"c2_{scene['c2_workload']}_hw"][key])
+        self.assertEqual(watchdog.scenario_test_cfg(scenes["c2_moe2_on"])["cerf_fb_enable"], 0)
+        self.assertNotIn("BINGO_CERF_FB_", scenes["c2_moe2_on"]["extra_flags"])
         self.assertNotIn("cerf_fallback", scenes["c2_moe2_nofb"])
         self.assertNotIn("host_fallback", scenes["c2_dmafb_nofb"])
         for name in ("c2_chain_off", "c2_dummy_nohb", "c2_moe2_nofb"):

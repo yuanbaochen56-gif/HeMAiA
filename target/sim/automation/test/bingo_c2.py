@@ -200,9 +200,17 @@ def _compare_streams(a, b, *, relative=False, streams_a=None, streams_b=None):
             if signature(x, a) != signature(y, b):
                 differences.append(dict(stream=name, index=index,
                                         a=x["raw"] if x else "<missing>",
-                                        b=y["raw"] if y else "<missing>"))
+                                        b=y["raw"] if y else "<missing>",
+                                        a_time_ps=signature(x, a)[0] if x else None,
+                                        b_time_ps=signature(y, b)[0] if y else None))
                 break
     return differences
+
+
+def _first_diff_earliest(differences):
+    return min(differences, key=lambda diff: min(
+        time for time in (diff["a_time_ps"], diff["b_time_ps"]) if time is not None),
+        default=None)
 
 
 def _deltas(a, b):
@@ -216,6 +224,8 @@ def compare_same_image(a, b):
     tasks = compare_cross_image(a, b, task_mapping(a, b))
     return dict(same_image=True, identical_abs=not absolute, identical_rel=not relative,
                 first_diffs=absolute, first_diffs_rel=relative,
+                first_diff_earliest=_first_diff_earliest(absolute),
+                first_diff_earliest_rel=_first_diff_earliest(relative),
                 max_abs_d_busy_ps=tasks["max_abs_d_busy_ps"],
                 max_abs_d_busy_ticks=tasks["max_abs_d_busy_ticks"], **_deltas(a, b))
 
@@ -292,6 +302,7 @@ def compare_cross_image(a, b, task_map):
     pm_a, removed_a = pm_streams(a)
     pm_b, removed_b = pm_streams(b)
     first_diffs = _compare_streams(a, b, relative=True, streams_a=pm_a, streams_b=pm_b)
+    earliest_candidates = list(first_diffs)
     for row in deltas:
         if not row["fallback_only"] and (
                 row.get("dispatch_presence_differs") or row["d_busy_ps"] not in (None, 0)
@@ -302,17 +313,32 @@ def compare_cross_image(a, b, task_map):
                                   for event in events if event.get("task") == task
                                   and event.get("kind") in ("DISPATCH", "DONE"))
             first_diffs.append(dict(stream=f"task:{x}->{y}", index=0, a=raw(a, x), b=raw(b, y)))
+            def task_stream(run, task):
+                return [dict(event, payload=event["kind"])
+                        for name, events in run["streams"].items()
+                        if name.startswith("slot:") and name.endswith(":DISPATCH_DONE")
+                        for event in events if event["task"] == task]
+            name = f"task:{x}->{y}"
+            earliest_candidates += _compare_streams(
+                a, b, relative=True, streams_a={name: task_stream(a, x)},
+                streams_b={name: task_stream(b, y)})
     delta = _deltas(a, b)
     for name, field in (("T_exit", "d_makespan_hw_ps"), ("T_evlog", "d_host_view_ps")):
         if delta[field]:
             first_diffs.append(dict(stream=f"global:{name}", index=0,
                                     a=a["streams"][f"global:{name}"][0]["raw"],
                                     b=b["streams"][f"global:{name}"][0]["raw"]))
+            earliest_candidates += _compare_streams(
+                a, b, relative=True,
+                streams_a={f"global:{name}": a["streams"][f"global:{name}"]},
+                streams_b={f"global:{name}": b["streams"][f"global:{name}"]})
     joins = [row for row in deltas if not row["fallback_only"] and row["kernel"] in (
         "__host_bingo_kernel_dummy", "__host_bingo_kernel_check_result")]
     join_wait = joins[0]["d_ready_gap_ps"] if len(joins) == 1 else None
     return dict(same_image=False, identical_abs=None, identical_rel=not first_diffs,
                 first_diffs=first_diffs, task_deltas=deltas,
+                first_diff_earliest=None,
+                first_diff_earliest_rel=_first_diff_earliest(earliest_candidates),
                 max_abs_d_busy_ps=max((abs(row["d_busy_ps"]) for row in deltas
                                       if row.get("d_busy_ps") is not None), default=0),
                 max_abs_d_busy_ticks=max((abs(row["d_busy_ticks"]) for row in deltas

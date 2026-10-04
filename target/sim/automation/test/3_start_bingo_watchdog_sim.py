@@ -737,6 +737,8 @@ def c2_scenarios(calibration=None) -> Dict[str, dict]:
                     timeout_cycles=None, confirm_timeout_cycles=None, extra_cfg=None,
                     cfg_suffix="", c2_workload=label)
         variants = ("off", "nofb") if label == "dmafb" else ("off", "hw", "on", "nohb")
+        if label in ("chain", "dummy"):
+            variants += ("cerf",)
         if label == "moe2":
             variants += ("nofb",)
         k = calibration.get(label, 1)
@@ -744,10 +746,10 @@ def c2_scenarios(calibration=None) -> Dict[str, dict]:
             raise ValueError(f"C2 calibration k outside 1..10: {label}={k}")
         for variant in variants:
             scene = dict(base, c2_variant=variant,
-                         c2_part=1 if variant in ("off", "hw", "on") and label != "dmafb"
+                         c2_part=1 if variant in ("off", "hw", "on", "cerf") and label != "dmafb"
                          else 2 if variant == "nohb" else 3,
                          desc=f"C2 no-fault {label} {variant}")
-            if variant in ("hw", "on"):
+            if variant in ("hw", "on", "cerf"):
                 scene.update(timeout_cycles=100000 * k, confirm_timeout_cycles=200000 * k,
                              extra_cfg=dict(L2_CFG_KEYS), cfg_suffix="_l2")
             if variant == "on":
@@ -757,9 +759,7 @@ def c2_scenarios(calibration=None) -> Dict[str, dict]:
                 controls = {
                     "BINGO_RISK_LATE": 30000 * k, "BINGO_RISK_POLICY": 0x02,
                     "BINGO_RISK_CONFIRM": 125000 * k, "BINGO_PM_BOOST_POWER_LEVEL": 3,
-                    "BINGO_BOOST_POLICY": 0x10101, "BINGO_CERF_FB_CLUSTER": 0,
-                    "BINGO_CERF_FB_CORE": 1, "BINGO_CERF_FB_CLEAR": 31,
-                    "BINGO_CERF_FB_SET": 30,
+                    "BINGO_BOOST_POLICY": 0x10101,
                 }
                 scene["extra_flags"] = (scene.get("extra_flags", "") + " " +
                                         " ".join(f"-D{name}={value}" for name, value in controls.items())).strip()
@@ -770,6 +770,11 @@ def c2_scenarios(calibration=None) -> Dict[str, dict]:
                                      "dmafb": "dma_host_nofb_2cluster"}[label]
                 scene.pop("cerf_fallback", None)
                 scene.pop("host_fallback", None)
+            if variant in ("on", "cerf") and label in ("chain", "dummy"):
+                controls = {"BINGO_CERF_FB_CLUSTER": 0, "BINGO_CERF_FB_CORE": 1,
+                            "BINGO_CERF_FB_CLEAR": 31, "BINGO_CERF_FB_SET": 30}
+                scene["extra_flags"] = (scene.get("extra_flags", "") + " " +
+                                        " ".join(f"-D{name}={value}" for name, value in controls.items())).strip()
             scenes[f"c2_{label}_{variant}"] = scene
     return scenes
 
@@ -2307,6 +2312,14 @@ class TestCfgSimRunner(NoTraceSimRunner):
 
     def build_apps_and_stage(self, tasks):
         info = super().build_apps_and_stage(tasks)
+        if self.test_cfg["cerf_fb_enable"] != 0:
+            for task in tasks:
+                header = (self.repo_root / "target/sw/host/apps" / task["host_app_type"]
+                          / task["chip_type"] / "workloads" / task["workload"]
+                          / "offload_bingo_hw.h")
+                if "bingo_cerf_fb_enable(" in header.read_text():
+                    raise ValueError("Do not combine compiler CERF fallback with T1 cerf_fb_enable: "
+                                     f"{header}")
         if self.early_exit:
             workload = "early_exit_conf_2cluster" if self.early_exit_conf else "early_exit_2cluster"
             graph_csv = (self.repo_root / "target/sw/host/apps/offload_bingo_hw/single_chip"

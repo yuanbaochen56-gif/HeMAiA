@@ -328,6 +328,41 @@ class TestConfigurationTests(unittest.TestCase):
             self.assertEqual(runner.test_cfg_record["configuration"]["fault_gid"], 108)
             self.assertEqual(json.loads((path / "test_cfg.json").read_text())["PYTHONHASHSEED"], "0")
 
+    def test_t1_compiler_cerf_conflict_stops_before_image_patching(self):
+        for compiler_cerf in (False, True):
+            for t1_enable in (0, 1):
+                with self.subTest(compiler_cerf=compiler_cerf, t1_enable=t1_enable), \
+                        tempfile.TemporaryDirectory() as directory:
+                    path = Path(directory)
+                    task = watchdog.make_task(host_app_type="offload_bingo_hw",
+                                              chip_type="single_chip", workload="fixture")
+                    header = (path / "target/sw/host/apps/offload_bingo_hw/single_chip"
+                              / "workloads/fixture/offload_bingo_hw.h")
+                    header.parent.mkdir(parents=True)
+                    header.write_text("bingo_cerf_fb_enable(2);\n" if compiler_cerf else "init();\n")
+                    runner = watchdog.TestCfgSimRunner(
+                        test_cfg=dict(watchdog.test_cfg_defaults(), cerf_fb_enable=t1_enable),
+                        repo_root=path, output_dir=path, skip_setup=True, engine="vsim",
+                        with_waveform=False, cfg="target/rtl/cfg/hemaia_ci.hjson",
+                        sim_cfg="target/sim/cfg/sim_rtl.hjson", with_macro=False,
+                        with_d2d=False, with_pll=False)
+                    with patch.object(watchdog.NoTraceSimRunner, "build_apps_and_stage",
+                                      return_value=[(path / "task", task["ci_name"])]) as build, \
+                            patch.object(watchdog.shutil, "copyfile"), \
+                            patch.object(watchdog, "test_cfg_elf_location",
+                                         return_value=dict(offset=0, size=256)), \
+                            patch.object(watchdog, "read_bank_image",
+                                         return_value=watchdog.test_cfg_bytes(watchdog.test_cfg_defaults())), \
+                            patch.object(watchdog, "patch_test_cfg", return_value={}) as patch_image:
+                        if compiler_cerf and t1_enable:
+                            with self.assertRaisesRegex(ValueError, "compiler CERF fallback.*T1"):
+                                runner.build_apps_and_stage([task])
+                            patch_image.assert_not_called()
+                        else:
+                            runner.build_apps_and_stage([task])
+                            patch_image.assert_called_once()
+                        build.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,0 +1,13 @@
+{
+    num_clusters: 2
+    array_shape: 1
+    num_experts: 2
+    top_k: 1
+    M: 1
+    K: 2
+    N: 1
+    transposed_A: 0
+    transposed_B: 0
+    accumPrevC: 0
+    cerf_fallback: false
+}

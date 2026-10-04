@@ -69,7 +69,8 @@ def main():
     dfg.bingo_add_node(copy)
     dfg.bingo_add_node(check)
     dfg.bingo_add_edge(copy, check)
-    dfg.bingo_add_host_fallback(copy)
+    if params.get("host_fallback", True):
+        dfg.bingo_add_host_fallback(copy)
     dfg.bingo_compile_dfg(
         app_name="DMA copy (automatic host fallback)", output_dir=str(args.output_dir),
         output_file_name=args.output_offload_file_name,

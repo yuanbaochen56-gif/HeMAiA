@@ -131,7 +131,8 @@ def main():
         dfg.bingo_add_edge(gemm, store)
         branches.append((ld_a, ld_b, gemm, store))
 
-    dfg.bingo_add_cerf_fallback(branches[0][2], branches[1][2])
+    if param.get("cerf_fallback", True):
+        dfg.bingo_add_cerf_fallback(branches[0][2], branches[1][2])
 
     join = BingoNode(0, 0, 2, node_name="join",
                      kernel_name="__host_bingo_kernel_dummy",

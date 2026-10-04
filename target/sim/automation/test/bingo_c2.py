@@ -3,6 +3,7 @@
 PM arithmetic comes from the unchanged evaluation pm_ticks.py on PYTHONPATH.
 Timing differences are measurements, never healthy-run gate failures.
 """
+from bisect import bisect_right
 from collections import defaultdict
 import csv
 from fractions import Fraction
@@ -138,6 +139,7 @@ def run_metrics(log, uart, graph_csv, pm_config):
     streams["global:T_evlog"] = [
         dict(time_ps=boundaries[0][0], payload="[EVLOG_BEGIN] TIME", raw=boundaries[0][1])]
     pending, measured = {}, {}
+    done_times = sorted(event["time_ps"] for event in events if event["kind"] == "DONE")
     for event in events:
         task_id, slot = event["task"], _slot(event)
         if task_id not in graph or _slot(graph[task_id]) != slot:
@@ -146,9 +148,12 @@ def run_metrics(log, uart, graph_csv, pm_config):
             if slot in pending or task_id in measured:
                 raise ValueError(f"duplicate/busy dispatch: {event['raw']}")
             pending[slot] = event
+            previous = bisect_right(done_times, event["time_ps"])
             measured[task_id] = dict(dispatch_ps=event["time_ps"], done_ps=None,
                                      busy_ps=None, busy_ticks=None, busy_ticks_exact=None,
-                                     rel_dispatch_ps=event["time_ps"] - t0)
+                                     rel_dispatch_ps=event["time_ps"] - t0,
+                                     ready_gap_ps=(event["time_ps"] - done_times[previous - 1]
+                                                   if previous else None))
         else:
             start = pending.pop(slot, None)
             if start is None or start["task"] != task_id or event["time_ps"] <= start["time_ps"]:
@@ -171,7 +176,7 @@ def run_metrics(log, uart, graph_csv, pm_config):
         row["core_type"] = types.get((task["cluster"], task["core"]), types.get(task["core"], ""))
         row.update(measured.get(task["task"], dict(dispatch_ps=None, done_ps=None, busy_ps=None,
                                                    busy_ticks=None, busy_ticks_exact=None,
-                                                   rel_dispatch_ps=None)))
+                                                   rel_dispatch_ps=None, ready_gap_ps=None)))
         tasks.append(row)
     return dict(T0_ps=t0, T_exit_ps=host_exits[0]["time_ps"], T_evlog_ps=boundaries[0][0],
                 T_eoc_ps=int(eocs[0]), makespan_hw_ps=host_exits[0]["time_ps"] - t0,
@@ -223,11 +228,15 @@ def task_mapping(a, b, *, allow_fallback_only=False):
             groups[task["kernel"], task["chip"], task["cluster"], task["core"]].append(task["task"])
         return {key: sorted(values) for key, values in groups.items()}
     left, right = grouped(a), grouped(b)
+    dispatched_a = {task["task"] for task in a["tasks"] if task["dispatch_ps"] is not None}
+    dispatched_b = {task["task"] for task in b["tasks"] if task["dispatch_ps"] is not None}
     pairs, fallback = [], []
     for key in sorted(left.keys() | right.keys()):
         x, y = left.get(key, []), right.get(key, [])
         if len(y) > len(x) or len(x) != len(y) and not allow_fallback_only:
             raise ValueError(f"unmatched tasks for {key}: {x} != {y}")
+        if len(x) != len(y) and (dispatched_a.intersection(x) or dispatched_b.intersection(y)):
+            raise ValueError(f"ambiguous dispatched tasks in unequal group {key}: {x} != {y}")
         pairs.extend(zip(x, y))
         fallback.extend(x[len(y):])
     return dict(pairs=pairs, fallback_only=fallback)
@@ -254,7 +263,7 @@ def compare_cross_image(a, b, task_map):
                    cluster=first["cluster"], core=first["core"], fallback_only=False)
         if (first["dispatch_ps"] is None) != (second["dispatch_ps"] is None):
             row["dispatch_presence_differs"] = True
-        for field in ("busy_ps", "rel_dispatch_ps"):
+        for field in ("busy_ps", "rel_dispatch_ps", "ready_gap_ps"):
             row["d_" + field] = (second[field] - first[field]
                                  if first[field] is not None and second[field] is not None else None)
         x_ticks, y_ticks = first["busy_ticks_exact"], second["busy_ticks_exact"]
@@ -299,10 +308,13 @@ def compare_cross_image(a, b, task_map):
             first_diffs.append(dict(stream=f"global:{name}", index=0,
                                     a=a["streams"][f"global:{name}"][0]["raw"],
                                     b=b["streams"][f"global:{name}"][0]["raw"]))
+    joins = [row for row in deltas if not row["fallback_only"] and row["kernel"] in (
+        "__host_bingo_kernel_dummy", "__host_bingo_kernel_check_result")]
+    join_wait = joins[0]["d_ready_gap_ps"] if len(joins) == 1 else None
     return dict(same_image=False, identical_abs=None, identical_rel=not first_diffs,
                 first_diffs=first_diffs, task_deltas=deltas,
                 max_abs_d_busy_ps=max((abs(row["d_busy_ps"]) for row in deltas
                                       if row.get("d_busy_ps") is not None), default=0),
                 max_abs_d_busy_ticks=max((abs(row["d_busy_ticks"]) for row in deltas
                                          if row.get("d_busy_ticks") is not None), default=0),
-                pm_removed_a=removed_a, pm_removed_b=removed_b, join_wait_ps=None, **delta)
+                pm_removed_a=removed_a, pm_removed_b=removed_b, join_wait_ps=join_wait, **delta)

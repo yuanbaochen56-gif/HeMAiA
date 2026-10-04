@@ -104,12 +104,55 @@ class C2Tests(unittest.TestCase):
 
     def test_fallback_only_is_explicit_and_reported(self):
         a = dict(self.a, tasks=self.a["tasks"] + [
-            dict(self.a["tasks"][0], task=3, dispatch_ps=None, busy_ps=None,
+            dict(self.a["tasks"][0], task=3, kernel="__host_bingo_kernel_idma",
+                 dispatch_ps=None, busy_ps=None,
                  busy_ticks=None, busy_ticks_exact=None)])
         mapping = task_mapping(a, self.a, allow_fallback_only=True)
         result = compare_cross_image(a, self.a, mapping)
         self.assertEqual(mapping["fallback_only"], [3])
         self.assertFalse(result["task_deltas"][-1]["dispatched"])
+
+    def test_unequal_group_rejects_any_dispatched_task(self):
+        for side, task_id in (("a", 0), ("a", 3), ("b", 0)):
+            with self.subTest(side=side, task=task_id):
+                first = dict(self.a["tasks"][0], dispatch_ps=None)
+                a = dict(self.a, tasks=[first] + self.a["tasks"][1:] +
+                         [dict(first, task=3)])
+                b = dict(self.a, tasks=[dict(first)] + self.a["tasks"][1:])
+                run = a if side == "a" else b
+                next(task for task in run["tasks"] if task["task"] == task_id)["dispatch_ps"] = 100
+                with self.assertRaisesRegex(ValueError, "ambiguous dispatched tasks"):
+                    task_mapping(a, b, allow_fallback_only=True)
+        a = dict(self.a, tasks=[dict(first)] + self.a["tasks"][1:] + [dict(first, task=3)])
+        b = dict(self.a, tasks=[dict(first)] + self.a["tasks"][1:])
+        self.assertEqual(task_mapping(a, b, allow_fallback_only=True)["fallback_only"], [3])
+
+    def test_ready_gap_uses_latest_done_not_after_dispatch(self):
+        self.assertEqual([task["ready_gap_ps"] for task in self.a["tasks"]], [None, 10, 20])
+        b = run_metrics(LOG.replace("[BINGO_DISPATCH] 160", "[BINGO_DISPATCH] 150"),
+                        UART, self.graph, self.pm)
+        self.assertEqual(b["tasks"][1]["ready_gap_ps"], 0)
+        result = compare_cross_image(self.a, b, task_mapping(self.a, b))
+        delta = next(row for row in result["task_deltas"] if row["task_a"] == 1)
+        self.assertEqual(delta["d_ready_gap_ps"], -10)
+        first = next(row for row in result["task_deltas"] if row["task_a"] == 0)
+        self.assertIsNone(first["d_ready_gap_ps"])
+
+    def test_join_wait_is_unique_join_readiness_delta(self):
+        for kernel in ("__host_bingo_kernel_dummy", "__host_bingo_kernel_check_result"):
+            with self.subTest(kernel=kernel):
+                self.graph.write_text(GRAPH.replace("__snax_bingo_kernel_exit", kernel))
+                a = run_metrics(LOG, UART, self.graph, self.pm)
+                b = run_metrics(LOG.replace("[BINGO_DISPATCH] 160", "[BINGO_DISPATCH] 165"),
+                                UART, self.graph, self.pm)
+                self.assertEqual(compare_cross_image(a, b, task_mapping(a, b))["join_wait_ps"], 5)
+        self.assertIsNone(compare_cross_image(self.a, self.a,
+                                             task_mapping(self.a, self.a))["join_wait_ps"])
+        graph = GRAPH.replace("__snax_bingo_kernel_exit", "__host_bingo_kernel_dummy")
+        graph = graph.replace("__snax_bingo_kernel_idma_1d_copy", "__host_bingo_kernel_dummy")
+        self.graph.write_text(graph)
+        a = run_metrics(LOG, UART, self.graph, self.pm)
+        self.assertIsNone(compare_cross_image(a, a, task_mapping(a, a))["join_wait_ps"])
 
     def test_pm_short_windows_only_removed_cross_image(self):
         log = LOG.replace("# [BINGO_DISPATCH] 100", "# [BINGO_PM] 60 domain=1 level=25\n"

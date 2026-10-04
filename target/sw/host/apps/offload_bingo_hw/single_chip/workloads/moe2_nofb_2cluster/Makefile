@@ -1,4 +1,4 @@
-# MoE2: top-1 with an ordered CERF fallback expert.
+# MoE2: top-1 without CERF fallback (C2 measurement only).
 MK_DIR   := $(dir $(realpath $(lastword $(MAKEFILE_LIST))))
 HOST_APP_TYPE = offload_bingo_hw
 CHIP_TYPE     = single_chip

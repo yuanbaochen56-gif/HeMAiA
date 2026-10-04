@@ -124,6 +124,21 @@ int main(void) {
         self.assertEqual(check_evlog(log, uart, 3), [])
         self.assertEqual(check_evlog_pair(log, log), [])
 
+    def test_empty_log_is_rejected_by_default(self):
+        self.assertEqual(check_evlog("", "[EVLOG] count=0 dropped=0", 3),
+                         ["enabled EVLOG has no items"])
+
+    def test_empty_log_is_allowed_without_simulation_events(self):
+        self.assertEqual(check_evlog("", "[EVLOG] count=0 dropped=0", 3,
+                                     allow_empty=True), [])
+        for name, scene in driver.SCENARIOS.items():
+            self.assertEqual(scene.get("evlog_allow_empty", False), name.startswith("c2_"))
+
+    def test_empty_log_is_rejected_with_simulation_events(self):
+        log = "[BINGO_WD] 308000 chip=0 core=1 cluster=0 dead_suspect=1 fenced=0"
+        self.assertIn("enabled EVLOG has no items",
+                      check_evlog(log, "[EVLOG] count=0 dropped=0", 3, allow_empty=True))
+
     def test_negative_mutations(self):
         log, uart = self.fixture()
         for old, new in [

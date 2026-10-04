@@ -732,7 +732,8 @@ def c2_scenarios(calibration=None) -> Dict[str, dict]:
     for label, template in (("chain", "tch0"), ("dummy", "s1"), ("moe2", "s17"),
                             ("dmafb", "s36")):
         base = dict(SCENARIOS[template], t1=True, c2=True, fault_stall_cycles=None,
-                    dispatch_log=True, evlog_enable=1, evlog_pair=False, expect_eoc=True,
+                    dispatch_log=True, evlog_enable=1, evlog_pair=False, evlog_allow_empty=True,
+                    expect_eoc=True,
                     timeout_cycles=None, confirm_timeout_cycles=None, extra_cfg=None,
                     cfg_suffix="", c2_workload=label)
         variants = ("off", "nofb") if label == "dmafb" else ("off", "hw", "on", "nohb")
@@ -2456,7 +2457,8 @@ def run_scenario(name: str, args: argparse.Namespace) -> bool:
     if sc.get("evlog_enable"):
         slots = (len(sc["expect_core_types"]) if "expect_core_types" in sc
                  else dispatch_host_slot()[1] + 1)
-        problems += check_evlog(log_text, uart_text, slots)
+        problems += check_evlog(log_text, uart_text, slots,
+                                allow_empty=sc.get("evlog_allow_empty", False))
         if sc.get("evlog_pair", True):
             reference = Path(args.out_root) / name.removesuffix("e") / task_dir_name(0, task["ci_name"]) / "bin"
             if (reference / "sim_run.log").exists():

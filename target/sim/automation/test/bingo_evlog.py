@@ -58,7 +58,7 @@ def simulation_events(log, cores_per_cluster):
     return events
 
 
-def check_evlog(log, uart, cores_per_cluster, period_ps=28000):
+def check_evlog(log, uart, cores_per_cluster, period_ps=28000, *, allow_empty=False):
     """Every event must match, including its exact time; no tolerances."""
     problems = []
     items = [(int(ts), int(code, 16), int(cluster), int(core), int(arg, 16))
@@ -69,8 +69,9 @@ def check_evlog(log, uart, cores_per_cluster, period_ps=28000):
     if count != len(items): problems.append("EVLOG summary count differs from item count")
     if dropped: problems.append(f"EVLOG dropped={dropped}")
     if any(code & 128 for _, code, _, _, _ in items): problems.append("EVLOG has imprecise timestamps")
-    if not items: problems.append("enabled EVLOG has no items")
     expected = simulation_events(log, cores_per_cluster)
+    if not items and not (allow_empty and not expected):
+        problems.append("enabled EVLOG has no items")
     actual_groups, expected_groups = defaultdict(list), defaultdict(list)
     for ts, *signature in items: actual_groups[tuple(signature)].append(ts)
     for time, *signature in expected: expected_groups[tuple(signature)].append(time)

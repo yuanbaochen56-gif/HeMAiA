@@ -781,6 +781,24 @@ def c2_scenarios(calibration=None) -> Dict[str, dict]:
 
 SCENARIOS.update(c2_scenarios())
 
+def c2b_scenarios() -> Dict[str, dict]:
+    """Layout-preserving heartbeat and inactive-type CERF controls."""
+    scenes = {}
+    for label in ("chain", "dummy", "moe2"):
+        scenes[f"c2_{label}_nophb"] = dict(
+            SCENARIOS[f"c2_{label}_off"], c2_variant="nophb", c2_part=2,
+            image_flags="-DBINGO_WD_NOP_HEARTBEAT",
+            desc=f"C2b no-fault {label} layout-preserving heartbeat control")
+    scenes["c2_chain_cerf0"] = dict(
+        SCENARIOS["c2_chain_hw"], c2_variant="cerf0",
+        extra_flags="-DBINGO_CERF_FB_CLUSTER=0 -DBINGO_CERF_FB_CORE=2 "
+                    "-DBINGO_CERF_FB_CLEAR=31 -DBINGO_CERF_FB_SET=30",
+        desc="C2b CERF table on the masked host type")
+    return scenes
+
+
+SCENARIOS.update(c2b_scenarios())
+
 TEST_CFG_FIELDS = (
     "magic", "version", "fault_gid", "fault_stall_cycles", "fault_cluster", "fault_core",
     "fault_pre_stall_cycles", "fault_after_kernel", "risk_late", "risk_policy",
@@ -874,7 +892,7 @@ def t1_image_flags(sc: dict) -> str:
     if not isinstance(value, str):
         raise ValueError("T1 image_flags must be a flag string")
     flags = shlex.split(value)
-    if set(flags) - {"-DBINGO_WD_NO_HEARTBEAT"}:
+    if set(flags) - {"-DBINGO_WD_NO_HEARTBEAT", "-DBINGO_WD_NOP_HEARTBEAT"}:
         raise ValueError("unsupported T1 image_flags")
     if flags and (not sc.get("t1") or sc.get("same_as") or any(
             sc is SCENARIOS.get(name) for names in T1_FAMILIES.values() for name in names)):

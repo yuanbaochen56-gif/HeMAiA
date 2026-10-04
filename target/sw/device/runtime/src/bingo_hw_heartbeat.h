@@ -33,6 +33,13 @@ static inline void bingo_hw_manager_heartbeat(uint32_t value) {
     // Only for C2 measurement; must use the default watchdog (10M) configuration.
     // Keep A1's EXIT-bit report even when ordinary heartbeats are disabled.
     if (!(value & BINGO_HW_HEARTBEAT_EXIT)) return;
+#elif defined(BINGO_WD_NOP_HEARTBEAT)
+    // Only for C2b: same length and register use as csrw, without CSR side effects.
+    if (!(value & BINGO_HW_HEARTBEAT_EXIT)) {
+        asm volatile(".option push\n.option norvc\naddi x0, %0, 0\n.option pop"
+                     : : "r"(value));
+        return;
+    }
 #endif
     asm volatile("csrw " BINGO_HW_HEARTBEAT_STR(BINGO_HW_MANAGER_HEARTBEAT_CSR) ", %0"
                  :

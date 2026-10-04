@@ -29,6 +29,11 @@
 // The watchdog ignores the value. Bit 31 reports exit to the control plane;
 // ordinary heartbeats must leave it clear.
 static inline void bingo_hw_manager_heartbeat(uint32_t value) {
+#ifdef BINGO_WD_NO_HEARTBEAT
+    // Only for C2 measurement; must use the default watchdog (10M) configuration.
+    // Keep A1's EXIT-bit report even when ordinary heartbeats are disabled.
+    if (!(value & BINGO_HW_HEARTBEAT_EXIT)) return;
+#endif
     asm volatile("csrw " BINGO_HW_HEARTBEAT_STR(BINGO_HW_MANAGER_HEARTBEAT_CSR) ", %0"
                  :
                  : "r"(value));

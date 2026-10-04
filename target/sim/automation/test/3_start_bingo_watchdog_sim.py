@@ -140,12 +140,14 @@ from typing import Dict, List, Optional, Tuple
 
 _SCRIPT = Path(__file__).resolve()
 _REPO_ROOT = _SCRIPT.parents[4]  # target/sim/automation/test -> repo root
+sys.path.insert(0, str(_SCRIPT.parent))  # Also support importlib-based tests.
 sys.path.insert(0, str(_REPO_ROOT / "util" / "automation_scripts"))
 
 from hemaia_sim_runner import (  # noqa: E402
     SIM_ERR_MARKER, SIM_OK_MARKER, HeMAiASimRunner, make_task, task_dir_name,
 )
 from bingo_bender_pin import check_bingo_bender_pin  # noqa: E402
+from bingo_evlog import check_evlog, check_evlog_pair  # noqa: E402
 
 HEMAIA_CI_CFG = "target/rtl/cfg/hemaia_ci.hjson"
 # The 1-cluster GEMM workloads need exactly one cluster, and they generate their
@@ -707,6 +709,12 @@ for _name, _baseline in (("t53", "s34"), ("t54", "s35"), ("t55", "s36")):
     )
 T1_FAMILIES["F4"] = ("t53", "t54", "t55")
 
+for _name, _baseline in (("t60", "t18"), ("t61", "t19"), ("t62", "t43")):
+    SCENARIOS[_name] = dict(SCENARIOS[_baseline], evlog_enable=0)
+    SCENARIOS[_name + "e"] = dict(SCENARIOS[_name], evlog_enable=1)
+T1_FAMILIES["A6_F1"] = ("t60", "t60e", "t61", "t61e")
+T1_FAMILIES["A6_F2"] = ("t62", "t62e")
+
 TEST_CFG_FIELDS = (
     "magic", "version", "fault_gid", "fault_stall_cycles", "fault_cluster", "fault_core",
     "fault_pre_stall_cycles", "fault_after_kernel", "risk_late", "risk_policy",
@@ -728,6 +736,7 @@ TEST_CFG_MACROS = {
     "BINGO_REMOTE_PROXY_TIMEOUT": "remote_proxy_timeout", "BINGO_PARK_REQ": "park_req",
     "BINGO_CERF_FB_CLUSTER": "cerf_fb_cluster", "BINGO_CERF_FB_CORE": "cerf_fb_core",
     "BINGO_CERF_FB_CLEAR": "cerf_fb_clear", "BINGO_CERF_FB_SET": "cerf_fb_set",
+    "BINGO_EVLOG_ENABLE": "evlog_enable",
 }
 
 
@@ -736,7 +745,7 @@ def test_cfg_defaults(version: int = 2) -> dict:
         raise ValueError("unsupported test configuration version")
     cfg = dict.fromkeys(TEST_CFG_FIELDS, 0)
     cfg.update(magic=0x42475431, version=version, fault_gid=0xFFFFFFFF,
-               fault_cluster=0xFFFFFFFF, fault_core=0xFFFFFFFF, user=[0] * 4)
+               fault_cluster=0xFFFFFFFF, fault_core=0xFFFFFFFF, user=[0] * 4, evlog_enable=0)
     if version == 2:
         cfg.update(wd_type_h=[0] * 16, wd_type_c=[0] * 16)
     return cfg
@@ -754,6 +763,7 @@ def check_same_ps_fault_cfg(first: dict, second: dict) -> None:
 def scenario_test_cfg(sc: dict, extra_flags: str = "", *, check_pair: bool = True) -> dict:
     """Translate only data controls. Unknown flags must never change a T1 graph."""
     cfg = test_cfg_defaults()
+    cfg["evlog_enable"] = sc.get("evlog_enable", 0)
     if "t1_user" in sc:
         cfg["user"] = list(sc["t1_user"])
     for field in ("wd_type_h", "wd_type_c"):
@@ -791,13 +801,16 @@ def scenario_test_cfg(sc: dict, extra_flags: str = "", *, check_pair: bool = Tru
 
 def test_cfg_bytes(cfg: dict) -> bytes:
     version = cfg["version"]
-    if (version not in (1, 2) or set(cfg) - set(TEST_CFG_FIELDS) - {"user", "wd_type_h", "wd_type_c"}
+    if (version not in (1, 2) or set(cfg) - set(TEST_CFG_FIELDS) - {"user", "evlog_enable", "wd_type_h", "wd_type_c"}
             or version == 1 and any(field in cfg for field in ("wd_type_h", "wd_type_c"))):
         raise ValueError("unsupported test configuration layout")
     user = cfg.get("user", [0] * 4)
     if len(user) != 4 or any(not isinstance(v, int) or not 0 <= v <= 0xFFFFFFFF for v in user):
         raise ValueError("user must have four uint32 words")
-    words = [cfg[field] for field in TEST_CFG_FIELDS] + list(user) + [0] * 5
+    evlog = cfg.get("evlog_enable", 0)
+    if not isinstance(evlog, int) or not 0 <= evlog <= 0xFFFFFFFF:
+        raise ValueError("evlog_enable must be a uint32 word")
+    words = [cfg[field] for field in TEST_CFG_FIELDS] + list(user) + [evlog] + [0] * 4
     if version == 2:
         for field in ("wd_type_h", "wd_type_c"):
             values = cfg.get(field, [0] * 16)
@@ -2308,6 +2321,8 @@ def run_scenario(name: str, args: argparse.Namespace) -> bool:
         extra_mounts=[Path(args.bingo_repo)],
         plusargs=["+bingo_dispatch_log"] if sc.get("dispatch_log", False) else [],
     )
+    if "evlog_enable" in sc:
+        runner.plusargs.append("+evlog_check")
     runner.run([task])
     if sc.get("early_exit") or sc.get("early_exit_conf"):
         sc["early_exit_task_ids"] = runner.early_exit_task_ids
@@ -2347,6 +2362,15 @@ def run_scenario(name: str, args: argparse.Namespace) -> bool:
         except (OSError, ValueError, KeyError) as error:
             print(f"[{name}] cannot load generated host fallback graph: {error}")
     problems = evaluate(name, sc, log_text, uart_text)
+    if sc.get("evlog_enable"):
+        problems += check_evlog(log_text, uart_text, len(sc["expect_core_types"]))
+        reference = Path(args.out_root) / name.removesuffix("e") / task_dir_name(0, task["ci_name"]) / "bin"
+        if (reference / "sim_run.log").exists():
+            problems += check_evlog_pair((reference / "sim_run.log").read_text(), log_text)
+        else:
+            problems.append("missing disabled EVLOG pair reference")
+    elif "evlog_enable" in sc and "[EVLOG]" in uart_text:
+        problems.append("disabled EVLOG printed items")
     problems += runner.core_type_problems
     if sc.get("early_exit_conf_pair"):
         reference = Path(args.out_root) / sc["early_exit_conf_pair"] / task_dir_name(0, task["ci_name"]) / "bin"

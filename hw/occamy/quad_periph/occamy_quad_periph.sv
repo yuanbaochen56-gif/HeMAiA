@@ -63,6 +63,12 @@ module occamy_quad_periph import occamy_quad_periph_reg_pkg::*; #(
   output logic [NumBingoCoreTypes-1:0][31:0] bingo_hw_manager_wd_type_c_o,
   output reg_data_t   bingo_hw_manager_risk_clear_o,
   input  reg_data_t   bingo_hw_manager_risk_i,
+  output logic       bingo_evlog_enable_o,
+  output logic [31:0] bingo_evlog_clear_o,
+  output logic [31:0] bingo_evlog_pop_o,
+  input logic [63:0] bingo_evlog_head_i,
+  input logic [31:0] bingo_evlog_count_i,
+  input logic [15:0] bingo_evlog_dropped_i,
   // Bingo boost choice (policy, credit per lost core, minimum load)
   output reg_data_t   bingo_hw_manager_boost_policy_o,
   input  logic [5:0]  bingo_hw_manager_remote_link_error_i,
@@ -145,6 +151,27 @@ module occamy_quad_periph import occamy_quad_periph_reg_pkg::*; #(
   assign bingo_hw_manager_risk_clear_o               = reg2hw.bingo_risk_clear.q;
   assign hw2reg.bingo_risk.d                         = bingo_hw_manager_risk_i;
   assign hw2reg.bingo_risk.de                        = 1'b1;
+  assign bingo_evlog_enable_o = reg2hw.bingo_evlog_ctrl.q;
+  assign bingo_evlog_clear_o = reg2hw.bingo_evlog_clear.q;
+  assign bingo_evlog_pop_o = reg2hw.bingo_evlog_pop.q;
+  assign hw2reg.bingo_evlog_count.d = bingo_evlog_count_i;
+  assign hw2reg.bingo_evlog_count.de = 1'b1;
+  assign hw2reg.bingo_evlog_dropped.d = bingo_evlog_dropped_i;
+  assign hw2reg.bingo_evlog_dropped.de = 1'b1;
+  assign hw2reg.bingo_evlog_lo.d = bingo_evlog_head_i[31:0];
+  assign hw2reg.bingo_evlog_lo.de = 1'b1;
+  assign hw2reg.bingo_evlog_hi.d = bingo_evlog_head_i[63:32];
+  assign hw2reg.bingo_evlog_hi.de = 1'b1;
+`ifndef SYNTHESIS
+  // Test-only boundary: the print helper's first read, before its enable
+  // branch or any UART output. Identical for the enabled/disabled image pair.
+  always @(posedge clk_i) begin
+    if (rst_ni && $test$plusargs("evlog_check") && reg_req_i.valid &&
+        reg_rsp_o.ready && !reg_req_i.write &&
+        reg_req_i.addr[BlockAw-1:0] == OCCAMY_QUAD_PERIPH_BINGO_EVLOG_CTRL_OFFSET)
+      $display("[EVLOG_BEGIN] %0t", $time);
+  end
+`endif
   assign bingo_hw_manager_boost_policy_o             = reg2hw.bingo_boost_policy.q;
   assign hw2reg.bingo_status.remote_done_mismatch.de = 1'b1;
   assign hw2reg.bingo_status.remote_link_error.d     = bingo_hw_manager_remote_link_error_i;

@@ -122,6 +122,10 @@ module ${name}_quad_ctrl
   cfg_t                                  bingo_risk_late, bingo_risk_policy, bingo_risk_epoch;
   cfg_t                                  bingo_risk_clear, bingo_risk;
   cfg_t                                  bingo_risk_confirm;
+  logic                                  bingo_evlog_enable;
+  logic [31:0]                           bingo_evlog_clear, bingo_evlog_pop, bingo_evlog_count;
+  logic [63:0]                           bingo_evlog_head;
+  logic [15:0]                           bingo_evlog_dropped;
   logic [${2**bingo_core_type_id_width-1}:0][31:0] bingo_wd_type_h, bingo_wd_type_c;
   // Boost choice: policy, credit per lost core, minimum load
   cfg_t                                  bingo_boost_policy;
@@ -253,6 +257,12 @@ module ${name}_quad_ctrl
     .bingo_hw_manager_wd_type_c_o             (bingo_wd_type_c                     ),
     .bingo_hw_manager_risk_clear_o            (bingo_risk_clear                    ),
     .bingo_hw_manager_risk_i                  (bingo_risk                          ),
+    .bingo_evlog_enable_o                     (bingo_evlog_enable                  ),
+    .bingo_evlog_clear_o                      (bingo_evlog_clear                   ),
+    .bingo_evlog_pop_o                        (bingo_evlog_pop                     ),
+    .bingo_evlog_head_i                       (bingo_evlog_head                    ),
+    .bingo_evlog_count_i                      (bingo_evlog_count                   ),
+    .bingo_evlog_dropped_i                    (bingo_evlog_dropped                 ),
     .bingo_hw_manager_boost_policy_o          (bingo_boost_policy                  ),
     .bingo_hw_manager_remote_link_error_i     (bingo_remote_link_error             ),
     .bingo_hw_manager_core_dead_suspect_i     (bingo_core_dead_suspect             ),
@@ -327,6 +337,7 @@ module ${name}_quad_ctrl
 % endfor
   };
   bingo_hw_manager_top #(
+    .EventLogDepth                     (32),
     .READY_AND_DONE_QUEUE_INTERFACE_TYPE(1), // 1: CSR 0: AXI LITE
     .TASK_QUEUE_TYPE                    (1), // 1: AXI Lite Master 0: Default AXI Lite Slave 
     .NUM_CORES_PER_CLUSTER    (BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER    ),
@@ -442,6 +453,12 @@ module ${name}_quad_ctrl
     .cerf_fb_clear_i                           (bingo_cerf_fb_clear                 ),
     .cerf_fb_set_i                             (bingo_cerf_fb_set                   ),
     .cerf_fb_evt_o                             (bingo_cerf_fb_evt                   ),
+    .evlog_enable_i                            (bingo_evlog_enable                  ),
+    .evlog_clear_i                             (bingo_evlog_clear                   ),
+    .evlog_pop_i                               (bingo_evlog_pop                     ),
+    .evlog_head_o                              (bingo_evlog_head                    ),
+    .evlog_count_o                             (bingo_evlog_count                   ),
+    .evlog_dropped_o                           (bingo_evlog_dropped                 ),
     // DARTS: Load Monitor (not connected yet)
     .load_total_pending_o                      (/* unused */                         ),
     // Watchdog / replay status (quad periph BINGO_* status registers)

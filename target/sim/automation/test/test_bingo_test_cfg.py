@@ -51,12 +51,14 @@ class TestConfigurationTests(unittest.TestCase):
         for field in fields:
             source += f'printf("{field} %zu %u\\n", offsetof(bingo_test_cfg_t, {field}), cfg.{field});\n'
         source += 'printf("user %zu\\n", offsetof(bingo_test_cfg_t, user));\n'
+        source += 'printf("evlog_enable %zu\\n", offsetof(bingo_test_cfg_t, evlog_enable));\n'
         source += 'printf("reserved %zu\\n", offsetof(bingo_test_cfg_t, reserved));\n'
         source += 'printf("wd_type_h %zu\\n", offsetof(bingo_test_cfg_t, wd_type_h));\n'
         source += 'printf("wd_type_c %zu\\n", offsetof(bingo_test_cfg_t, wd_type_c));\n'
         source += 'for (int i=0; i<16; ++i) if (cfg.wd_type_h[i] || cfg.wd_type_c[i]) return 1;\n'
         source += 'for (int i=0; i<4; ++i) if (cfg.user[i]) return 1;\n'
-        source += 'for (int i=0; i<5; ++i) if (cfg.reserved[i]) return 1;\nreturn 0; }\n'
+        source += 'if (cfg.evlog_enable) return 1;\n'
+        source += 'for (int i=0; i<4; ++i) if (cfg.reserved[i]) return 1;\nreturn 0; }\n'
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory)
             (path / "layout.c").write_text(source)
@@ -70,7 +72,8 @@ class TestConfigurationTests(unittest.TestCase):
             name, offset, value = line.split()
             self.assertEqual((name, int(offset), int(value)),
                              (fields[index], index * 4, defaults[name]))
-        self.assertEqual(output[-4:], ["user 92", "reserved 108", "wd_type_h 128", "wd_type_c 192"])
+        self.assertEqual(output[-5:], ["user 92", "evlog_enable 108", "reserved 112",
+                                      "wd_type_h 128", "wd_type_c 192"])
 
     def test_user_defaults_preserve_v1_and_v2_bytes(self):
         for version in (1, 2):

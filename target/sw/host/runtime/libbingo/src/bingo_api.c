@@ -799,6 +799,49 @@ void bingo_hw_scheduler_init_pm(){
     asm volatile("fence" ::: "memory");
 }
 
+void bingo_evlog_enable(uint32_t on) {
+    writew(on != 0, (uintptr_t)chiplet_addr_transform(quad_ctrl_bingo_evlog_ctrl_addr()));
+}
+
+void bingo_evlog_clear(void) {
+    uintptr_t addr = (uintptr_t)chiplet_addr_transform(quad_ctrl_bingo_evlog_clear_addr());
+    writew(readw(addr) + 1u, addr);
+}
+
+uint32_t bingo_evlog_dropped(void) {
+    return readw((uintptr_t)chiplet_addr_transform(quad_ctrl_bingo_evlog_dropped_addr()));
+}
+
+uint32_t bingo_evlog_read(uint64_t *buf, uint32_t max) {
+    if (!buf || !max) return 0;
+    uint32_t count = readw((uintptr_t)chiplet_addr_transform(quad_ctrl_bingo_evlog_count_addr()));
+    if (count > max) count = max;
+    uintptr_t pop = (uintptr_t)chiplet_addr_transform(quad_ctrl_bingo_evlog_pop_addr());
+    uint32_t value = readw(pop);
+    for (uint32_t i = 0; i < count; ++i) {
+        uint32_t lo = readw((uintptr_t)chiplet_addr_transform(quad_ctrl_bingo_evlog_lo_addr()));
+        uint32_t hi = readw((uintptr_t)chiplet_addr_transform(quad_ctrl_bingo_evlog_hi_addr()));
+        buf[i] = ((uint64_t)hi << 32) | lo;
+        writew(++value, pop);
+        asm volatile("fence" ::: "memory");
+    }
+    return count;
+}
+
+void bingo_evlog_print(void) {
+    if (!readw((uintptr_t)chiplet_addr_transform(quad_ctrl_bingo_evlog_ctrl_addr()))) return;
+    uint64_t items[32];
+    uint32_t count = bingo_evlog_read(items, 32);
+    for (uint32_t i = 0; i < count; ++i) {
+        uint64_t item = items[i];
+        printf_safe("[EVLOG] ts=%u code=0x%02x slot=%u:%u arg=0x%04x\r\n",
+                    (uint32_t)(item >> 32), (uint32_t)((item >> 24) & 0xff),
+                    (uint32_t)((item >> 20) & 0xf), (uint32_t)((item >> 16) & 0xf),
+                    (uint32_t)(item & 0xffff));
+    }
+    printf_safe("[EVLOG] count=%u dropped=%u\r\n", count, bingo_evlog_dropped());
+}
+
 
 // The task will be initized directly on a .h file generated from the mini compiler
 // So the whole scheduling process will be handled by the hardware scheduler
@@ -856,12 +899,14 @@ void bingo_hw_scheduler_init(uint64_t dev_arg_base_addr, uint64_t dev_kernel_bas
     for (uint32_t type = 0; type < BINGO_WD_NUM_TYPES; ++type) {
         bingo_wd_type_set(type, bingo_test_cfg.wd_type_h[type], bingo_test_cfg.wd_type_c[type]);
     }
+    bingo_evlog_enable(bingo_test_cfg.evlog_enable);
     if (bingo_test_cfg.cerf_fb_enable) {
         uint32_t type = BINGO_CORE_TYPE_ID(bingo_test_cfg.cerf_fb_cluster, bingo_test_cfg.cerf_fb_core);
         bingo_cerf_fb_set(type, bingo_test_cfg.cerf_fb_clear, bingo_test_cfg.cerf_fb_set);
         bingo_cerf_fb_enable(1u << type);
     }
 #else
+    bingo_evlog_enable(BINGO_EVLOG_ENABLE);
     writew(BINGO_REMOTE_PROXY_TIMEOUT, (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_remote_proxy_timeout_addr()));
     // Core parking (0 = none): the slots drain before any task is offloaded
     writew(BINGO_PARK_REQ,             (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_bingo_park_req_addr()));
@@ -984,6 +1029,7 @@ uint32_t bingo_hw_scheduler(uint64_t* host_arg_list, uint64_t* host_kernel_list,
     }
     // Whatever ended the loop, report which cores the manager fenced on the way
     bingo_hw_scheduler_print_status();
+    bingo_evlog_print();
     return err;
 }
 

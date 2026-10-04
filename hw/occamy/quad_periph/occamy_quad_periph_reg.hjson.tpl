@@ -606,5 +606,40 @@
         }
       ]
     }},
+    { name: "BINGO_EVLOG_CTRL",
+      desc: "Observation-only control event logger.",
+      swaccess: "rw", hwaccess: "hro",
+      fields: [{ bits: "0", name: "ENABLE", resval: "0", desc: "Enable event capture." }]
+    },
+    { name: "BINGO_EVLOG_CLEAR",
+      desc: "Clear FIFO, pending events and dropped count once per value change. Timestamp is preserved.",
+      swaccess: "rw", hwaccess: "hro",
+      fields: [{ bits: "31:0", resval: "0", desc: "Change value to clear." }]
+    },
+    { name: "BINGO_EVLOG_POP",
+      desc: "Pop one FIFO item once per value change.",
+      swaccess: "rw", hwaccess: "hro",
+      fields: [{ bits: "31:0", resval: "0", desc: "Change value to pop." }]
+    },
+    { name: "BINGO_EVLOG_COUNT",
+      desc: "Current FIFO occupancy.",
+      swaccess: "ro", hwaccess: "hwo",
+      fields: [{ bits: "31:0", resval: "0", desc: "Number of queued events." }]
+    },
+    { name: "BINGO_EVLOG_DROPPED",
+      desc: "Saturating count of FIFO overflow and pending collisions.",
+      swaccess: "ro", hwaccess: "hwo",
+      fields: [{ bits: "15:0", resval: "0", desc: "Dropped events." }]
+    },
+    { name: "BINGO_EVLOG_LO",
+      desc: "FIFO head: code [31:24], cluster/core [23:16], argument [15:0]. Code bit 7 marks saturated age.",
+      swaccess: "ro", hwaccess: "hwo",
+      fields: [{ bits: "31:0", resval: "0", desc: "Low word of oldest event." }]
+    },
+    { name: "BINGO_EVLOG_HI",
+      desc: "FIFO head: exact event-edge timestamp in top clock cycles, modulo 2^32, unless code bit 7 is set.",
+      swaccess: "ro", hwaccess: "hwo",
+      fields: [{ bits: "31:0", resval: "0", desc: "Timestamp of oldest event." }]
+    },
   ]
 }

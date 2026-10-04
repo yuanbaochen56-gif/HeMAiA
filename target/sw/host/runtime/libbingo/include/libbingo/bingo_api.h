@@ -553,6 +553,14 @@ void bingo_hw_scheduler_init_pm(void);
 // Per-type watchdog thresholds only shorten the parameter H/C; 0 disables.
 // Global late_cycles is unchanged and must be below C_eff for late reporting.
 #define BINGO_WD_NUM_TYPES 16
+#ifndef BINGO_EVLOG_ENABLE
+#define BINGO_EVLOG_ENABLE 0
+#endif
+void bingo_evlog_enable(uint32_t on);
+void bingo_evlog_clear(void);
+uint32_t bingo_evlog_read(uint64_t *buf, uint32_t max);
+uint32_t bingo_evlog_dropped(void);
+void bingo_evlog_print(void);
 void bingo_wd_type_set(uint32_t type, uint32_t h, uint32_t c);
 
 void bingo_hw_scheduler_init(uint64_t dev_arg_base_addr, uint64_t dev_kernel_base_addr, uint32_t num_dev_tasks, uint64_t global_task_id_to_dev_task_id_base_addr, uint32_t num_total_tasks, uint64_t bingo_hw_scheduler_task_desc_list_base, uint32_t bingo_hw_scheduler_num_task_desc);

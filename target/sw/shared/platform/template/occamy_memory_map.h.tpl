@@ -290,6 +290,28 @@ inline uintptr_t quad_ctrl_bingo_core_dead_suspect_addr(){
     return QUAD_AXI_LITE_NARROW_PERIPHERALS_BASE_ADDR + OCCAMY_QUAD_PERIPH_BINGO_CORE_DEAD_SUSPECT_REG_OFFSET;
 }
 
+inline uintptr_t quad_ctrl_bingo_evlog_ctrl_addr(){
+    return QUAD_AXI_LITE_NARROW_PERIPHERALS_BASE_ADDR + OCCAMY_QUAD_PERIPH_BINGO_EVLOG_CTRL_REG_OFFSET;
+}
+inline uintptr_t quad_ctrl_bingo_evlog_clear_addr(){
+    return QUAD_AXI_LITE_NARROW_PERIPHERALS_BASE_ADDR + OCCAMY_QUAD_PERIPH_BINGO_EVLOG_CLEAR_REG_OFFSET;
+}
+inline uintptr_t quad_ctrl_bingo_evlog_pop_addr(){
+    return QUAD_AXI_LITE_NARROW_PERIPHERALS_BASE_ADDR + OCCAMY_QUAD_PERIPH_BINGO_EVLOG_POP_REG_OFFSET;
+}
+inline uintptr_t quad_ctrl_bingo_evlog_count_addr(){
+    return QUAD_AXI_LITE_NARROW_PERIPHERALS_BASE_ADDR + OCCAMY_QUAD_PERIPH_BINGO_EVLOG_COUNT_REG_OFFSET;
+}
+inline uintptr_t quad_ctrl_bingo_evlog_dropped_addr(){
+    return QUAD_AXI_LITE_NARROW_PERIPHERALS_BASE_ADDR + OCCAMY_QUAD_PERIPH_BINGO_EVLOG_DROPPED_REG_OFFSET;
+}
+inline uintptr_t quad_ctrl_bingo_evlog_lo_addr(){
+    return QUAD_AXI_LITE_NARROW_PERIPHERALS_BASE_ADDR + OCCAMY_QUAD_PERIPH_BINGO_EVLOG_LO_REG_OFFSET;
+}
+inline uintptr_t quad_ctrl_bingo_evlog_hi_addr(){
+    return QUAD_AXI_LITE_NARROW_PERIPHERALS_BASE_ADDR + OCCAMY_QUAD_PERIPH_BINGO_EVLOG_HI_REG_OFFSET;
+}
+
 inline uintptr_t quad_ctrl_idle_entry_delay_addr(){
     return QUAD_AXI_LITE_NARROW_PERIPHERALS_BASE_ADDR + OCCAMY_QUAD_PERIPH_IDLE_ENTRY_DELAY_REG_OFFSET;
 }

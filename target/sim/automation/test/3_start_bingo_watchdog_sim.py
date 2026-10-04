@@ -149,6 +149,7 @@ from hemaia_sim_runner import (  # noqa: E402
 from bingo_bender_pin import check_bingo_bender_pin  # noqa: E402
 from bingo_evlog import check_evlog, check_evlog_pair  # noqa: E402
 from bingo_p8 import recovery_hold_config, check_recovery_hold, check_access_level  # noqa: E402
+from bingo_c2 import healthy_problems  # noqa: E402
 
 HEMAIA_CI_CFG = "target/rtl/cfg/hemaia_ci.hjson"
 # The 1-cluster GEMM workloads need exactly one cluster, and they generate their
@@ -724,6 +725,56 @@ for _name, _hold, _level in (("t65a", 1000, 0), ("t65s", 1000, 12), ("t65o", 0, 
                            p8_access=True)
 T1_FAMILIES["P8_F1"] = ("t64", "t64h", "t65a", "t65s", "t65o")
 
+def c2_scenarios(calibration=None) -> Dict[str, dict]:
+    """Generate exactly the C2.4 matrix from the accepted workload templates."""
+    calibration = calibration or {}
+    scenes = {}
+    for label, template in (("chain", "tch0"), ("dummy", "s1"), ("moe2", "s17"),
+                            ("dmafb", "s36")):
+        base = dict(SCENARIOS[template], t1=True, c2=True, fault_stall_cycles=None,
+                    dispatch_log=True, evlog_enable=1, evlog_pair=False, expect_eoc=True,
+                    timeout_cycles=None, confirm_timeout_cycles=None, extra_cfg=None,
+                    cfg_suffix="", c2_workload=label)
+        variants = ("off", "nofb") if label == "dmafb" else ("off", "hw", "on", "nohb")
+        if label == "moe2":
+            variants += ("nofb",)
+        k = calibration.get(label, 1)
+        if not isinstance(k, int) or not 1 <= k <= 10:
+            raise ValueError(f"C2 calibration k outside 1..10: {label}={k}")
+        for variant in variants:
+            scene = dict(base, c2_variant=variant,
+                         c2_part=1 if variant in ("off", "hw", "on") and label != "dmafb"
+                         else 2 if variant == "nohb" else 3,
+                         desc=f"C2 no-fault {label} {variant}")
+            if variant in ("hw", "on"):
+                scene.update(timeout_cycles=100000 * k, confirm_timeout_cycles=200000 * k,
+                             extra_cfg=dict(L2_CFG_KEYS), cfg_suffix="_l2")
+            if variant == "on":
+                h, c = [0] * 16, [0] * 16
+                h[2], c[2] = 20000 * k, 40000 * k
+                scene.update(wd_type_h=h, wd_type_c=c, recovery_hold=1000)
+                controls = {
+                    "BINGO_RISK_LATE": 30000 * k, "BINGO_RISK_POLICY": 0x02,
+                    "BINGO_RISK_CONFIRM": 125000 * k, "BINGO_PM_BOOST_POWER_LEVEL": 3,
+                    "BINGO_BOOST_POLICY": 0x10101, "BINGO_CERF_FB_CLUSTER": 0,
+                    "BINGO_CERF_FB_CORE": 1, "BINGO_CERF_FB_CLEAR": 31,
+                    "BINGO_CERF_FB_SET": 30,
+                }
+                scene["extra_flags"] = (scene.get("extra_flags", "") + " " +
+                                        " ".join(f"-D{name}={value}" for name, value in controls.items())).strip()
+            elif variant == "nohb":
+                scene["image_flags"] = "-DBINGO_WD_NO_HEARTBEAT"
+            elif variant == "nofb":
+                scene["workload"] = {"moe2": "moe2_nofb_2cluster",
+                                     "dmafb": "dma_host_nofb_2cluster"}[label]
+                scene.pop("cerf_fallback", None)
+                scene.pop("host_fallback", None)
+            scenes[f"c2_{label}_{variant}"] = scene
+    return scenes
+
+
+SCENARIOS.update(c2_scenarios())
+
 TEST_CFG_FIELDS = (
     "magic", "version", "fault_gid", "fault_stall_cycles", "fault_cluster", "fault_core",
     "fault_pre_stall_cycles", "fault_after_kernel", "risk_late", "risk_policy",
@@ -810,6 +861,19 @@ def scenario_test_cfg(sc: dict, extra_flags: str = "", *, check_pair: bool = Tru
             raise ValueError("same-ps configuration pairs require T1 scenarios")
         check_same_ps_fault_cfg(cfg, scenario_test_cfg(reference, extra_flags, check_pair=False))
     return cfg
+
+
+def t1_image_flags(sc: dict) -> str:
+    value = sc.get("image_flags", "")
+    if not isinstance(value, str):
+        raise ValueError("T1 image_flags must be a flag string")
+    flags = shlex.split(value)
+    if set(flags) - {"-DBINGO_WD_NO_HEARTBEAT"}:
+        raise ValueError("unsupported T1 image_flags")
+    if flags and (not sc.get("t1") or sc.get("same_as") or any(
+            sc is SCENARIOS.get(name) for names in T1_FAMILIES.values() for name in names)):
+        raise ValueError("image_flags must not belong to a same-image family")
+    return " ".join(flags)
 
 
 def test_cfg_bytes(cfg: dict) -> bytes:
@@ -2282,6 +2346,7 @@ class TestCfgSimRunner(NoTraceSimRunner):
 def run_scenario(name: str, args: argparse.Namespace) -> bool:
     os.environ["PYTHONHASHSEED"] = "0"
     sc = dict(SCENARIOS[name])
+    image_flags = t1_image_flags(SCENARIOS[name])
     if sc.get("recovery_hold_from"):
         previous = Path(args.out_root) / sc["recovery_hold_from"]
         logs = list(previous.glob("task_*/bin/sim_run.log"))
@@ -2318,7 +2383,7 @@ def run_scenario(name: str, args: argparse.Namespace) -> bool:
             task["extra_user_flags"] = (task.get("extra_user_flags", "") + " " + flags).strip()
 
     if sc.get("t1"):
-        task["extra_user_flags"] = "-DBINGO_TEST_CFG=1"
+        task["extra_user_flags"] = ("-DBINGO_TEST_CFG=1 " + image_flags).strip()
     runner_cls = (TestCfgSimRunner if sc.get("t1") else
                   EarlyExitSimRunner if sc.get("early_exit") else
                   CoreTypeCheckedSimRunner if args.keep_traces else NoTraceSimRunner)
@@ -2386,8 +2451,12 @@ def run_scenario(name: str, args: argparse.Namespace) -> bool:
         except (OSError, ValueError, KeyError) as error:
             print(f"[{name}] cannot load generated host fallback graph: {error}")
     problems = evaluate(name, sc, log_text, uart_text)
+    if sc.get("c2"):
+        problems += healthy_problems(log_text, uart_text, sc["dispatch_graph_csv"])
     if sc.get("evlog_enable"):
-        problems += check_evlog(log_text, uart_text, len(sc["expect_core_types"]))
+        slots = (len(sc["expect_core_types"]) if "expect_core_types" in sc
+                 else dispatch_host_slot()[1] + 1)
+        problems += check_evlog(log_text, uart_text, slots)
         if sc.get("evlog_pair", True):
             reference = Path(args.out_root) / name.removesuffix("e") / task_dir_name(0, task["ci_name"]) / "bin"
             if (reference / "sim_run.log").exists():
@@ -2460,7 +2529,8 @@ def run_scenario(name: str, args: argparse.Namespace) -> bool:
     lines.append("- SW build: `PYTHONHASHSEED=0` (forwarded to the container)")
     lines.append(f"- dispatch_log: {bool(sc.get('dispatch_log', False))}")
     if sc.get("t1"):
-        lines += [f"- image ID: `{runner.test_cfg_record['image_id']}`",
+        lines += [f"- image_flags: `{image_flags}`",
+                  f"- image ID: `{runner.test_cfg_record['image_id']}`",
                   f"- changed bank lines: {runner.test_cfg_record['changed_bank_line_count']}",
                   "- configuration: `" + json.dumps(runner.test_cfg_record["configuration"], sort_keys=True) + "`"]
     (out_dir / "result.md").write_text("\n".join(lines) + "\n")

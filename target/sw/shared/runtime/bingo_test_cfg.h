@@ -35,7 +35,9 @@ typedef struct __attribute__((aligned(128))) {
     uint32_t cerf_fb_set;
     uint32_t user[4];
     uint32_t evlog_enable;
-    uint32_t reserved[4];
+    uint32_t recovery_hold;
+    uint32_t pm_access_level;
+    uint32_t reserved[2];
     uint32_t wd_type_h[16];
     uint32_t wd_type_c[16];
 } bingo_test_cfg_t;

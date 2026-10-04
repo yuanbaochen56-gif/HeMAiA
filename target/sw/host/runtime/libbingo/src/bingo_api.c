@@ -746,6 +746,8 @@ void bingo_hw_scheduler_init_pm(){
     writew(bingo_test_cfg.boost_policy, (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_bingo_boost_policy_addr()));
     writew(bingo_test_cfg.pm_idle_entry_delay, (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_idle_entry_delay_addr()));
     writew(bingo_test_cfg.pm_access_wake_hold, (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_access_wake_hold_addr()));
+    bingo_pm_set_recovery_hold(bingo_test_cfg.recovery_hold);
+    bingo_pm_set_access_level(bingo_test_cfg.pm_access_level);
     printf_safe("Chip(%x, %x): [Host] Bingo PM: test configuration\r\n",
                 get_current_chip_loc_x(), get_current_chip_loc_y());
 #else
@@ -755,6 +757,8 @@ void bingo_hw_scheduler_init_pm(){
     writew(BINGO_PM_IDLE_ENTRY_DELAY,    (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_idle_entry_delay_addr()));
     // 2d. quad_ctrl_access_wake_hold_addr: cycles an accessed cluster stays awake after the last access (0 = off)
     writew(BINGO_PM_ACCESS_WAKE_HOLD,    (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_access_wake_hold_addr()));
+    bingo_pm_set_recovery_hold(BINGO_RECOVERY_HOLD);
+    bingo_pm_set_access_level(BINGO_PM_ACCESS_LEVEL);
     printf_safe("Chip(%x, %x): [Host] Bingo PM: idle_level=%d normal_level=%d boost_level=%d idle_entry_delay=%d access_wake_hold=%d boost_policy=0x%x\r\n",
                 get_current_chip_loc_x(), get_current_chip_loc_y(),
                 BINGO_PM_IDLE_POWER_LEVEL, BINGO_PM_NORMAL_POWER_LEVEL,
@@ -799,6 +803,12 @@ void bingo_hw_scheduler_init_pm(){
     asm volatile("fence" ::: "memory");
 }
 
+void bingo_pm_set_recovery_hold(uint32_t cycles) {
+    writew(cycles, (uintptr_t)chiplet_addr_transform(quad_ctrl_bingo_recovery_hold_addr()));
+}
+void bingo_pm_set_access_level(uint32_t level) {
+    writew(level, (uintptr_t)chiplet_addr_transform(quad_ctrl_bingo_pm_access_level_addr()));
+}
 void bingo_evlog_enable(uint32_t on) {
     writew(on != 0, (uintptr_t)chiplet_addr_transform(quad_ctrl_bingo_evlog_ctrl_addr()));
 }

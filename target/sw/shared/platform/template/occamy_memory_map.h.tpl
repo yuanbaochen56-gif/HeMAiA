@@ -323,6 +323,12 @@ inline uintptr_t quad_ctrl_remote_proxy_timeout_addr(){
 inline uintptr_t quad_ctrl_access_wake_hold_addr(){
     return QUAD_AXI_LITE_NARROW_PERIPHERALS_BASE_ADDR + OCCAMY_QUAD_PERIPH_ACCESS_WAKE_HOLD_REG_OFFSET;
 }
+inline uintptr_t quad_ctrl_bingo_recovery_hold_addr(){
+    return QUAD_AXI_LITE_NARROW_PERIPHERALS_BASE_ADDR + OCCAMY_QUAD_PERIPH_BINGO_RECOVERY_HOLD_REG_OFFSET;
+}
+inline uintptr_t quad_ctrl_bingo_pm_access_level_addr(){
+    return QUAD_AXI_LITE_NARROW_PERIPHERALS_BASE_ADDR + OCCAMY_QUAD_PERIPH_BINGO_PM_ACCESS_LEVEL_REG_OFFSET;
+}
 
 inline uintptr_t quad_ctrl_boost_power_level_addr(){
     return QUAD_AXI_LITE_NARROW_PERIPHERALS_BASE_ADDR + OCCAMY_QUAD_PERIPH_BOOST_POWER_LEVEL_REG_OFFSET;

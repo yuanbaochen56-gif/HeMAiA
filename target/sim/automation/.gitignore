@@ -62,3 +62,5 @@
 !/test/3_start_bingo_watchdog_sim.py
 !/test/bingo_recovery_metrics.py
 !/test/bingo_sweep.py
+!/test/bingo_p8.py
+!/test/test_bingo_p8.py

@@ -51,6 +51,10 @@ def simulation_events(log, cores_per_cluster):
         if m:
             time, typ, clear, set_group = map(int, m.groups())
             events.append((time, 10, typ >> 4, typ & 15, clear | (set_group << 5)))
+        m = re.search(r"\[BINGO_RECOVERY_HOLD\] (\d+) core=(\d+) cluster=(\d+) active=([01])", line)
+        if m:
+            time, core, cluster, active = map(int, m.groups())
+            events.append((time, 12, cluster, core, active))
     return events
 
 

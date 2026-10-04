@@ -148,6 +148,7 @@ from hemaia_sim_runner import (  # noqa: E402
 )
 from bingo_bender_pin import check_bingo_bender_pin  # noqa: E402
 from bingo_evlog import check_evlog, check_evlog_pair  # noqa: E402
+from bingo_p8 import recovery_hold_config, check_recovery_hold, check_access_level  # noqa: E402
 
 HEMAIA_CI_CFG = "target/rtl/cfg/hemaia_ci.hjson"
 # The 1-cluster GEMM workloads need exactly one cluster, and they generate their
@@ -714,6 +715,14 @@ for _name, _baseline in (("t60", "t18"), ("t61", "t19"), ("t62", "t43")):
     SCENARIOS[_name + "e"] = dict(SCENARIOS[_name], evlog_enable=1)
 T1_FAMILIES["A6_F1"] = ("t60", "t60e", "t61", "t61e")
 T1_FAMILIES["A6_F2"] = ("t62", "t62e")
+SCENARIOS["t64"] = dict(SCENARIOS["tch3"], evlog_enable=1, evlog_pair=False,
+                       recovery_hold=0, p8_recovery=True)
+SCENARIOS["t64h"] = dict(SCENARIOS["t64"], recovery_hold_from="t64")
+for _name, _hold, _level in (("t65a", 1000, 0), ("t65s", 1000, 12), ("t65o", 0, 0)):
+    SCENARIOS[_name] = dict(SCENARIOS["tch0"], pm_access_level=_level,
+                           extra_flags=f"-DBINGO_PM_ACCESS_WAKE_HOLD={_hold}",
+                           p8_access=True)
+T1_FAMILIES["P8_F1"] = ("t64", "t64h", "t65a", "t65s", "t65o")
 
 TEST_CFG_FIELDS = (
     "magic", "version", "fault_gid", "fault_stall_cycles", "fault_cluster", "fault_core",
@@ -737,6 +746,7 @@ TEST_CFG_MACROS = {
     "BINGO_CERF_FB_CLUSTER": "cerf_fb_cluster", "BINGO_CERF_FB_CORE": "cerf_fb_core",
     "BINGO_CERF_FB_CLEAR": "cerf_fb_clear", "BINGO_CERF_FB_SET": "cerf_fb_set",
     "BINGO_EVLOG_ENABLE": "evlog_enable",
+    "BINGO_RECOVERY_HOLD": "recovery_hold", "BINGO_PM_ACCESS_LEVEL": "pm_access_level",
 }
 
 
@@ -745,7 +755,8 @@ def test_cfg_defaults(version: int = 2) -> dict:
         raise ValueError("unsupported test configuration version")
     cfg = dict.fromkeys(TEST_CFG_FIELDS, 0)
     cfg.update(magic=0x42475431, version=version, fault_gid=0xFFFFFFFF,
-               fault_cluster=0xFFFFFFFF, fault_core=0xFFFFFFFF, user=[0] * 4, evlog_enable=0)
+               fault_cluster=0xFFFFFFFF, fault_core=0xFFFFFFFF, user=[0] * 4, evlog_enable=0,
+               recovery_hold=0, pm_access_level=0)
     if version == 2:
         cfg.update(wd_type_h=[0] * 16, wd_type_c=[0] * 16)
     return cfg
@@ -764,6 +775,8 @@ def scenario_test_cfg(sc: dict, extra_flags: str = "", *, check_pair: bool = Tru
     """Translate only data controls. Unknown flags must never change a T1 graph."""
     cfg = test_cfg_defaults()
     cfg["evlog_enable"] = sc.get("evlog_enable", 0)
+    cfg["recovery_hold"] = sc.get("recovery_hold", 0)
+    cfg["pm_access_level"] = sc.get("pm_access_level", 0)
     if "t1_user" in sc:
         cfg["user"] = list(sc["t1_user"])
     for field in ("wd_type_h", "wd_type_c"):
@@ -801,7 +814,8 @@ def scenario_test_cfg(sc: dict, extra_flags: str = "", *, check_pair: bool = Tru
 
 def test_cfg_bytes(cfg: dict) -> bytes:
     version = cfg["version"]
-    if (version not in (1, 2) or set(cfg) - set(TEST_CFG_FIELDS) - {"user", "evlog_enable", "wd_type_h", "wd_type_c"}
+    if (version not in (1, 2) or set(cfg) - set(TEST_CFG_FIELDS) - {
+            "user", "evlog_enable", "recovery_hold", "pm_access_level", "wd_type_h", "wd_type_c"}
             or version == 1 and any(field in cfg for field in ("wd_type_h", "wd_type_c"))):
         raise ValueError("unsupported test configuration layout")
     user = cfg.get("user", [0] * 4)
@@ -810,7 +824,10 @@ def test_cfg_bytes(cfg: dict) -> bytes:
     evlog = cfg.get("evlog_enable", 0)
     if not isinstance(evlog, int) or not 0 <= evlog <= 0xFFFFFFFF:
         raise ValueError("evlog_enable must be a uint32 word")
-    words = [cfg[field] for field in TEST_CFG_FIELDS] + list(user) + [evlog] + [0] * 4
+    p8 = [cfg.get(field, 0) for field in ("recovery_hold", "pm_access_level")]
+    if any(not isinstance(value, int) or not 0 <= value <= 0xFFFFFFFF for value in p8):
+        raise ValueError("recovery_hold and pm_access_level must be uint32 words")
+    words = [cfg[field] for field in TEST_CFG_FIELDS] + list(user) + [evlog] + p8 + [0] * 2
     if version == 2:
         for field in ("wd_type_h", "wd_type_c"):
             values = cfg.get(field, [0] * 16)
@@ -2265,6 +2282,13 @@ class TestCfgSimRunner(NoTraceSimRunner):
 def run_scenario(name: str, args: argparse.Namespace) -> bool:
     os.environ["PYTHONHASHSEED"] = "0"
     sc = dict(SCENARIOS[name])
+    if sc.get("recovery_hold_from"):
+        previous = Path(args.out_root) / sc["recovery_hold_from"]
+        logs = list(previous.glob("task_*/bin/sim_run.log"))
+        if len(logs) != 1 or not (previous / "result.md").read_text().startswith(
+                f"# {sc['recovery_hold_from']}: PASS"):
+            raise ValueError("recovery hold requires a completed passing t64")
+        sc["recovery_hold"] = recovery_hold_config(logs[0].read_text())["W_cycles"]
     if args.wd_timeout is not None and sc.get("timeout_cycles") is not None:
         # Sweep: other watchdog timeouts (the confirm timeout stays twice as long)
         sc["timeout_cycles"] = args.wd_timeout
@@ -2364,14 +2388,20 @@ def run_scenario(name: str, args: argparse.Namespace) -> bool:
     problems = evaluate(name, sc, log_text, uart_text)
     if sc.get("evlog_enable"):
         problems += check_evlog(log_text, uart_text, len(sc["expect_core_types"]))
-        reference = Path(args.out_root) / name.removesuffix("e") / task_dir_name(0, task["ci_name"]) / "bin"
-        if (reference / "sim_run.log").exists():
-            problems += check_evlog_pair((reference / "sim_run.log").read_text(), log_text)
-        else:
-            problems.append("missing disabled EVLOG pair reference")
+        if sc.get("evlog_pair", True):
+            reference = Path(args.out_root) / name.removesuffix("e") / task_dir_name(0, task["ci_name"]) / "bin"
+            if (reference / "sim_run.log").exists():
+                problems += check_evlog_pair((reference / "sim_run.log").read_text(), log_text)
+            else:
+                problems.append("missing disabled EVLOG pair reference")
     elif "evlog_enable" in sc and "[EVLOG]" in uart_text:
         problems.append("disabled EVLOG printed items")
     problems += runner.core_type_problems
+    if sc.get("p8_recovery"):
+        problems += check_recovery_hold(log_text, uart_text, sc["recovery_hold"])
+    if sc.get("p8_access"):
+        level = test_cfg["pm_access_level"] or (6 if test_cfg["pm_access_wake_hold"] else 25)
+        problems += check_access_level(log_text, level, sc["dispatch_graph_csv"])
     if sc.get("early_exit_conf_pair"):
         reference = Path(args.out_root) / sc["early_exit_conf_pair"] / task_dir_name(0, task["ci_name"]) / "bin"
         try:

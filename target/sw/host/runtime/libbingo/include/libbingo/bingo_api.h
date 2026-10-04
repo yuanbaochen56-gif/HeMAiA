@@ -507,6 +507,16 @@ void bingo_close_all_clusters(bingo_task_t **task_list, uint32_t num_tasks);
 #ifndef BINGO_PM_ACCESS_WAKE_HOLD
 #define BINGO_PM_ACCESS_WAKE_HOLD   0
 #endif
+// Recovery hold uses top-clock cycles. Access-only DFS level is valid only
+// between normal and idle; both controls default to the original PM policy.
+#ifndef BINGO_RECOVERY_HOLD
+#define BINGO_RECOVERY_HOLD 0
+#endif
+#ifndef BINGO_PM_ACCESS_LEVEL
+#define BINGO_PM_ACCESS_LEVEL 0
+#endif
+void bingo_pm_set_recovery_hold(uint32_t cycles);
+void bingo_pm_set_access_level(uint32_t level);
 // Level 3: quad_ctrl cycles a proxy waits for the remote done of an exported
 // task before it gives up (stops, BINGO_STATUS.REMOTE_TIMEOUT); 0 = forever
 #ifndef BINGO_REMOTE_PROXY_TIMEOUT

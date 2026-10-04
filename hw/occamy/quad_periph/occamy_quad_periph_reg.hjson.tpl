@@ -641,5 +641,15 @@
       swaccess: "ro", hwaccess: "hwo",
       fields: [{ bits: "31:0", resval: "0", desc: "Timestamp of oldest event." }]
     },
+    { name: "BINGO_RECOVERY_HOLD",
+      desc: "Top-clock cycles to keep a live local substitute awake after the post-fence SMT update. Zero disables holding.",
+      swaccess: "rw", hwaccess: "hro",
+      fields: [{ bits: "31:0", resval: "0", desc: "Recovery hold cycles." }]
+    },
+    { name: "BINGO_PM_ACCESS_LEVEL",
+      desc: "DFS divider for a domain awake only for external access. Valid only when normal < level < idle, checked using all 32 bits; otherwise normal. Derate still takes the slower divider.",
+      swaccess: "rw", hwaccess: "hro",
+      fields: [{ bits: "31:0", resval: "0", desc: "Access-only servo divider; zero disables." }]
+    },
   ]
 }

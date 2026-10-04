@@ -106,8 +106,10 @@ Prerequisites
 -------------
 * Questa on PATH: ``source ~micasusr/design/scripts/questasim_2025.2.rc`` and
   ``export MTI_VCO_MODE=64 QSIM_VCO_MODE=64``
-* ``Bender.yml`` pins ``bingo_hw_manager`` to ``../bingo_hw_manager`` (mounted into
-  the build container via ``--bingo-repo``).
+* ``Bender.yml`` pins the tested Bingo Git revision; ``Bender.lock`` selects the
+  actual checkout. A Path checkout must match ``--bingo-repo`` (the container
+  mount). Startup rejects changed RTL, but only warns on RTL-identical HEAD
+  divergence or uncommitted changes.
 
 Run it
 ------
@@ -143,6 +145,7 @@ sys.path.insert(0, str(_REPO_ROOT / "util" / "automation_scripts"))
 from hemaia_sim_runner import (  # noqa: E402
     SIM_ERR_MARKER, SIM_OK_MARKER, HeMAiASimRunner, make_task, task_dir_name,
 )
+from bingo_bender_pin import check_bingo_bender_pin  # noqa: E402
 
 HEMAIA_CI_CFG = "target/rtl/cfg/hemaia_ci.hjson"
 # The 1-cluster GEMM workloads need exactly one cluster, and they generate their
@@ -2432,6 +2435,11 @@ def main() -> None:
                         help="keep the Snitch instruction traces (bin/logs/*.dasm); by default "
                              "they go to /dev/null, a hung core writes GBs of them")
     args = parser.parse_args()
+
+    try:
+        check_bingo_bender_pin(_REPO_ROOT, Path(args.bingo_repo))
+    except (OSError, ValueError) as exc:
+        sys.exit(f"Bingo Bender pin check failed: {exc}")
 
     if shutil.which("vsim") is None:
         sys.exit("vsim not found: source the Questa setup script first")

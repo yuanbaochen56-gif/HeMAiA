@@ -799,6 +799,60 @@ def c2b_scenarios() -> Dict[str, dict]:
 
 SCENARIOS.update(c2b_scenarios())
 
+def c4_scenarios() -> Dict[str, dict]:
+    """Generate the C4.2 matrix from the accepted fault/healthy templates."""
+    scenes = {}
+
+    def fault(name, template, family, **changes):
+        scene = dict(template, c4=True, c4_family=family, c4_role="fault",
+                     dispatch_log=True, evlog_enable=1, evlog_pair=False,
+                     evlog_allow_empty=False)
+        scene.update(changes)
+        scenes[name] = scene
+        return scene
+
+    def control(name, fault_name, template=None):
+        scene = dict(template if template is not None else scenes[fault_name],
+                     c4=True, c4_family=scenes[fault_name]["c4_family"],
+                     c4_role="control", c4_control=True, fault_gid=0xFFFFFFFF,
+                     same_as=fault_name, dispatch_log=True, evlog_enable=1,
+                     evlog_pair=False, evlog_allow_empty=True)
+        if template is None:
+            for key in ("cerf_fallback", "host_fallback", "dma_cerf"):
+                scene.pop(key, None)
+            scene.update(expect_fence=False, expect_takeover=False,
+                         expect_host_stuck=False, expect_type_confirm=False,
+                         expect_wd=[], substitute=None)
+            if scene["workload"] == "dma_chain_2cluster":
+                scene["expect_chain_clusters"] = list(SCENARIOS["tch0"]["expect_chain_clusters"])
+        scenes[name] = scene
+
+    for h in (50000, 100000, 200000):
+        name = f"c4_chain_h{h // 1000}"
+        fault(name, SCENARIOS["tch3"], "H", timeout_cycles=h, confirm_timeout_cycles=2*h)
+        control(name + "_ok", name)
+    for h in (20000, 40000):
+        name = f"c4_chain_a5_{h // 1000}"
+        th, tc = [0]*16, [0]*16
+        th[2], tc[2] = h, 2*h
+        fault(name, scenes["c4_chain_h100"], "A5", wd_type_h=th, wd_type_c=tc,
+              expect_type_confirm=True)
+        control(name + "_ok", name)
+    for r, template in ((0, "t40"), (125000, "t41")):
+        fault(f"c4_chain_r{r // 1000}", SCENARIOS[template], "A2")
+    fault("c4_eec_fault", SCENARIOS["t47"], "eec")
+    control("c4_eec_ok", "c4_eec_fault", SCENARIOS["t46"])
+    fault("c4_moe2_fault", SCENARIOS["s16"], "moe2", t1=True)
+    control("c4_moe2_ok", "c4_moe2_fault")
+    fault("c4_hfb_both", SCENARIOS["t53"], "hfb", c4_variant="both")
+    control("c4_hfb_both_ok", "c4_hfb_both", SCENARIOS["t55"])
+    fault("c4_hfb_one", SCENARIOS["t54"], "hfb", c4_variant="one")
+    control("c4_hfb_one_ok", "c4_hfb_one")
+    return scenes
+
+
+SCENARIOS.update(c4_scenarios())
+
 TEST_CFG_FIELDS = (
     "magic", "version", "fault_gid", "fault_stall_cycles", "fault_cluster", "fault_core",
     "fault_pre_stall_cycles", "fault_after_kernel", "risk_late", "risk_policy",
@@ -2083,7 +2137,7 @@ def check_core_types(expected: Dict[int, int]) -> List[str]:
 def evaluate(name: str, sc: dict, log_text: str, uart_text: str) -> List[str]:
     """Return the list of failed expectations (empty = pass)."""
     problems: List[str] = []
-    if name in A5_FAMILY:
+    if name in A5_FAMILY or (sc.get("c4") and "wd_type_h" in sc):
         problems += evaluate_type_threshold(sc, log_text)
     eoc_ok = SIM_OK_MARKER in log_text and SIM_ERR_MARKER not in log_text
     # (time, chip, core, cluster, dead_suspect, fenced)
@@ -2483,7 +2537,7 @@ def run_scenario(name: str, args: argparse.Namespace) -> bool:
         except (OSError, ValueError, KeyError) as error:
             print(f"[{name}] cannot load generated host fallback graph: {error}")
     problems = evaluate(name, sc, log_text, uart_text)
-    if sc.get("c2"):
+    if sc.get("c2") or sc.get("c4_control"):
         problems += healthy_problems(log_text, uart_text, sc["dispatch_graph_csv"])
     if sc.get("evlog_enable"):
         slots = (len(sc["expect_core_types"]) if "expect_core_types" in sc

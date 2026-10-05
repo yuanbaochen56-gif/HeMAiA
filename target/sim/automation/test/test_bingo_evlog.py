@@ -132,7 +132,8 @@ int main(void) {
         self.assertEqual(check_evlog("", "[EVLOG] count=0 dropped=0", 3,
                                      allow_empty=True), [])
         for name, scene in driver.SCENARIOS.items():
-            self.assertEqual(scene.get("evlog_allow_empty", False), name.startswith("c2_"))
+            self.assertEqual(scene.get("evlog_allow_empty", False),
+                             name.startswith("c2_") or scene.get("c4_control", False))
 
     def test_empty_log_is_rejected_with_simulation_events(self):
         log = "[BINGO_WD] 308000 chip=0 core=1 cluster=0 dead_suspect=1 fenced=0"

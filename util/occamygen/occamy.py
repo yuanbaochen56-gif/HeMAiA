@@ -896,6 +896,12 @@ def get_bingo_remote_kwargs(occamy_cfg):
     import_mask = quad.get("bingo_import_substitute_level_mask", level_mask & 3)
     if not (0 <= level_mask < 8 and 0 <= import_mask < 8):
         raise ValueError("bingo_substitute_level_mask / bingo_import_substitute_level_mask are 3-bit masks")
+    if (level_mask & 2) and "bingo_cluster_bound_core_types" not in quad:
+        raise ValueError("bingo_cluster_bound_core_types must be declared when level-2 substitution is enabled")
+    cluster_bound_types = quad.get("bingo_cluster_bound_core_types", [])
+    l2_type_en = (1 << nr_core_types) - 1
+    for core_type in cluster_bound_types:
+        l2_type_en &= ~(1 << core_type)
     # bingo_hw_manager_top masks bit 2 of ImportSubstituteLevelMask off: an
     # imported task is never exported again
     if import_mask & 4:
@@ -915,6 +921,8 @@ def get_bingo_remote_kwargs(occamy_cfg):
             raise ValueError(f"bingo_remote_target_chip: core type {core_type} out of range")
         if not 0 <= chip < (1 << chip_id_width):
             raise ValueError(f"bingo_remote_target_chip: chip {chip} does not fit {chip_id_width} bits")
+        if core_type in cluster_bound_types:
+            raise ValueError(f"bingo_remote_target_chip: cluster-bound core type {core_type} cannot have a level-3 target")
         targets[core_type] = chip
     peers = list(quad.get("bingo_remote_peer_chips", []))
     for chip in targets:
@@ -930,6 +938,7 @@ def get_bingo_remote_kwargs(occamy_cfg):
                               else f"{{1'b0, {chip_id_width}'d0}}")
     return {
         "bingo_substitute_level_mask": level_mask,
+        "bingo_substitute_l2_type_en": l2_type_en,
         "bingo_import_substitute_level_mask": import_mask,
         "bingo_remote_target_chip": ", ".join(target_entries),
         "bingo_remote_peer_chips": ", ".join(f"{chip_id_width}'d{c}" for c in reversed(peers)),

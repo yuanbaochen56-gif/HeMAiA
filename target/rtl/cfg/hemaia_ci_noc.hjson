@@ -71,6 +71,7 @@
     },
     nr_s1_quadrant: 1,
     s1_quadrant: {
+      bingo_cluster_bound_core_types: [1]
       noc_cfg: {
         en_floonoc: true,
         routing_algo: "XY",

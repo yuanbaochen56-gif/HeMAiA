@@ -367,6 +367,7 @@ module ${name}_quad_ctrl
     // the levels of an imported task's stand-in
     // (s1_quadrant.bingo_import_substitute_level_mask, default mask & 3)
     .SubstituteLevelMask       (3'd${bingo_substitute_level_mask}                   ),
+    .SubstituteL2TypeEn        (${1 << bingo_core_type_id_width}'d${bingo_substitute_l2_type_en}                   ),
     .ImportSubstituteLevelMask (3'd${bingo_import_substitute_level_mask}                   ),
     .RemoteNumPeers            (BingoRemoteNumPeers                                  ),
     .CoreTypeIdWidth          (${bingo_core_type_id_width}                                        ),

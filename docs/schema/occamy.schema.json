@@ -313,6 +313,15 @@
                     "minimum": 0,
                     "maximum": 3
                 },
+                "bingo_cluster_bound_core_types": {
+                    "type": "array",
+                    "description": "Bingo core types whose tasks must stay in their assigned cluster. These types have level-2 substitution disabled and cannot have a level-3 target. Must be explicitly declared when level 2 is enabled.",
+                    "items": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 15
+                    }
+                },
                 "bingo_remote_target_chip": {
                     "type": "object",
                     "description": "Level-3 remote target per bingo core type: {\"<core type id>\": <chip id>}. Types not listed are never exported. The own chip id is a loopback (the packets go through the quad AXI-Lite xbar back to this chiplet's remote link mailboxes). Default: none.",

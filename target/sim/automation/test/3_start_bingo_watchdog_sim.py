@@ -853,6 +853,86 @@ def c4_scenarios() -> Dict[str, dict]:
 
 SCENARIOS.update(c4_scenarios())
 
+def c3_scenarios() -> Dict[str, dict]:
+    """C3.2 coverage matrix, in the authorized healthy -> A -> ... -> E order.
+
+    Task IDs/slots are checked against each staged graph by the C3 harness;
+    confidence GEMM2 is resolved by the existing TestCfgSimRunner.
+    """
+    scenes = {}
+    configs = (
+        ("chain_l2", "tch0", L2_CFG_KEYS, "_l2"),
+        ("chain_l1", "tch0", {"bingo_substitute_level_mask": "1"}, "_cerf_l1"),
+        ("moe2_l1", "s17", {"bingo_substitute_level_mask": "1"}, "_cerf_l1"),
+        ("moe2_l2", "s17", L2_CFG_KEYS, "_l2"),
+        ("eec_l1", "t46", {"bingo_substitute_level_mask": "1"}, "_cerf_l1"),
+        ("hfb_l2", "t55", L2_CFG_KEYS, "_l2"),
+        ("inplace_l2", "s39", L2_CFG_KEYS, "_l2"),
+    )
+
+    def add(name, template, family, fault_type, **changes):
+        scene = dict(SCENARIOS[template], t1=True, c3=True, c3_family=family,
+                     c3_fault_type=fault_type, dispatch_log=True, extra_flags="",
+                     timeout_cycles=100000, confirm_timeout_cycles=200000,
+                     sim_timeout_s=1200)
+        for key in ("same_as", "early_exit_conf_pair", "expect_chain_clusters"):
+            scene.pop(key, None)
+        scene.update(changes)
+        scene["desc"] = f"C3 {family} {name}"
+        if fault_type == "post":
+            scene["extra_flags"] = "-DBINGO_WD_FAULT_AFTER_KERNEL=1"
+        scenes[name] = scene
+
+    for label, template, cfg, suffix in configs:
+        add(f"c3_ok_{label}", template, "healthy", "healthy", extra_cfg=dict(cfg),
+            cfg_suffix=suffix, fault_stall_cycles=None, fault_gid=0xFFFFFFFF,
+            fault_any_core=False, expect_eoc=True, expect_fence=False,
+            expect_host_stuck=False, expect_takeover=False, expect_wd=[],
+            substitute=None, healthy_test_cfg=True)
+        control = scenes[f"c3_ok_{label}"]
+        # Fault-specific branch checkers treat any configured stall as a fault.
+        # Use their unchanged healthy templates. Confidence slot resolution is
+        # only needed for faults; the healthy T1 record keeps position ANY.
+        control.pop("fault_slot_from_gemm2", None)
+        if label == "eec_l1":
+            control["early_exit_conf"] = False
+        if label.startswith("chain"):
+            control["expect_chain_clusters"] = [0] * 6
+    stalls = dict(pre=0, post=0, slow=350000, zombie=700000)
+    for gid in (0, 3, 5, 6):
+        for kind in stalls:
+            cluster = int(gid == 6)
+            add(f"c3_a_g{gid}_{kind}", "tch3", "A", kind, extra_cfg=dict(L2_CFG_KEYS),
+                cfg_suffix="_l2", fault_gid=gid, victim=(0, 1, cluster),
+                fault_stall_cycles=stalls[kind], substitute_cluster=1-cluster)
+    for gid in (0, 6):
+        add(f"c3_al1_g{gid}_pre", "tch3", "A-L1", "pre",
+            extra_cfg={"bingo_substitute_level_mask": "1"}, cfg_suffix="_cerf_l1",
+            fault_gid=gid, victim=(0, 1, int(gid == 6)), fault_stall_cycles=0,
+            substitute=None, expect_eoc=False, sim_timeout_s=900)
+    for mask, suffix in ((1, "_cerf_l1"), (3, "_l2")):
+        for gid, core in ((2, 1), (4, 0), (5, 1)):
+            for kind in ("pre", "post", "zombie"):
+                add(f"c3_b_m{mask}_g{gid}_{kind}", "s16", "B", kind,
+                    extra_cfg={"bingo_substitute_level_mask": str(mask)}, cfg_suffix=suffix,
+                    fault_gid=gid, victim=(0, core, 0), fault_stall_cycles=stalls[kind],
+                    sim_timeout_s=900 if mask == 1 and core == 1 else 1200)
+    for sample in (0, 1):
+        for kind in ("pre", "post", "zombie"):
+            add(f"c3_c_s{sample}_{kind}", "t47", "C", kind,
+                fault_stall_cycles=stalls[kind], t1_user=[sample, 0, 0, 0])
+    for both, template in ((False, "t54"), (True, "t53")):
+        for kind in ("pre", "post", "zombie"):
+            add(f"c3_d_{'both' if both else 'one'}_{kind}", template, "D", kind,
+                fault_stall_cycles=stalls[kind], fault_any_core=both)
+    for kind in ("pre", "post", "zombie"):
+        add(f"c3_e_{kind}", "s37", "E", kind, fault_gid=INPLACE_FAULT_GID,
+            fault_stall_cycles=stalls[kind])
+    return scenes
+
+
+SCENARIOS.update(c3_scenarios())
+
 TEST_CFG_FIELDS = (
     "magic", "version", "fault_gid", "fault_stall_cycles", "fault_cluster", "fault_core",
     "fault_pre_stall_cycles", "fault_after_kernel", "risk_late", "risk_policy",

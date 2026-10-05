@@ -2293,6 +2293,10 @@ def evaluate(name: str, sc: dict, log_text: str, uart_text: str) -> List[str]:
     if sc.get("dispatch_log"):
         # The injected permanently hung task remains pending on its fenced slot.
         pending = [(*sc["victim"], sc["fault_gid"])] if sc.get("expect_fence") else []
+        if sc.get("fault_any_core"):
+            for slot, seq in sc.get("expect_wd_other", {}).items():
+                if seq and tuple(seq[-1]) == (1, 1):      # declared to end fenced
+                    pending.append((*slot, sc["fault_gid"]))
         try:
             dispatch_done_pairs(log_text, pending, graph_csv=sc.get("dispatch_graph_csv"),
                                 host_slot=dispatch_host_slot(), checker_passed=not problems)

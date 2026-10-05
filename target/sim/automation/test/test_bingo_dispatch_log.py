@@ -15,6 +15,44 @@ ROOT = Path(__file__).resolve().parents[4]
 
 
 class DispatchLogTests(unittest.TestCase):
+    def fenced_pairing(self, *, second_task=0, fault_any_core=True, completed=False):
+        with tempfile.TemporaryDirectory() as directory:
+            graph = Path(directory) / "graph.csv"
+            graph.write_text("ID,Kernel,Chiplet,Core,Cluster\n"
+                             "8,__host_bingo_kernel_exit,0x0,2,0\n")
+            scene = dict(victim=(0, 1, 0), fault_gid=0, fault_stall_cycles=0,
+                         fault_any_core=fault_any_core, expect_fence=True,
+                         expect_eoc=True, expect_replay_stuck=False,
+                         expect_wd_other={(0, 1, 1): [(1, 0), (1, 1)]},
+                         dispatch_log=True, dispatch_graph_csv=graph)
+            log = ("[BINGO_DISPATCH] 10 chip=0 task=0 core=1 cluster=0\n"
+                   f"[BINGO_DISPATCH] 20 chip=0 task={second_task} core=1 cluster=1\n"
+                   "[BINGO_WD] 30 chip=0 core=1 cluster=0 dead_suspect=1 fenced=0\n"
+                   "[BINGO_WD] 40 chip=0 core=1 cluster=0 dead_suspect=1 fenced=1\n"
+                   "[BINGO_WD] 50 chip=0 core=1 cluster=1 dead_suspect=1 fenced=0\n"
+                   "[BINGO_WD] 60 chip=0 core=1 cluster=1 dead_suspect=1 fenced=1\n")
+            if completed:
+                log += f"[BINGO_DONE] 70 chip=0 task={second_task} core=1 cluster=1\n"
+            log += ("[BINGO_DISPATCH] 80 chip=0 task=8 core=2 cluster=0\n"
+                    "All chips finished successfully at 90\n")
+            with patch.object(watchdog, "dispatch_host_slot", return_value=(0, 2, 0)):
+                return watchdog.evaluate("pairing_fixture", scene, log, "Check [C_l3]: PASS\n")
+
+    def test_two_declared_fenced_fault_tasks_and_host_exit_pass(self):
+        self.assertEqual(self.fenced_pairing(), [])
+
+    def test_second_fenced_slot_must_hold_the_fault_task(self):
+        self.assertTrue(any("unpaired dispatches" in problem
+                            for problem in self.fenced_pairing(second_task=1)))
+
+    def test_other_fenced_slot_requires_fault_any_core(self):
+        self.assertTrue(any("unpaired dispatches" in problem
+                            for problem in self.fenced_pairing(fault_any_core=False)))
+
+    def test_declared_fenced_fault_task_must_still_be_pending(self):
+        self.assertTrue(any("unpaired dispatches" in problem
+                            for problem in self.fenced_pairing(completed=True)))
+
     def test_template_logging_is_simulation_only_and_done_is_opt_in(self):
         text = (ROOT / "hw/occamy/occamy_quad_ctrl.sv.tpl").read_text()
         start = text.index("logic dispatch_log_en;")

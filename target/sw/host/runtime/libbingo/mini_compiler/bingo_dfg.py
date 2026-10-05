@@ -1600,6 +1600,10 @@ class BingoDFG(DiGraphWrapper[BingoNode]):
         packed_val |= ((node.dep_set_tag or 0) << current_shift)
         current_shift += self.dep_tag_width
 
+        # Device exits routed away from their assigned slot retire in hardware.
+        packed_val |= (int(node.kernel_name == "__snax_bingo_kernel_exit") << current_shift)
+        current_shift += 1
+
         # Check if we exceeded 64 bits
         if current_shift > 64:
             raise ValueError(f"Packed task descriptor exceeds 64 bits: {current_shift} bits used.")
@@ -1686,6 +1690,9 @@ class BingoDFG(DiGraphWrapper[BingoNode]):
 
         fields['dep_set_tag'] = (packed_val >> current_shift) & ((1 << self.dep_tag_width) - 1)
         current_shift += self.dep_tag_width
+
+        fields['is_exit'] = (packed_val >> current_shift) & 0x1
+        current_shift += 1
 
         return fields
     def bingo_visualize_dfg(self, filename: str = "dfg_visualization", figsize: tuple = (20, 16)) -> None:

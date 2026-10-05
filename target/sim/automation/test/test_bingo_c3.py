@@ -12,6 +12,11 @@ DISPATCH = "# [BINGO_DISPATCH] 10 chip=0 task=4 core=0 cluster=0\n"
 WD = "# [BINGO_WD] 30 chip=0 core=0 cluster=0 dead_suspect=1 fenced=1\n"
 TIMEOUT = "TIMEOUT: simulation exceeded 900s\n"
 UART = "[Host] Bingo status: replay_stuck=0 fenced=0x0\nCheck [D]: PASS\n"
+ERR = ("# Simulation of chip_0_0 finished with status 3\n"
+       "# ** Fatal: All chips finished with errors at 100\n")
+STUCK = "# [BINGO_REPLAY_STUCK] 50 no live core\n"
+REPLAY = "# [BINGO_REPLAY] 40 chip=0 task=4\n"
+VLM_FATAL = "# ** Fatal: Read failure in vlm process (0,0)\n"
 
 
 class ClassificationTests(unittest.TestCase):
@@ -19,9 +24,9 @@ class ClassificationTests(unittest.TestCase):
         for expected, log, uart in (
                 ("recovered", OK, UART),
                 ("degraded", OK + "[BINGO_CERF_FB] 50 type 1 clear g0 set g1\n", UART),
-                ("detected-stuck", WD + TIMEOUT, "Host Start\n"),
+                ("detected-stuck", WD + STUCK + TIMEOUT, "Host Start\n"),
                 ("hang", TIMEOUT, "Host Start\n"),
-                ("wrong", OK, UART.replace("PASS", "FAIL"))):
+                ("wrong", ERR, UART.replace("PASS", "FAIL"))):
             with self.subTest(expected=expected):
                 result = classify(log, uart)
                 self.assertEqual(result["class"], expected)
@@ -52,14 +57,98 @@ class ClassificationTests(unittest.TestCase):
             self.assertIn("U1", classify_files(log, uart)["unclassified_reason"])
 
     def test_abnormal_markers(self):
-        for marker in ("finished with errors", "[BINGO_ASSERT]", "[ASSERT FAILED]",
+        for marker in ("[BINGO_ASSERT]", "[ASSERT FAILED]",
                        "Assertion some.property failed"):
             self.assertIn("U2", classify(OK + marker, UART)["unclassified_reason"])
         self.assertEqual(classify(WD + "Fatal: crash", UART)["class"], "unclassified")
-        self.assertEqual(classify(WD + TIMEOUT, UART)["class"], "detected-stuck")
+        self.assertEqual(classify(WD + TIMEOUT, UART)["class"], "hang")
+
+    def test_host_check_failure_is_completed_wrong_or_detected(self):
+        for stuck, expected in (("", "wrong"), (STUCK, "detected-stuck")):
+            with self.subTest(stuck=bool(stuck)):
+                result = classify(ERR + WD + REPLAY + stuck, UART.replace("PASS", "FAIL"))
+                self.assertTrue(result["eoc"])
+                self.assertEqual(result["exit_status"], 3)
+                self.assertEqual(result["class"], expected)
+                self.assertEqual(result["annot"], "after_replay")
+                self.assertEqual(result["unclassified_reason"], "")
+
+    def test_recovery_then_timeout_is_hang(self):
+        result = classify(WD + REPLAY + TIMEOUT, UART)
+        self.assertEqual(result["class"], "hang")
+        self.assertEqual(result["annot"], "after_replay")
+        self.assertEqual(classify(WD + TIMEOUT, UART)["annot"], "after_fence")
+
+    def test_truncated_and_conflicting_endings(self):
+        self.assertEqual(classify(DISPATCH, UART)["unclassified_reason"], "U2")
+        self.assertEqual(classify(OK + TIMEOUT, UART)["unclassified_reason"], "U2")
+
+    def test_status_check_consistency(self):
+        for log, uart in ((ERR, UART), (OK, UART.replace("PASS", "FAIL")),
+                          (OK + "Simulation of chip_0_0 finished with status 0\n",
+                           UART.replace("PASS", "FAIL"))):
+            with self.subTest(log=log, uart=uart):
+                self.assertEqual(classify(log, uart)["unclassified_reason"], "U3")
+
+    def test_non_chip_end_fatal(self):
+        self.assertEqual(classify(OK + "# ** Fatal: simulator crash\n", UART)
+                         ["unclassified_reason"], "U2")
+        self.assertEqual(classify(ERR + "# ** Fatal: simulator crash\n",
+                                 UART.replace("PASS", "FAIL"))["unclassified_reason"], "U2")
+
+    def test_timeout_final_unique_vlm_fatal_is_kill_artifact(self):
+        for prefix, expected in ((WD + REPLAY, "hang"), (WD + STUCK, "detected-stuck")):
+            with self.subTest(expected=expected):
+                log = prefix + TIMEOUT + VLM_FATAL + "\n  \n"
+                result = classify(log, UART)
+                self.assertEqual(result["class"], expected)
+                self.assertTrue(result["kill_artifact"])
+                self.assertEqual(result["unclassified_reason"], "")
+                self.assertEqual(result["fatal_lines"], [dict(
+                    source="sim_run.log", line_number=4, raw=VLM_FATAL.strip(),
+                    chip_end=False, kill_artifact=True)])
+        result = classify(TIMEOUT + VLM_FATAL.replace("(0,0)", "(12,34)"), UART)
+        self.assertEqual(result["class"], "hang")
+        self.assertTrue(result["kill_artifact"])
+
+    def test_vlm_fatal_without_timeout_is_abnormal(self):
+        result = classify(OK + VLM_FATAL, UART)
+        self.assertEqual(result["unclassified_reason"], "U2")
+        self.assertFalse(result["kill_artifact"])
+
+    def test_vlm_fatal_not_final_is_abnormal(self):
+        result = classify(TIMEOUT + VLM_FATAL + "# more output\n", UART)
+        self.assertEqual(result["unclassified_reason"], "U2")
+        self.assertFalse(result["kill_artifact"])
+
+    def test_vlm_fatal_not_unique_is_abnormal(self):
+        for log, uart in (
+                (TIMEOUT + "# ** Fatal: other crash\n" + VLM_FATAL, UART),
+                (TIMEOUT + VLM_FATAL + "# ** Fatal: other crash\n", UART),
+                (TIMEOUT + VLM_FATAL + VLM_FATAL, UART),
+                (TIMEOUT + VLM_FATAL, UART + "** Fatal: UART crash\n")):
+            with self.subTest(log=log, uart=uart):
+                result = classify(log, uart)
+                self.assertEqual(result["unclassified_reason"], "U2")
+                self.assertFalse(result["kill_artifact"])
+                self.assertEqual(len(result["fatal_lines"]), 2)
+
+    def test_multichip_status_uses_maximum(self):
+        log = (ERR.replace("chip_0_0", "chip_12_34")
+               + "Simulation of chip_1_2 finished with status 0\n")
+        result = classify(log, UART.replace("PASS", "FAIL"))
+        self.assertEqual(result["exit_status"], 3)
+        self.assertEqual(result["class"], "wrong")
+        self.assertTrue(result["fatal_lines"][0]["chip_end"])
+        self.assertFalse(result["kill_artifact"])
+
+    def test_cerf_annotation(self):
+        result = classify(OK + WD + "[BINGO_CERF_FB] 50 type 1 clear g0 set g1\n", UART)
+        self.assertEqual(result["class"], "degraded")
+        self.assertEqual(result["annot"], "after_fence;after_cerf")
 
     def test_all_checks_status_and_fault_slot(self):
-        self.assertEqual(classify(OK, UART + "Check [other]: FAIL")["class"], "wrong")
+        self.assertEqual(classify(ERR, UART + "Check [other]: FAIL")["class"], "wrong")
         self.assertEqual(classify(OK + DISPATCH, UART, fault_gid=4,
                                   victim=(0, 0, 0))["class"], "recovered")
         self.assertEqual(classify(OK + DISPATCH, UART, fault_gid=4,

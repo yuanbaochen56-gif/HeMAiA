@@ -21,7 +21,7 @@ IDS = {"copy": 1, "add": 2, "backup": 3, "check": 4,
        "primary_exit": 7, "substitute_exit": 9}
 
 
-def generate(directory, unsafe=False):
+def generate(directory, unsafe=False, branch_aware=False):
     platform = directory / "occamy.h"
     platform.write_text(
         "#define N_CHIPLETS 1\n#define CHIPLET_ID_0 0x00\n"
@@ -44,6 +44,8 @@ def generate(directory, unsafe=False):
             "--platformcfg", str(platform)]
     if unsafe:
         argv.append("--allow-unsafe-replay")
+    if branch_aware:
+        argv.append("--branch-aware-check")
     with patch.object(sys, "argv", argv), patch.dict(sys.modules), \
          patch.object(BingoDFG, "bingo_compile_dfg", compile), \
          patch.object(BingoDFG, "bingo_visualize_dfg"), \
@@ -55,6 +57,35 @@ def generate(directory, unsafe=False):
 
 
 class InplaceCerfWorkloadTests(unittest.TestCase):
+    def test_branch_aware_checks_nodes_groups_and_edges(self):
+        spec = importlib.util.spec_from_file_location("inplace_branch_workload", WORKLOAD / "main_bingo.py")
+        workload = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(workload)
+        platform = dict(chiplet_ids=[0])
+        graph, nodes = workload.build_graph(
+            platform, {0: 1, 1: 2, 2: 0}, 32, branch_aware_check=True)
+        add, backup, check, check_bk = [nodes[k] for k in ("add", "backup", "check", "check_bk")]
+        self.assertEqual(list(graph.predecessors(check)), [add])
+        self.assertEqual(list(graph.predecessors(check_bk)), [backup])
+        self.assertTrue(check.cond_exec_en and check_bk.cond_exec_en)
+        self.assertEqual((check.cond_exec_group_id, check_bk.cond_exec_group_id), (0, 1))
+        self.assertIs(check.kernel_args.output_data_addr, add.kernel_args.c_addr)
+        self.assertIs(check_bk.kernel_args.output_data_addr, backup.kernel_args.output_addr)
+        self.assertEqual(check_bk.kernel_args.golden_data_addr.symbol_name, "golden_once")
+        self.assertEqual(check_bk.kernel_args.name, "bk")
+
+    def test_branch_aware_compiles_and_preserves_fault_gid(self):
+        driver_path = ROOT / "target/sim/automation/test/3_start_bingo_watchdog_sim.py"
+        driver = runpy.run_path(str(driver_path))
+        with tempfile.TemporaryDirectory() as temporary:
+            graph, _, _ = generate(Path(temporary), branch_aware=True)
+            ids = driver["replay_safety_task_ids"](
+                Path(temporary) / "final_dfg.csv", branch_aware=True)
+            self.assertEqual(ids["add"], driver["INPLACE_FAULT_GID"])
+            self.assertEqual(ids["check_bk"], ids["check"] + 1)
+            self.assertEqual(sum(node.node_name in ("check", "check_bk")
+                                 for node in graph.node_list), 2)
+
     def test_protected_graph_outputs_groups_and_exits(self):
         with tempfile.TemporaryDirectory() as temporary:
             graph, header, emitted = generate(Path(temporary))

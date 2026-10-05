@@ -40,7 +40,7 @@ def emit_data(count, unsafe):
     ]) + "\n"
 
 
-def build_graph(platform, core_types, count, unsafe=False):
+def build_graph(platform, core_types, count, unsafe=False, branch_aware_check=False):
     dfg = BingoDFG(1, 2, 2, True, platform["chiplet_ids"],
                    core_type_ids=core_types, allow_unsafe_replay=unsafe)
     size = count * 4
@@ -73,14 +73,26 @@ def build_graph(platform, core_types, count, unsafe=False):
         kernel_args=HostBingoKernelCheckResultArgs(
             golden_data_addr=BingoMemSymbol("golden_acc"),
             output_data_addr=acc, data_size=size, name="acc"))
-    for node in (gating, copy, add, backup, check):
+    nodes = {"gating": gating, "copy": copy, "add": add, "backup": backup, "check": check}
+    if branch_aware_check:
+        check.cond_exec_en = True
+        check.cond_exec_group_id = 0
+        check_bk = BingoNode(0, 0, 2, node_name="check_bk",
+            kernel_name="__host_bingo_kernel_check_result",
+            kernel_args=HostBingoKernelCheckResultArgs(
+                golden_data_addr=BingoMemSymbol("golden_once"),
+                output_data_addr=bk, data_size=size, name="bk"))
+        check_bk.cond_exec_en = True
+        check_bk.cond_exec_group_id = 1
+        nodes["check_bk"] = check_bk
+    for node in nodes.values():
         dfg.bingo_add_node(node)
-    for before, after in ((gating, copy), (copy, add), (copy, backup),
-                          (add, check), (backup, check)):
+    edges = [(gating, copy), (copy, add), (copy, backup), (add, check)]
+    edges.append((backup, check_bk) if branch_aware_check else (backup, check))
+    for before, after in edges:
         dfg.bingo_add_edge(before, after)
     dfg.bingo_add_cerf_fallback(add, backup)
-    return dfg, {"gating": gating, "copy": copy, "add": add,
-                 "backup": backup, "check": check}
+    return dfg, nodes
 
 
 def main():
@@ -92,6 +104,7 @@ def main():
     parser.add_argument("--platformcfg", type=pathlib.Path, required=True)
     parser.add_argument("--data_h", type=pathlib.Path)
     parser.add_argument("--allow-unsafe-replay", action="store_true")
+    parser.add_argument("--branch-aware-check", action="store_true")
     args = parser.parse_args()
     args.output_dir.mkdir(parents=True, exist_ok=True)
     params = hjson.loads(args.cfg.read_text())
@@ -106,7 +119,7 @@ def main():
     if args.data_h:
         args.data_h.write_text(emit_data(count, args.allow_unsafe_replay))
     dfg, _ = build_graph(platform, parse_bingo_core_type_ids(args.platformcfg),
-                         count, args.allow_unsafe_replay)
+                         count, args.allow_unsafe_replay, args.branch_aware_check)
     post = [
         "{",
         "    uint32_t __branch = !!(bingo_cerf_fb_evt() & (1u << BINGO_CORE_TYPE_ID(0, 1)));",

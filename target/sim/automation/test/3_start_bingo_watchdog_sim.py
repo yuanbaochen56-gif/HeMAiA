@@ -933,6 +933,19 @@ def c3_scenarios() -> Dict[str, dict]:
 
 SCENARIOS.update(c3_scenarios())
 
+
+def c3_e2_scenarios() -> Dict[str, dict]:
+    scenes = {"c3_ok_inplace_e2": dict(
+        SCENARIOS["c3_ok_inplace_l2"], inplace_branch_check=True)}
+    for kind in ("pre", "post", "zombie"):
+        scenes[f"c3_e2_{kind}"] = dict(SCENARIOS[f"c3_e_{kind}"], inplace_branch_check=True)
+    for name, scene in scenes.items():
+        scene["desc"] = f"C3 E2 branch-aware in-place check: {name}"
+    return scenes
+
+
+SCENARIOS.update(c3_e2_scenarios())
+
 TEST_CFG_FIELDS = (
     "magic", "version", "fault_gid", "fault_stall_cycles", "fault_cluster", "fault_core",
     "fault_pre_stall_cycles", "fault_after_kernel", "risk_late", "risk_policy",
@@ -1737,7 +1750,7 @@ def check_early_exit_conf_pair(first_log: str, first_uart: str,
     return []
 
 
-def replay_safety_task_ids(path: Path) -> dict:
+def replay_safety_task_ids(path: Path, *, branch_aware=False) -> dict:
     """Read the unique workload kernels and protected exits from the compiled CSV."""
     with path.open() as stream:
         rows = list(csv.DictReader(stream))
@@ -1749,6 +1762,11 @@ def replay_safety_task_ids(path: Path) -> dict:
         "check": "__host_bingo_kernel_check_result",
     }.items():
         matches = [row for row in rows if row["Kernel"] == kernel]
+        if name == "check" and branch_aware:
+            if len(matches) != 2:
+                raise ValueError("expected two branch-aware checks in generated replay safety graph")
+            result["check_bk"] = int(matches[1]["ID"])
+            matches = matches[:1]
         if len(matches) != 1:
             raise ValueError(f"expected one {name} in generated replay safety graph")
         result[name] = int(matches[0]["ID"])
@@ -2390,10 +2408,16 @@ def evaluate(name: str, sc: dict, log_text: str, uart_text: str) -> List[str]:
 class CoreTypeCheckedSimRunner(HeMAiASimRunner):
     """Check the compiled configuration before a long simulation can outlive it."""
 
-    def __init__(self, *, expected_core_types=None, **kwargs):
+    def __init__(self, *, expected_core_types=None, inplace_branch_check=False, **kwargs):
         super().__init__(**kwargs)
         self.expected_core_types = expected_core_types
+        self.inplace_branch_check = inplace_branch_check
         self.core_type_problems = []
+
+    def _container(self, command, **kwargs):
+        if self.inplace_branch_check and list(command[:2]) == ["make", "apps"]:
+            command = [*command, "BRANCH_CHECK=1"]
+        return super()._container(command, **kwargs)
 
     def build_apps_and_stage(self, tasks):
         os.environ["PYTHONHASHSEED"] = "0"
@@ -2563,6 +2587,7 @@ def run_scenario(name: str, args: argparse.Namespace) -> bool:
             "inject_fault": sc["fault_stall_cycles"] is not None} if sc.get("t1") else
            {"inject_fault": sc["fault_stall_cycles"] is not None} if sc.get("early_exit") else {}),
         expected_core_types=sc.get("expect_core_types"),
+        inplace_branch_check=sc.get("inplace_branch_check", False),
         repo_root=_REPO_ROOT,
         output_dir=out_dir,
         engine="vsim",
@@ -2603,7 +2628,8 @@ def run_scenario(name: str, args: argparse.Namespace) -> bool:
         graph_csv = (_REPO_ROOT / "target/sw/host/apps/offload_bingo_hw/single_chip/workloads"
                      / sc["workload"] / "final_dfg.csv")
         try:
-            sc["replay_safety_task_ids"] = replay_safety_task_ids(graph_csv)
+            sc["replay_safety_task_ids"] = replay_safety_task_ids(
+                graph_csv, branch_aware=sc.get("inplace_branch_check", False))
             shutil.copyfile(graph_csv, out_dir / "replay_safety_final_dfg.csv")
             if sc.get("fault_gid", INPLACE_FAULT_GID) != sc["replay_safety_task_ids"]["add"]:
                 raise ValueError("fault_gid differs from the generated in-place add task ID")

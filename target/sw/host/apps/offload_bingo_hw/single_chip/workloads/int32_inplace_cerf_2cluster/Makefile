@@ -15,17 +15,19 @@ BENDER = bender
 SNITCH_ROOT = $(shell $(BENDER) path snitch_cluster)
 PLATFORM_H = $(MK_DIR)/../../../../../../../../target/sw/shared/platform/generated/occamy.h
 UNSAFE_REPLAY = $(if $(findstring -DBINGO_INPLACE_UNSAFE_REPLAY=1,$(USER_FLAGS)),1,0)
+BRANCH_CHECK ?= 0
 REPLAY_CONFIG = $(MK_DIR)/build/replay_config
 
 $(DATA_H) $(OFFLOAD_H): $(MK_DIR)/main_bingo.py $(DATA_CFG) $(PLATFORM_H) $(REPLAY_CONFIG)
 	python3 $(MK_DIR)/main_bingo.py --output_dir $(MK_DIR) --data_h $(DATA_H) \
 		-c $(DATA_CFG) --platformcfg $(PLATFORM_H) \
 		--hwcfg $(SNITCH_ROOT)/target/snitch_cluster/cfg/snax_versacore_to_256KB_cluster.hjson \
-		$(if $(filter 1,$(UNSAFE_REPLAY)),--allow-unsafe-replay,)
+		$(if $(filter 1,$(UNSAFE_REPLAY)),--allow-unsafe-replay,) \
+		$(if $(filter 1,$(BRANCH_CHECK)),--branch-aware-check,)
 
 $(REPLAY_CONFIG): FORCE_REPLAY_CONFIG
 	@mkdir -p $(dir $@)
-	@printf '%s\n' '$(UNSAFE_REPLAY)' | cmp -s - $@ || printf '%s\n' '$(UNSAFE_REPLAY)' > $@
+	@printf '%s\n' '$(UNSAFE_REPLAY) $(BRANCH_CHECK)' | cmp -s - $@ || printf '%s\n' '$(UNSAFE_REPLAY) $(BRANCH_CHECK)' > $@
 .PHONY: FORCE_REPLAY_CONFIG
 FORCE_REPLAY_CONFIG:
 

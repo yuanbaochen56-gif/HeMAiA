@@ -3,6 +3,7 @@ from pathlib import Path
 import runpy
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from bingo_c3 import CLASSES, REASONS, classify, classify_files, outcome_candidates
 
@@ -220,6 +221,22 @@ class ScenarioTests(unittest.TestCase):
                        scene["c3_family"] == "B" and scene["cfg_suffix"] == "_cerf_l1"
                        and scene["fault_gid"] in (2, 5))
             self.assertEqual(scene["sim_timeout_s"], 900 if blocked else 1200)
+
+    def test_e2_scenarios_and_make_switch(self):
+        scenes = self.driver["c3_e2_scenarios"]()
+        self.assertEqual(list(scenes), ["c3_ok_inplace_e2", "c3_e2_pre",
+                                       "c3_e2_post", "c3_e2_zombie"])
+        for scene in scenes.values():
+            self.assertTrue(scene["inplace_branch_check"])
+            self.assertEqual(scene["workload"], "int32_inplace_cerf_2cluster")
+        cls = self.driver["CoreTypeCheckedSimRunner"]
+        runner = object.__new__(cls)
+        runner.inplace_branch_check = True
+        with patch.object(self.driver["HeMAiASimRunner"], "_container") as container:
+            runner._container(["make", "apps", "WORKLOAD=int32_inplace_cerf_2cluster"])
+            self.assertEqual(container.call_args.args[0][-1], "BRANCH_CHECK=1")
+            runner._container(["make", "rtl"])
+            self.assertEqual(container.call_args.args[0], ["make", "rtl"])
 
 
 if __name__ == "__main__":

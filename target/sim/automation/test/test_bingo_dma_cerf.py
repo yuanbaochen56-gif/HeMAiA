@@ -44,9 +44,10 @@ def fixture(double):
             "logical_cluster=0",
             "[BINGO_DISPATCH] 100 chip=0 task=2 core=1 cluster=1",
             "[BINGO_DISPATCH] 110 chip=0 task=4 core=2 cluster=0",
+            # The victim's exit is routed away and retired by the manager
+            "[BINGO_EXIT_ABSORB] 115 chip=0 task=7 logical_core=1 logical_cluster=0 core=1 cluster=1",
             "[BINGO_REMAP] 115 chip=0 task=7 logical_core=1 -> physical_core=1 cluster=1 "
             "logical_cluster=0",
-            "[BINGO_DISPATCH] 120 chip=0 task=7 core=1 cluster=1",
             "[BINGO_DISPATCH] 130 chip=0 task=9 core=1 cluster=1",
             "[BINGO_STATUS] 150 chip=0 replay_stuck=0 remote_done_mismatch=0 "
             "link_error=0 fenced=0x2 dead_suspect=0x2 remote_timeout=0",
@@ -58,9 +59,7 @@ def fixture(double):
         f"[Host] Bingo status: replay_stuck={branch} remote_done_mismatch=0 link_error=0 "
         f"fenced=0x{0x12 if double else 0x2:x} cerf=0x{1 << branch:x} cerf_fb_en=0x4 "
         f"cerf_fb_evt=0x{4 if double else 0:x}\n"
-        + ("" if double else
-           "[Cluster 1 Core 1]: Exit task of cluster 0 core 1 taken over, not exiting (chip 0)\n")
-        + f"[DmaCERF] gating selected g0; join complete; output branch {branch}\n"
+        f"[DmaCERF] gating selected g0; join complete; output branch {branch}\n"
         f"[Host] Check [A_branch_{branch}]: PASS\n")
     return "\n".join(lines), uart
 
@@ -133,7 +132,11 @@ class DmaCerfCheckerTests(unittest.TestCase):
             "substitute suspect": (
                 log + "\n[BINGO_WD] 105 chip=0 core=1 cluster=1 dead_suspect=1 fenced=0", uart),
             "stuck": (log + "\n[BINGO_REPLAY_STUCK] 110 chip=0 core=1 cluster=1: no live core", uart),
-            "no takeover": (log, drop(uart, "taken over")),
+            "no absorb": (drop(log, "[BINGO_EXIT_ABSORB]"), uart),
+            "absorbed twice": (log + "\n[BINGO_EXIT_ABSORB] 125 chip=0 task=7 logical_core=1 "
+                               "logical_cluster=0 core=1 cluster=1", uart),
+            "takeover": (log, uart + "[Cluster 1 Core 1]: Exit task of cluster 0 core 1 taken over, "
+                         "not exiting (chip 0)\n"),
             "backup output checked": (log, uart.replace("A_branch_0", "A_branch_1")),
         }
         for label, (bad_log, bad_uart) in mutations.items():

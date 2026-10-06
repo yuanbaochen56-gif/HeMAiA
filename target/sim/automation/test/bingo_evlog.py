@@ -55,6 +55,15 @@ def simulation_events(log, cores_per_cluster):
         if m:
             time, core, cluster, active = map(int, m.groups())
             events.append((time, 12, cluster, core, active))
+        # Exit retired by the manager (bingo ed16cd7): slot = physical core that
+        # would have run it, argument = logical flat slot << 12 | task id.
+        m = re.search(r"\[BINGO_EXIT_ABSORB\] (\d+) chip=(\d+) task=(\d+) logical_core=(\d+) "
+                      r"logical_cluster=(\d+) core=(\d+) cluster=(\d+)", line)
+        if m:
+            time, chip, task, logical_core, logical_cluster, core, cluster = map(int, m.groups())
+            if chip: raise ValueError("A6 system checker requires one chip")
+            logical = logical_core + logical_cluster * cores_per_cluster
+            events.append((time, 15, cluster, core, logical * 4096 + task))
     return events
 
 

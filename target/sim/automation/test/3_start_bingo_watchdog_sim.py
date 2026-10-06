@@ -1171,6 +1171,26 @@ REPLAY_RE = re.compile(r"\[BINGO_REPLAY\].*")
 REMAP_FIELDS_RE = re.compile(r"\[BINGO_REMAP\] \d+ chip=(\d+) task=(\d+) logical_core=(\d+) -> physical_core=(\d+) cluster=(\d+)")
 REPLAY_FIELDS_RE = re.compile(r"\[BINGO_REPLAY\] \d+ chip=(\d+) task=(\d+) type=\d+ logical_core=(\d+) from=(\d+) to=(\d+) cluster=(\d+) to_cluster=(\d+)")
 RETIRED_RE = re.compile(r"\[BINGO_RETIRED\] \d+ chip=(\d+) core=(\d+) cluster=(\d+)")
+EXIT_ABSORB_RE = re.compile(r"\[BINGO_EXIT_ABSORB\] \d+ chip=(\d+) task=(\d+) logical_core=(\d+) "
+                            r"logical_cluster=(\d+) core=(\d+) cluster=(\d+)")
+
+
+def absorbed_exit_slots(log_text: str) -> List[Tuple[int, int, int]]:
+    """Logical (chip, core, cluster) of every exit the manager retired in place of a run."""
+    return [(int(m[1]), int(m[3]), int(m[4])) for m in EXIT_ABSORB_RE.finditer(log_text)]
+
+
+def exit_absorb_problems(log_text: str, uart_text: str, slot: Tuple[int, int, int]) -> List[str]:
+    """Since bingo ed16cd7 an exit routed away from its own core is retired by the
+    manager: one [BINGO_EXIT_ABSORB] for its logical slot, and no other core runs it
+    (the device runtime would print 'taken over')."""
+    problems = []
+    absorbed = absorbed_exit_slots(log_text)
+    if absorbed != [tuple(slot)]:
+        problems.append(f"absorbed exits {absorbed}, expected one for logical slot {tuple(slot)}")
+    if "taken over" in uart_text:
+        problems.append("an exit task was taken over by another core")
+    return problems
 FENCE_DROP_RE = re.compile(r"\[BINGO_FENCE\] \d+ chip=(\d+) core=(\d+) cluster=(\d+) dropped done task=(\d+)")
 STUCK_RE = re.compile(r"\[BINGO_REPLAY_STUCK\].*")
 PARK_RE = re.compile(r"\[BINGO_PARK\] \d+ chip=(\d+) core=(\d+) cluster=(\d+) (HOLD|FAIL|dropped, fenced|PARKED -> core=(\d+) cluster=(\d+)|UNPARKED|UNPARK \(\d+ tasks left elsewhere\))")
@@ -1551,8 +1571,8 @@ def evaluate_dma_cerf(sc: dict, log_text: str, uart_text: str) -> List[str]:
         # copy 1 and both DM exits are skipped; the substitute drains copy 0
         expected.update({2: [], 3: [(2, 0)], 7: [], 9: []})
     else:
-        # the substitute runs copy 1 and the victim's exit, then its own
-        expected.update({2: [(1, 1)], 3: [], 7: [(1, 1)], 9: [(1, 1)]})
+        # the substitute runs copy 1 and its own exit; the manager absorbs the victim's
+        expected.update({2: [(1, 1)], 3: [], 7: [], 9: [(1, 1)]})
     for task, want in expected.items():
         if slots[task] != want:
             problems.append(f"task {task} dispatched on (core, cluster) {slots[task]}, expected {want}")
@@ -1806,12 +1826,15 @@ def evaluate_replay_safety(sc: dict, log_text: str, uart_text: str) -> List[str]
         "add": [(0, 1, 0), (0, 1, 1)] if unsafe else [(0, 1, 0)],
         "backup": [(0, 2, 0)] if protected_fault else [],
         "check": [(0, 2, 0)],
-        "primary_exit": [] if protected_fault else [(0, 1, int(unsafe))],
+        # The unsafe replay routes the victim's exit away: the manager absorbs it.
+        "primary_exit": [] if faulty else [(0, 1, 0)],
         "substitute_exit": [] if protected_fault else [(0, 1, 1)],
     }
     for name, want in expected.items():
         if [item[:3] for item in seen.get(ids[name], [])] != want:
             problems.append(f"wrong {name} dispatch count or slot")
+    if absorbed_exit_slots(log_text) != ([(0, 1, 0)] if unsafe else []):
+        problems.append("expected one absorbed victim exit only in the unsafe control")
     replays = [int(time) for time in re.findall(
         rf"\[BINGO_REPLAY\] (\d+) chip=0 task={ids['add']} ", log_text)]
     if len(replays) != int(unsafe):
@@ -1892,13 +1915,19 @@ def evaluate_host_fallback(sc: dict, log_text: str, uart_text: str) -> List[str]
         "copy": [(0, 1, 0), (0, 1, 1)] if faulty else [(0, 1, 0)],
         "backup": [(0, 2, 0)] if double else [],
         "check": [(0, 2, 0)],
-        "primary_exit": [] if double else [(0, 1, int(faulty))],
+        # A single fault routes the victim's exit away: the manager absorbs it.
+        "primary_exit": [] if faulty else [(0, 1, 0)],
         "substitute_exit": [] if double else [(0, 1, 1)],
     }
     for name, want in expected.items():
         actual = [item[:3] for item in seen.get(ids[name], [])]
         if actual != want:
             problems.append(f"automatic host fallback {name} task {ids[name]} slots {actual}, expected {want}")
+    absorbed = absorbed_exit_slots(log_text)
+    if absorbed != ([(0, 1, 0)] if faulty and not double else []):
+        problems.append(f"absorbed exits {absorbed}, expected one victim exit only for a single fault")
+    if "taken over" in uart_text:
+        problems.append("an exit task was taken over by another core")
     replay_times = [int(t) for t in re.findall(
         rf"\[BINGO_REPLAY\] (\d+) chip=0 task={ids['copy']} ", log_text)]
     if len(replay_times) != int(faulty):
@@ -2211,9 +2240,8 @@ def evaluate_park(sc: dict, log_text: str, uart_text: str) -> List[str]:
         problems.append(f"remap other than logical core {core} -> {sub} (cluster {sub_cluster}): {wrong[:3]}")
     if REPLAY_RE.findall(log_text) or RETIRED_RE.findall(log_text):
         problems.append("a parked core was replayed or retired")
-    if not sc.get("expect_unpark") and \
-            f"Exit task of cluster {cluster} core {core} taken over" not in uart_text:
-        problems.append(f"no 'Exit task of cluster {cluster} core {core} taken over' in the UART log")
+    if not sc.get("expect_unpark"):
+        problems += exit_absorb_problems(log_text, uart_text, (chip, core, cluster))
     host = re.search(r"\[Host\] Bingo status: .* park_fail=0x([0-9a-fA-F]+)", uart_text)
     if not host or int(host.group(1), 16) != 0:
         problems.append(f"host park_fail {host.group(1) if host else '?'}, expected 0")
@@ -2336,9 +2364,8 @@ def evaluate(name: str, sc: dict, log_text: str, uart_text: str) -> List[str]:
         if wrong or len(routed) != len(remaps):
             problems.append(f"remap other than logical core {core} -> {substitute} "
                             f"(cluster {sub_cluster}): {remaps[:3]}")
-        if sc.get("expect_takeover", False) and \
-                f"Exit task of cluster {cluster} core {core} taken over" not in uart_text:
-            problems.append(f"no 'Exit task of cluster {cluster} core {core} taken over' in the UART log")
+        if sc.get("expect_takeover", False):
+            problems += exit_absorb_problems(log_text, uart_text, (chip, core, cluster))
         retired = [tuple(int(x) for x in m.groups()) for m in RETIRED_RE.finditer(log_text)]
         if retired != [victim]:
             problems.append(f"[BINGO_RETIRED] expected only {victim}, got {retired}")

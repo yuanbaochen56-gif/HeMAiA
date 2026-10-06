@@ -5,7 +5,7 @@ import subprocess
 import tempfile
 import unittest
 
-from bingo_evlog import check_evlog, check_evlog_pair
+from bingo_evlog import check_evlog, check_evlog_pair, simulation_events
 
 spec = importlib.util.spec_from_file_location(
     "evlog_cfg_driver", Path(__file__).with_name("3_start_bingo_watchdog_sim.py"))
@@ -167,6 +167,25 @@ int main(void) {
             "[EVLOG] count=3 dropped=0",
         ])
         self.assertEqual(check_evlog(log, uart, 3), [])
+
+    def test_exit_absorb(self):
+        # As in the C5 chain run: logical slot 1 (core 1, cluster 0) task 11 would
+        # have been routed to core 1 of cluster 1
+        log = "\n".join([
+            "[BINGO_WD] 308000 chip=0 core=1 cluster=0 dead_suspect=1 fenced=0",
+            "[BINGO_EXIT_ABSORB] 336000 chip=0 task=11 logical_core=1 logical_cluster=0 core=1 cluster=1",
+        ])
+        uart = "\n".join([
+            "[EVLOG] ts=10 code=0x01 slot=0:1 arg=0x0000",
+            "[EVLOG] ts=11 code=0x0f slot=1:1 arg=0x100b",
+            "[EVLOG] count=2 dropped=0",
+        ])
+        self.assertIn((336000, 15, 1, 1, 0x100b), simulation_events(log, 3))
+        self.assertEqual(check_evlog(log, uart, 3), [])
+        for old, new in [("arg=0x100b", "arg=0x000b"), ("slot=1:1 arg", "slot=0:1 arg"),
+                         ("ts=11", "ts=12")]:
+            with self.subTest(new=new):
+                self.assertTrue(check_evlog(log, uart.replace(old, new), 3))
 
 
 if __name__ == "__main__":

@@ -853,6 +853,55 @@ def c4_scenarios() -> Dict[str, dict]:
 
 SCENARIOS.update(c4_scenarios())
 
+# C5 (DESIGN 9.24.7): PM knobs as T1 data fields on the C4 chain image.
+C5_BOOST_ON = dict(pm_boost_power_level=3, boost_policy=0x10101)
+C5_WAKE_HOLD = 1000
+
+
+def c5_scenarios() -> Dict[str, dict]:
+    """Generate the C5 matrix: F (fault W x boost x D), H (healthy), SV (servo)."""
+    base = c4_scenarios()
+    scenes = {}
+
+    def add(group, fault, w=0, boost=False, d=0, a=0, s=0):
+        flags = []
+        if boost:
+            flags += [f"-DBINGO_PM_BOOST_POWER_LEVEL={C5_BOOST_ON['pm_boost_power_level']}",
+                      f"-DBINGO_BOOST_POLICY={C5_BOOST_ON['boost_policy']:#x}"]
+        if d:
+            flags.append(f"-DBINGO_PM_IDLE_ENTRY_DELAY={d}")
+        if a:
+            flags.append(f"-DBINGO_PM_ACCESS_WAKE_HOLD={a}")
+        name = (f"c5_{'f' if fault else 'h'}_w{w}_b{int(boost)}_d{d}"
+                + (f"_a{a}_s{s}" if a or s else ""))
+        template = base["c4_chain_h100" if fault else "c4_chain_h100_ok"]
+        scene = dict(template, c5=True, c5_group=group, c5_fault=fault,
+                     c5_knobs=dict(W=w, boost=int(boost), D=d, A=a, S=s),
+                     extra_flags=" ".join(flags), recovery_hold=w, pm_access_level=s)
+        scene["desc"] = f"C5 {group}: {'fault' if fault else 'healthy'} W={w} boost={int(boost)} D={d} A={a} S={s}"
+        if fault and w:
+            scene["p8_recovery"] = True
+        if not fault:
+            # Same image and fault fields as the fault scene with the same knobs.
+            scene["same_as"] = name.replace("c5_h_", "c5_f_", 1)
+        scenes[name] = scene
+
+    for w in (0, 1000, 10000):
+        for boost in (False, True):
+            for d in (0, 1000):
+                add("F", True, w, boost, d)
+    for boost in (False, True):
+        for d in (0, 1000):
+            add("H", False, 0, boost, d)
+    add("H", False, 10000)
+    for s in (0, 12):
+        add("SV", True, a=C5_WAKE_HOLD, s=s)
+        add("SV", False, a=C5_WAKE_HOLD, s=s)
+    return scenes
+
+
+SCENARIOS.update(c5_scenarios())
+
 def c3_scenarios() -> Dict[str, dict]:
     """C3.2 coverage matrix, in the authorized healthy -> A -> ... -> E order.
 

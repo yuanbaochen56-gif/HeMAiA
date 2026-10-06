@@ -144,6 +144,10 @@ def main():
     post_check = [
         "{",
         "    uint32_t __evt = bingo_cerf_fb_evt();",
+        "#ifdef BINGO_C6_SW_CERF",
+        "    // C6: the host may have degraded instead",
+        "    __evt |= bingo_c6_sw_cerf_evt();",
+        "#endif",
         "    uint32_t __type = BINGO_CORE_TYPE_ID(0, 0);",
         "    uint32_t __expert = (__evt & (1u << __type)) ? 1 : 0;",
         "    uint32_t __err = 0;",

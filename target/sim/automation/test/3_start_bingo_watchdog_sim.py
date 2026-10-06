@@ -853,6 +853,94 @@ def c4_scenarios() -> Dict[str, dict]:
 
 SCENARIOS.update(c4_scenarios())
 
+# C5 (DESIGN 9.24.7): PM knobs as T1 data fields on the C4 chain image.
+C5_BOOST_ON = dict(pm_boost_power_level=3, boost_policy=0x10101)
+C5_WAKE_HOLD = 1000
+
+
+def c5_scenarios() -> Dict[str, dict]:
+    """Generate the C5 matrix: F (fault W x boost x D), H (healthy), SV (servo)."""
+    base = c4_scenarios()
+    scenes = {}
+
+    def add(group, fault, w=0, boost=False, d=0, a=0, s=0):
+        flags = []
+        if boost:
+            flags += [f"-DBINGO_PM_BOOST_POWER_LEVEL={C5_BOOST_ON['pm_boost_power_level']}",
+                      f"-DBINGO_BOOST_POLICY={C5_BOOST_ON['boost_policy']:#x}"]
+        if d:
+            flags.append(f"-DBINGO_PM_IDLE_ENTRY_DELAY={d}")
+        if a:
+            flags.append(f"-DBINGO_PM_ACCESS_WAKE_HOLD={a}")
+        name = (f"c5_{'f' if fault else 'h'}_w{w}_b{int(boost)}_d{d}"
+                + (f"_a{a}_s{s}" if a or s else ""))
+        template = base["c4_chain_h100" if fault else "c4_chain_h100_ok"]
+        scene = dict(template, c5=True, c5_group=group, c5_fault=fault,
+                     c5_knobs=dict(W=w, boost=int(boost), D=d, A=a, S=s),
+                     extra_flags=" ".join(flags), recovery_hold=w, pm_access_level=s)
+        scene["desc"] = f"C5 {group}: {'fault' if fault else 'healthy'} W={w} boost={int(boost)} D={d} A={a} S={s}"
+        if fault and w:
+            scene["p8_recovery"] = True
+        if not fault:
+            # Same image and fault fields as the fault scene with the same knobs.
+            scene["same_as"] = name.replace("c5_h_", "c5_f_", 1)
+        scenes[name] = scene
+
+    for w in (0, 1000, 10000):
+        for boost in (False, True):
+            for d in (0, 1000):
+                add("F", True, w, boost, d)
+    for boost in (False, True):
+        for d in (0, 1000):
+            add("H", False, 0, boost, d)
+    add("H", False, 10000)
+    for s in (0, 12):
+        add("SV", True, a=C5_WAKE_HOLD, s=s)
+        add("SV", False, a=C5_WAKE_HOLD, s=s)
+    return scenes
+
+
+SCENARIOS.update(c5_scenarios())
+
+# C6 (DESIGN 9.24.8): hardware vs software CERF degradation vs none. One image
+# per workload (BINGO_C6_SW_CERF); the T1 word cerf_fb_mode picks the variant.
+C6_MODES = {"hw": 0, "sw": 1, "none": 2}
+C6_POLL_CYCLES = 10000
+
+
+def c6_scenarios() -> Dict[str, dict]:
+    """The C4 moe2 and confidence early-exit fault/control pairs, per variant.
+
+    Faults: hw, sw (poll 0 and 10000 host cycles), none (fail-stop). Healthy
+    controls for hw and both sw polls, each the same-image pair of its fault.
+    """
+    base = c4_scenarios()
+    scenes = {}
+    for workload, fault, control in (("moe2", "c4_moe2_fault", "c4_moe2_ok"),
+                                     ("eec", "c4_eec_fault", "c4_eec_ok")):
+        for label, mode, poll in (("hw", "hw", 0), ("sw0", "sw", 0),
+                                  (f"sw{C6_POLL_CYCLES}", "sw", C6_POLL_CYCLES), ("none", "none", 0)):
+            name = f"c6_{workload}_{label}"
+            for scene_name, template in ((name, base[fault]), (name + "_ok", base[control])):
+                if mode == "none" and template is base[control]:
+                    continue  # without a fault the table never fires: same as the hw control
+                scene = dict(template, c6=True, c6_workload=workload, c6_mode=mode,
+                             c6_fault=template is base[fault],
+                             image_flags="-DBINGO_C6_SW_CERF",
+                             cerf_fb_mode=C6_MODES[mode], cerf_poll_cycles=poll)
+                if template is base[control]:
+                    scene["same_as"] = name
+                kind = "healthy" if template is base[control] else "fault"
+                scene["desc"] = f"C6 {workload} {mode} poll={poll} {kind}"
+                scenes[scene_name] = scene
+        # Fail-stop: the stuck branch is never degraded and the run never ends
+        scenes[f"c6_{workload}_none"].update(expect_eoc=False, sim_timeout_s=900)
+        scenes[f"c6_{workload}_none"].pop("cerf_fallback", None)
+    return scenes
+
+
+SCENARIOS.update(c6_scenarios())
+
 def c3_scenarios() -> Dict[str, dict]:
     """C3.2 coverage matrix, in the authorized healthy -> A -> ... -> E order.
 
@@ -999,6 +1087,9 @@ def scenario_test_cfg(sc: dict, extra_flags: str = "", *, check_pair: bool = Tru
     cfg["evlog_enable"] = sc.get("evlog_enable", 0)
     cfg["recovery_hold"] = sc.get("recovery_hold", 0)
     cfg["pm_access_level"] = sc.get("pm_access_level", 0)
+    for field in ("cerf_fb_mode", "cerf_poll_cycles"):
+        if field in sc:
+            cfg[field] = sc[field]
     if "t1_user" in sc:
         cfg["user"] = list(sc["t1_user"])
     for field in ("wd_type_h", "wd_type_c"):
@@ -1039,9 +1130,11 @@ def t1_image_flags(sc: dict) -> str:
     if not isinstance(value, str):
         raise ValueError("T1 image_flags must be a flag string")
     flags = shlex.split(value)
-    if set(flags) - {"-DBINGO_WD_NO_HEARTBEAT", "-DBINGO_WD_NOP_HEARTBEAT"}:
+    if set(flags) - {"-DBINGO_WD_NO_HEARTBEAT", "-DBINGO_WD_NOP_HEARTBEAT", "-DBINGO_C6_SW_CERF"}:
         raise ValueError("unsupported T1 image_flags")
-    if flags and (not sc.get("t1") or sc.get("same_as") or any(
+    # A same-image pair may share image flags: both scenes then use one image.
+    other_image = sc.get("same_as") and SCENARIOS[sc["same_as"]].get("image_flags", "") != value
+    if flags and (not sc.get("t1") or other_image or any(
             sc is SCENARIOS.get(name) for names in T1_FAMILIES.values() for name in names)):
         raise ValueError("image_flags must not belong to a same-image family")
     return " ".join(flags)
@@ -1050,7 +1143,8 @@ def t1_image_flags(sc: dict) -> str:
 def test_cfg_bytes(cfg: dict) -> bytes:
     version = cfg["version"]
     if (version not in (1, 2) or set(cfg) - set(TEST_CFG_FIELDS) - {
-            "user", "evlog_enable", "recovery_hold", "pm_access_level", "wd_type_h", "wd_type_c"}
+            "user", "evlog_enable", "recovery_hold", "pm_access_level", "cerf_fb_mode", "cerf_poll_cycles",
+            "wd_type_h", "wd_type_c"}
             or version == 1 and any(field in cfg for field in ("wd_type_h", "wd_type_c"))):
         raise ValueError("unsupported test configuration layout")
     user = cfg.get("user", [0] * 4)
@@ -1062,7 +1156,12 @@ def test_cfg_bytes(cfg: dict) -> bytes:
     p8 = [cfg.get(field, 0) for field in ("recovery_hold", "pm_access_level")]
     if any(not isinstance(value, int) or not 0 <= value <= 0xFFFFFFFF for value in p8):
         raise ValueError("recovery_hold and pm_access_level must be uint32 words")
-    words = [cfg[field] for field in TEST_CFG_FIELDS] + list(user) + [evlog] + p8 + [0] * 2
+    c6 = [cfg.get(field, 0) for field in ("cerf_fb_mode", "cerf_poll_cycles")]
+    if any(not isinstance(value, int) or not 0 <= value <= 0xFFFFFFFF for value in c6):
+        raise ValueError("cerf_fb_mode and cerf_poll_cycles must be uint32 words")
+    if c6[0] not in C6_MODES.values():
+        raise ValueError("cerf_fb_mode must be 0 (hardware), 1 (software) or 2 (none)")
+    words = [cfg[field] for field in TEST_CFG_FIELDS] + list(user) + [evlog] + p8 + c6
     if version == 2:
         for field in ("wd_type_h", "wd_type_c"):
             values = cfg.get(field, [0] * 16)
@@ -1171,6 +1270,26 @@ REPLAY_RE = re.compile(r"\[BINGO_REPLAY\].*")
 REMAP_FIELDS_RE = re.compile(r"\[BINGO_REMAP\] \d+ chip=(\d+) task=(\d+) logical_core=(\d+) -> physical_core=(\d+) cluster=(\d+)")
 REPLAY_FIELDS_RE = re.compile(r"\[BINGO_REPLAY\] \d+ chip=(\d+) task=(\d+) type=\d+ logical_core=(\d+) from=(\d+) to=(\d+) cluster=(\d+) to_cluster=(\d+)")
 RETIRED_RE = re.compile(r"\[BINGO_RETIRED\] \d+ chip=(\d+) core=(\d+) cluster=(\d+)")
+EXIT_ABSORB_RE = re.compile(r"\[BINGO_EXIT_ABSORB\] \d+ chip=(\d+) task=(\d+) logical_core=(\d+) "
+                            r"logical_cluster=(\d+) core=(\d+) cluster=(\d+)")
+
+
+def absorbed_exit_slots(log_text: str) -> List[Tuple[int, int, int]]:
+    """Logical (chip, core, cluster) of every exit the manager retired in place of a run."""
+    return [(int(m[1]), int(m[3]), int(m[4])) for m in EXIT_ABSORB_RE.finditer(log_text)]
+
+
+def exit_absorb_problems(log_text: str, uart_text: str, slot: Tuple[int, int, int]) -> List[str]:
+    """Since bingo ed16cd7 an exit routed away from its own core is retired by the
+    manager: one [BINGO_EXIT_ABSORB] for its logical slot, and no other core runs it
+    (the device runtime would print 'taken over')."""
+    problems = []
+    absorbed = absorbed_exit_slots(log_text)
+    if absorbed != [tuple(slot)]:
+        problems.append(f"absorbed exits {absorbed}, expected one for logical slot {tuple(slot)}")
+    if "taken over" in uart_text:
+        problems.append("an exit task was taken over by another core")
+    return problems
 FENCE_DROP_RE = re.compile(r"\[BINGO_FENCE\] \d+ chip=(\d+) core=(\d+) cluster=(\d+) dropped done task=(\d+)")
 STUCK_RE = re.compile(r"\[BINGO_REPLAY_STUCK\].*")
 PARK_RE = re.compile(r"\[BINGO_PARK\] \d+ chip=(\d+) core=(\d+) cluster=(\d+) (HOLD|FAIL|dropped, fenced|PARKED -> core=(\d+) cluster=(\d+)|UNPARKED|UNPARK \(\d+ tasks left elsewhere\))")
@@ -1442,7 +1561,11 @@ def evaluate_cerf_fallback(sc: dict, log_text: str, uart_text: str) -> List[str]
     fault = sc["fault_stall_cycles"] is not None
     expert = 1 if fault else 0
     fb = [tuple(map(int, m.groups())) for m in CERF_FB_RE.finditer(log_text)]
-    if len(fb) != int(fault) or any(e[1:] != (MOE2_CORE_TYPE, 0, 1) for e in fb):
+    # C6 software degradation: the host rewrites CERF, the hardware table is off
+    software = sc.get("c6_mode") == "sw"
+    if software and fb:
+        problems.append(f"hardware CERF fallback events {fb} with the table disabled")
+    elif not software and (len(fb) != int(fault) or any(e[1:] != (MOE2_CORE_TYPE, 0, 1) for e in fb)):
         problems.append(f"CERF fallback events {fb}, expected {'one type 1 g0 -> g1' if fault else 'none'}")
     dispatches = [tuple(map(int, m.groups())) for m in DISPATCH_RE.finditer(log_text)]
     primary_ids = {2, 3, 4, 5, 12}  # branch and the g0 exit of the fault core
@@ -1459,6 +1582,12 @@ def evaluate_cerf_fallback(sc: dict, log_text: str, uart_text: str) -> List[str]
         core = 0 if d[2] in {4, 8, 12} else 1
         if (d[1], d[3], d[4]) != (0, core, cl):
             problems.append(f"expert task on wrong physical slot: {d}")
+    if software and fault and backup:
+        if any(d[0] >= min(b[0] for b in backup) for d in primary):
+            problems.append("g0 task dispatched after the first backup task")
+        stuck = [int(t) for t in re.findall(r"\[BINGO_REPLAY_STUCK\] (\d+) ", log_text)]
+        if not stuck or min(b[0] for b in backup) <= stuck[0]:
+            problems.append("backup task dispatched before the replay-stuck report")
     if fault and len(fb) == 1:
         switched_at = fb[0][0]
         if any(d[0] >= switched_at for d in primary):
@@ -1473,6 +1602,8 @@ def evaluate_cerf_fallback(sc: dict, log_text: str, uart_text: str) -> List[str]
     host = re.search(r"\[Host\] Bingo status: .* cerf=0x([0-9a-fA-F]+) "
                      r"cerf_fb_en=0x([0-9a-fA-F]+) cerf_fb_evt=0x([0-9a-fA-F]+)", uart_text)
     expected = (1 << expert, 1 << MOE2_CORE_TYPE, (1 << MOE2_CORE_TYPE) if fault else 0)
+    if software:
+        expected = (1 << expert, 0, 0)
     if not host or tuple(int(v, 16) for v in host.groups()) != expected:
         problems.append(f"host CERF/en/evt {host.groups() if host else None}, expected {expected}")
     if CHECK_RE.findall(uart_text) != [(f"expert_{expert}_D", "PASS")]:
@@ -1480,6 +1611,27 @@ def evaluate_cerf_fallback(sc: dict, log_text: str, uart_text: str) -> List[str]
     if f"[MoE2] router selected expert 0; join complete; output expert {expert}" not in uart_text:
         problems.append("missing router / join completion marker")
     print(f"[cerf_fallback] events={fb} primary={primary} backup={backup} joins={joins}")
+    return problems
+
+
+C6_LINE_RE = re.compile(r"\[Host\] C6 cerf_fb_mode=(\d+) poll_cycles=(\d+) "
+                        r"sw_writes=(\d+) sw_evt=0x([0-9a-fA-F]+)")
+C6_FB_TYPE = 1  # core 0 of cluster 0: the faulted accelerator type of both C6 workloads
+
+
+def evaluate_c6(sc: dict, log_text: str, uart_text: str) -> List[str]:
+    """The host reports its variant; only a software fault run writes CERF, once.
+    Outside the hardware variant the manager's table stays disabled."""
+    problems = []
+    applied = sc["c6_mode"] == "sw" and sc["c6_fault"]
+    lines = [(int(a), int(b), int(c), int(d, 16)) for a, b, c, d in C6_LINE_RE.findall(uart_text)]
+    expected = [(sc["cerf_fb_mode"], sc["cerf_poll_cycles"], int(applied), (1 << C6_FB_TYPE) if applied else 0)]
+    if lines != expected:
+        problems.append(f"C6 host lines {lines}, expected {expected}")
+    enabled = re.findall(r"\[Host\] Bingo status: .* cerf_fb_en=0x([0-9a-fA-F]+)", uart_text)
+    want = [1 << C6_FB_TYPE if sc["c6_mode"] == "hw" else 0]
+    if [int(v, 16) for v in enabled] != want:
+        problems.append(f"CERF table enables {enabled}, expected {want}")
     return problems
 
 
@@ -1551,8 +1703,8 @@ def evaluate_dma_cerf(sc: dict, log_text: str, uart_text: str) -> List[str]:
         # copy 1 and both DM exits are skipped; the substitute drains copy 0
         expected.update({2: [], 3: [(2, 0)], 7: [], 9: []})
     else:
-        # the substitute runs copy 1 and the victim's exit, then its own
-        expected.update({2: [(1, 1)], 3: [], 7: [(1, 1)], 9: [(1, 1)]})
+        # the substitute runs copy 1 and its own exit; the manager absorbs the victim's
+        expected.update({2: [(1, 1)], 3: [], 7: [], 9: [(1, 1)]})
     for task, want in expected.items():
         if slots[task] != want:
             problems.append(f"task {task} dispatched on (core, cluster) {slots[task]}, expected {want}")
@@ -1687,8 +1839,11 @@ def evaluate_early_exit_conf(sc: dict, log_text: str, uart_text: str) -> List[st
     if [tuple(map(int, values)) for values in marker] != [(sample, decision, int(faulty), shallow)]:
         problems.append("confidence decision/branch disagrees with generated margin or fault event")
     fb = [tuple(map(int, match.groups())) for match in CERF_FB_RE.finditer(log_text)]
-    if len(fb) != int(faulty) or any(event[1:] != (1, 0, 1) for event in fb):
-        problems.append("expected one type 1 g0 -> g1 only for a dispatched deep fault")
+    # C6 software degradation: the host rewrites CERF, the hardware table is off
+    software = sc.get("c6_mode") == "sw"
+    if len(fb) != int(faulty and not software) or any(event[1:] != (1, 0, 1) for event in fb):
+        problems.append("expected one type 1 g0 -> g1 only for a dispatched deep fault"
+                        + (", none with software degradation" if software else ""))
     seen = {}
     for match in DISPATCH_RE.finditer(log_text):
         time, chip, task, core, cluster = map(int, match.groups())
@@ -1715,10 +1870,11 @@ def evaluate_early_exit_conf(sc: dict, log_text: str, uart_text: str) -> List[st
             rf"\[BINGO_REPLAY_STUCK\] (\d+) chip=0 core=0 cluster=0: no live core may run task {ids['gemm2']} ",
             log_text)]
         ordered = ("gate", "gemm2", "backup", "join")
-        if (len(fences) != 1 or len(stuck) != 1 or len(fb) != 1
+        if (len(fences) != 1 or len(stuck) != 1 or len(fb) != int(not software)
                 or not all(len(seen.get(ids[name], [])) == 1 for name in ordered)
                 or not seen[ids["gate"]][0][3] < seen[ids["gemm2"]][0][3] < fences[0]
-                       <= stuck[0] <= fb[0][0] < seen[ids["backup"]][0][3] < seen[ids["join"]][0][3]):
+                       <= stuck[0] <= (stuck[0] if software else fb[0][0])
+                       < seen[ids["backup"]][0][3] < seen[ids["join"]][0][3]):
             problems.append("expected gate < GEMM2 < fence <= stuck <= CERF < shallow copy < join")
     else:
         branch = ("gate", "backup", "join") if shallow else ("gate", "gemm2", "deep_store", "join")
@@ -1730,7 +1886,8 @@ def evaluate_early_exit_conf(sc: dict, log_text: str, uart_text: str) -> List[st
             problems.append("unexpected watchdog event without a dispatched deep fault")
     host = re.search(r"\[Host\] Bingo status: .* cerf=0x([0-9a-fA-F]+) "
                      r"cerf_fb_en=0x([0-9a-fA-F]+) cerf_fb_evt=0x([0-9a-fA-F]+)", uart_text)
-    if not host or tuple(int(value, 16) for value in host.groups()) != (2 if shallow else 1, 2, 2 if faulty else 0):
+    status = (2 if shallow else 1, 0, 0) if software else (2 if shallow else 1, 2, 2 if faulty else 0)
+    if not host or tuple(int(value, 16) for value in host.groups()) != status:
         problems.append("wrong confidence CERF/enable/event status")
     if CHECK_RE.findall(uart_text) != [("shallow_out" if shallow else "deep_out", "PASS")]:
         problems.append("wrong confidence output branch or golden check")
@@ -1806,12 +1963,15 @@ def evaluate_replay_safety(sc: dict, log_text: str, uart_text: str) -> List[str]
         "add": [(0, 1, 0), (0, 1, 1)] if unsafe else [(0, 1, 0)],
         "backup": [(0, 2, 0)] if protected_fault else [],
         "check": [(0, 2, 0)],
-        "primary_exit": [] if protected_fault else [(0, 1, int(unsafe))],
+        # The unsafe replay routes the victim's exit away: the manager absorbs it.
+        "primary_exit": [] if faulty else [(0, 1, 0)],
         "substitute_exit": [] if protected_fault else [(0, 1, 1)],
     }
     for name, want in expected.items():
         if [item[:3] for item in seen.get(ids[name], [])] != want:
             problems.append(f"wrong {name} dispatch count or slot")
+    if absorbed_exit_slots(log_text) != ([(0, 1, 0)] if unsafe else []):
+        problems.append("expected one absorbed victim exit only in the unsafe control")
     replays = [int(time) for time in re.findall(
         rf"\[BINGO_REPLAY\] (\d+) chip=0 task={ids['add']} ", log_text)]
     if len(replays) != int(unsafe):
@@ -1892,13 +2052,19 @@ def evaluate_host_fallback(sc: dict, log_text: str, uart_text: str) -> List[str]
         "copy": [(0, 1, 0), (0, 1, 1)] if faulty else [(0, 1, 0)],
         "backup": [(0, 2, 0)] if double else [],
         "check": [(0, 2, 0)],
-        "primary_exit": [] if double else [(0, 1, int(faulty))],
+        # A single fault routes the victim's exit away: the manager absorbs it.
+        "primary_exit": [] if faulty else [(0, 1, 0)],
         "substitute_exit": [] if double else [(0, 1, 1)],
     }
     for name, want in expected.items():
         actual = [item[:3] for item in seen.get(ids[name], [])]
         if actual != want:
             problems.append(f"automatic host fallback {name} task {ids[name]} slots {actual}, expected {want}")
+    absorbed = absorbed_exit_slots(log_text)
+    if absorbed != ([(0, 1, 0)] if faulty and not double else []):
+        problems.append(f"absorbed exits {absorbed}, expected one victim exit only for a single fault")
+    if "taken over" in uart_text:
+        problems.append("an exit task was taken over by another core")
     replay_times = [int(t) for t in re.findall(
         rf"\[BINGO_REPLAY\] (\d+) chip=0 task={ids['copy']} ", log_text)]
     if len(replay_times) != int(faulty):
@@ -2211,9 +2377,8 @@ def evaluate_park(sc: dict, log_text: str, uart_text: str) -> List[str]:
         problems.append(f"remap other than logical core {core} -> {sub} (cluster {sub_cluster}): {wrong[:3]}")
     if REPLAY_RE.findall(log_text) or RETIRED_RE.findall(log_text):
         problems.append("a parked core was replayed or retired")
-    if not sc.get("expect_unpark") and \
-            f"Exit task of cluster {cluster} core {core} taken over" not in uart_text:
-        problems.append(f"no 'Exit task of cluster {cluster} core {core} taken over' in the UART log")
+    if not sc.get("expect_unpark"):
+        problems += exit_absorb_problems(log_text, uart_text, (chip, core, cluster))
     host = re.search(r"\[Host\] Bingo status: .* park_fail=0x([0-9a-fA-F]+)", uart_text)
     if not host or int(host.group(1), 16) != 0:
         problems.append(f"host park_fail {host.group(1) if host else '?'}, expected 0")
@@ -2265,6 +2430,8 @@ def evaluate(name: str, sc: dict, log_text: str, uart_text: str) -> List[str]:
         problems += evaluate_host_fallback(sc, log_text, uart_text)
     elif "[BINGO_CERF_FB]" in log_text:
         problems.append("unexpected CERF fallback in a continuity scenario")
+    if sc.get("c6") and sc["expect_eoc"]:
+        problems += evaluate_c6(sc, log_text, uart_text)
     if sc.get("workload") == "dma_chain_2cluster":
         problems += evaluate_risk_chain(sc, log_text, uart_text)
         problems += evaluate_risk_controls(sc, log_text, uart_text)
@@ -2336,9 +2503,8 @@ def evaluate(name: str, sc: dict, log_text: str, uart_text: str) -> List[str]:
         if wrong or len(routed) != len(remaps):
             problems.append(f"remap other than logical core {core} -> {substitute} "
                             f"(cluster {sub_cluster}): {remaps[:3]}")
-        if sc.get("expect_takeover", False) and \
-                f"Exit task of cluster {cluster} core {core} taken over" not in uart_text:
-            problems.append(f"no 'Exit task of cluster {cluster} core {core} taken over' in the UART log")
+        if sc.get("expect_takeover", False):
+            problems += exit_absorb_problems(log_text, uart_text, (chip, core, cluster))
         retired = [tuple(int(x) for x in m.groups()) for m in RETIRED_RE.finditer(log_text)]
         if retired != [victim]:
             problems.append(f"[BINGO_RETIRED] expected only {victim}, got {retired}")

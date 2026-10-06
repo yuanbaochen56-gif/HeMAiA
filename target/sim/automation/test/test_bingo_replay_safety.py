@@ -32,12 +32,15 @@ def fixture(name, ids=IDS):
                 "from=1 to=1 cluster=0 to_cluster=1 logical_cluster=0",
                 "[BINGO_RETIRED] 65 chip=0 core=1 cluster=0",
                 f"[BINGO_DISPATCH] 70 chip=0 task={ids['add']} core=1 cluster=1",
+                f"[BINGO_EXIT_ABSORB] 95 chip=0 task={ids['primary_exit']} logical_core=1 "
+                "logical_cluster=0 core=1 cluster=1",
                 f"[BINGO_REMAP] 95 chip=0 task={ids['primary_exit']} logical_core=1 "
                 "-> physical_core=1 cluster=1 logical_cluster=0"]
     log += [f"[BINGO_DISPATCH] 90 chip=0 task={ids['check']} core=2 cluster=0"]
+    if not faulty:
+        log += [f"[BINGO_DISPATCH] 100 chip=0 task={ids['primary_exit']} core=1 cluster=0"]
     if not protected:
-        log += [f"[BINGO_DISPATCH] 100 chip=0 task={ids['primary_exit']} core=1 cluster={int(unsafe)}",
-                f"[BINGO_DISPATCH] 110 chip=0 task={ids['substitute_exit']} core=1 cluster=1"]
+        log += [f"[BINGO_DISPATCH] 110 chip=0 task={ids['substitute_exit']} core=1 cluster=1"]
     log += [f"[BINGO_STATUS] 120 chip=0 replay_stuck={int(protected)} remote_done_mismatch=0 "
             f"link_error=0 fenced=0x{2 if faulty else 0:x} dead_suspect=0x{2 if faulty else 0:x} remote_timeout=0",
             f"{driver.SIM_OK_MARKER} at 130"]
@@ -48,7 +51,6 @@ def fixture(name, ids=IDS):
         f"replay_blocked=0x{2 if protected else 0:x}\n"
         "[Host] Check [acc]: PASS\n"
         + ("[Host] Check [bk]: PASS\n" if protected else "")
-        + (f"Exit task of cluster 0 core 1 taken over\n" if unsafe else "")
         + f"[Int32Inplace] check complete; branch={int(protected)} unsafe={int(unsafe)} "
         f"replay_blocked=0x{2 if protected else 0:x}\n")
     return "\n".join(log), uart
@@ -103,6 +105,9 @@ class ReplaySafetyCheckerTests(unittest.TestCase):
         self.assertTrue(self.evaluate("s38", drop(log, "[BINGO_REPLAY]"), uart))
         self.assertTrue(self.evaluate("s38", log + "\n[BINGO_CERF_FB] 70 type 2 clear g0 set g1", uart))
         self.assertTrue(self.evaluate("s38", log, uart.replace("unsafe=1", "unsafe=0")))
+        self.assertTrue(self.evaluate("s38", drop(log, "[BINGO_EXIT_ABSORB]"), uart))
+        self.assertTrue(self.evaluate("s38", log, uart + "Exit task of cluster 0 core 1 taken over\n"))
+        self.assertTrue(self.evaluate("s38", log + "\n[BINGO_DISPATCH] 100 chip=0 task=7 core=1 cluster=1", uart))
         log, uart = fixture("s39")
         self.assertTrue(self.evaluate("s39", log + "\n[BINGO_DISPATCH] 80 chip=0 task=3 core=2 cluster=0", uart))
         self.assertTrue(self.evaluate("s39", log + "\n[BINGO_WD] 50 chip=0 core=1 cluster=0 dead_suspect=1 fenced=1", uart))

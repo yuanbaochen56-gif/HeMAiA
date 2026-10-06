@@ -651,5 +651,10 @@
       swaccess: "rw", hwaccess: "hro",
       fields: [{ bits: "31:0", resval: "0", desc: "Access-only servo divider; zero disables." }]
     },
+    { name: "BINGO_HOST_READY_PENDING",
+      desc: "A ready task waits in the host slot's ready queue. Lets the host poll instead of stalling on the ready/done queue read.",
+      swaccess: "ro", hwaccess: "hwo",
+      fields: [{ bits: "0", resval: "0", desc: "Host ready queue not empty." }]
+    },
   ]
 }

@@ -603,3 +603,15 @@ uint32_t bingo_cerf_fb_evt(void);
 
 // Sticky slots blocked by replay protection, in BINGO_CORE_FENCED bit order.
 uint32_t bingo_replay_blocked(void);
+
+// 1 if a ready task waits for the host: reading the ready queue will not stall.
+// Inline, so images that never poll keep their exact code layout.
+static inline uint32_t bingo_host_ready_pending(void) {
+    return readw((uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_bingo_host_ready_pending_addr())) & 0x1;
+}
+
+#if BINGO_TEST_CFG && defined(BINGO_C6_SW_CERF)
+// Core types whose CERF entry the host applied in software (C6 mode 1), in the
+// bit order of bingo_cerf_fb_evt().
+uint32_t bingo_c6_sw_cerf_evt(void);
+#endif

@@ -40,12 +40,16 @@ def fixture(name, ids=None):
     lines.append(f"[BINGO_DISPATCH] 140 chip=0 task={ids['check']} core=2 cluster=0")
     if not double:
         if faulty:
-            lines.append(f"[BINGO_REMAP] 145 chip=0 task={ids['primary_exit']} logical_core=1 "
-                         "-> physical_core=1 cluster=1 logical_cluster=0")
-        lines += [
-            f"[BINGO_DISPATCH] 150 chip=0 task={ids['primary_exit']} core=1 cluster={int(faulty)}",
-            f"[BINGO_DISPATCH] 160 chip=0 task={ids['substitute_exit']} core=1 cluster=1",
-        ]
+            # The victim's exit is routed away and retired by the manager
+            lines += [
+                f"[BINGO_EXIT_ABSORB] 145 chip=0 task={ids['primary_exit']} logical_core=1 "
+                "logical_cluster=0 core=1 cluster=1",
+                f"[BINGO_REMAP] 145 chip=0 task={ids['primary_exit']} logical_core=1 "
+                "-> physical_core=1 cluster=1 logical_cluster=0",
+            ]
+        else:
+            lines.append(f"[BINGO_DISPATCH] 150 chip=0 task={ids['primary_exit']} core=1 cluster=0")
+        lines.append(f"[BINGO_DISPATCH] 160 chip=0 task={ids['substitute_exit']} core=1 cluster=1")
     fenced = 0x12 if double else 0x2 if faulty else 0
     lines += [
         f"[BINGO_STATUS] 180 chip=0 replay_stuck={int(double)} remote_done_mismatch=0 "
@@ -56,9 +60,7 @@ def fixture(name, ids=None):
         f"[Host] Bingo status: replay_stuck={int(double)} remote_done_mismatch=0 link_error=0 "
         f"fenced=0x{fenced:x} cerf=0x{2 if double else 1:x} cerf_fb_en=0x4 "
         f"cerf_fb_evt=0x{4 if double else 0:x}\n"
-        + ("[Cluster 1 Core 1]: Exit task of cluster 0 core 1 taken over, not exiting (chip 0)\n"
-           if faulty and not double else "")
-        + "[Host] Check [A_L1]: PASS\n"
+        "[Host] Check [A_L1]: PASS\n"
         f"[DmaHostFallback] check complete; host fallback {int(double)}\n")
     return "\n".join(lines), uart
 
@@ -155,7 +157,12 @@ class HostFallbackCheckerTests(unittest.TestCase):
             }
             if name == "s35":
                 mutations["no replay"] = (drop(log, "[BINGO_REPLAY]"), uart)
-                mutations["no takeover"] = (log, drop(uart, "taken over"))
+                mutations["no absorb"] = (drop(log, "[BINGO_EXIT_ABSORB]"), uart)
+                mutations["primary exit runs"] = (
+                    log + "\n[BINGO_DISPATCH] 150 chip=0 task=5 core=1 cluster=1", uart)
+                mutations["takeover"] = (
+                    log, uart + "[Cluster 1 Core 1]: Exit task of cluster 0 core 1 taken over, "
+                    "not exiting (chip 0)\n")
             else:
                 mutations["unexpected replay"] = (
                     log + "\n[BINGO_REPLAY] 70 chip=0 task=0 type=0 logical_core=1 "

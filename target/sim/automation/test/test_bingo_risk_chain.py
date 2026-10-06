@@ -37,7 +37,8 @@ def full_fixture(parked):
                 "\n[BINGO_WD] 42 chip=0 core=1 cluster=0 dead_suspect=1 fenced=1"
                 "\n[BINGO_REPLAY] 43 chip=0 task=3 type=2 logical_core=1 from=1 to=1 cluster=0 to_cluster=1"
                 "\n[BINGO_RETIRED] 44 chip=0 core=1 cluster=0")
-    uart += "Exit task of cluster 0 core 1 taken over\n"
+    # The victim's exit (task 11) is routed away and retired by the manager
+    log += "\n[BINGO_EXIT_ABSORB] 60 chip=0 task=11 logical_core=1 logical_cluster=0 core=1 cluster=1"
     return log, uart
 
 
@@ -71,6 +72,9 @@ def control_fixture(name):
         lines += ["[BINGO_RISK_CLEAR] 60 mask=0x2",
                   "[BINGO_PARK] 61 chip=0 core=1 cluster=0 UNPARK (0 tasks left elsewhere)",
                   "[BINGO_PARK] 62 chip=0 core=1 cluster=0 UNPARKED"]
+    if name == "s23":
+        # The parked victim's exit (task 11) is routed away and retired by the manager
+        lines.append("[BINGO_EXIT_ABSORB] 150 chip=0 task=11 logical_core=1 logical_cluster=0 core=1 cluster=1")
     lines.append("All chips finished successfully at 1000")
     risk = sc.get("expect_final_risk", 2 if sc.get("expect_risk") else 0)
     uart = (f"[Host] Bingo status: replay_stuck=0 remote_done_mismatch=0 link_error=0 "
@@ -78,8 +82,6 @@ def control_fixture(name):
             f"risk=0x{risk:x}\nCheck [A_chain_cluster0]: PASS\nCheck [A_cluster1]: PASS\n")
     if name == "s21":
         uart += "[RiskChain] CLEAR before=0x2 mask=0x2 held=0x2 after=0x0\n"
-    elif name == "s23":
-        uart += "Exit task of cluster 0 core 1 taken over\n"
     return "\n".join(lines), uart
 
 

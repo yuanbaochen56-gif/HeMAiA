@@ -857,35 +857,33 @@ void bingo_evlog_print(void) {
 // C6 baselines (evaluation images only), chosen by bingo_test_cfg.cerf_fb_mode.
 // Modes 1 and 2 take the degradation table away from the manager before it
 // starts; mode 1 then applies the same entries from the host.
-static uint32_t c6_types, c6_maps[BINGO_WD_NUM_TYPES], c6_sw_evt, c6_sw_writes;
+static uint32_t c6_types, c6_controlled, c6_value, c6_sw_evt, c6_sw_writes;
 
+// The CERF write that the table stands for (clear one group, set another per
+// entry) is built here, so that the poll path only issues it.
 static void bingo_c6_cerf_init(void) {
     if (!bingo_test_cfg.cerf_fb_mode) return;
     c6_types = readw((uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_bingo_cerf_fb_en_addr()));
     for (uint32_t t = 0; t < BINGO_WD_NUM_TYPES; ++t) {
-        if (c6_types & (1u << t))
-            c6_maps[t] = readw((uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_bingo_cerf_fb_map_addr(t)));
+        if (!(c6_types & (1u << t))) continue;
+        uint32_t map = readw((uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_bingo_cerf_fb_map_addr(t)));
+        uint32_t clear = 1u << (map & 0x1f), set = 1u << ((map >> 8) & 0x1f);
+        c6_controlled |= clear | set;
+        c6_value = (c6_value & ~clear) | set;
     }
     bingo_cerf_fb_enable(0);
 }
 
 // Mode 1: wait for the next host task without stalling on the ready read. On
-// the first replay_stuck seen, apply every table entry (clear one group, set
-// another) in one CERF write. The C6 workloads have one entry, the type that
-// gets stuck; with several the manager would apply only the stuck type's.
+// the first replay_stuck seen, apply every table entry in one CERF write. The
+// C6 workloads have one entry, the type that gets stuck; with several the
+// manager would apply only the stuck type's.
 static void bingo_c6_sw_cerf_wait(void) {
     if (bingo_test_cfg.cerf_fb_mode != 1) return;
     uintptr_t status = (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_bingo_status_addr());
     while (!bingo_host_ready_pending()) {
         if (!c6_sw_writes && (readw(status) & 0x1)) {
-            uint32_t controlled = 0, value = 0;
-            for (uint32_t t = 0; t < BINGO_WD_NUM_TYPES; ++t) {
-                if (!(c6_types & (1u << t))) continue;
-                uint32_t clear = 1u << (c6_maps[t] & 0x1f), set = 1u << ((c6_maps[t] >> 8) & 0x1f);
-                controlled |= clear | set;
-                value = (value & ~clear) | set;
-            }
-            bingo_cerf_update(controlled, value);
+            bingo_cerf_update(c6_controlled, c6_value);
             c6_sw_evt = c6_types;
             ++c6_sw_writes;
         }

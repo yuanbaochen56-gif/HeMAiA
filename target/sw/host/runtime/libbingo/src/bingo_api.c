@@ -853,6 +853,54 @@ void bingo_evlog_print(void) {
 }
 
 
+#if BINGO_TEST_CFG && defined(BINGO_C6_SW_CERF)
+// C6 baselines (evaluation images only), chosen by bingo_test_cfg.cerf_fb_mode.
+// Modes 1 and 2 take the degradation table away from the manager before it
+// starts; mode 1 then applies the same entries from the host.
+static uint32_t c6_types, c6_maps[BINGO_WD_NUM_TYPES], c6_sw_evt, c6_sw_writes;
+
+static void bingo_c6_cerf_init(void) {
+    if (!bingo_test_cfg.cerf_fb_mode) return;
+    c6_types = readw((uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_bingo_cerf_fb_en_addr()));
+    for (uint32_t t = 0; t < BINGO_WD_NUM_TYPES; ++t) {
+        if (c6_types & (1u << t))
+            c6_maps[t] = readw((uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_bingo_cerf_fb_map_addr(t)));
+    }
+    bingo_cerf_fb_enable(0);
+}
+
+// Mode 1: wait for the next host task without stalling on the ready read. On
+// the first replay_stuck seen, apply every table entry (clear one group, set
+// another) in one CERF write. The C6 workloads have one entry, the type that
+// gets stuck; with several the manager would apply only the stuck type's.
+static void bingo_c6_sw_cerf_wait(void) {
+    if (bingo_test_cfg.cerf_fb_mode != 1) return;
+    uintptr_t status = (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_bingo_status_addr());
+    while (!bingo_host_ready_pending()) {
+        if (!c6_sw_writes && (readw(status) & 0x1)) {
+            uint32_t controlled = 0, value = 0;
+            for (uint32_t t = 0; t < BINGO_WD_NUM_TYPES; ++t) {
+                if (!(c6_types & (1u << t))) continue;
+                uint32_t clear = 1u << (c6_maps[t] & 0x1f), set = 1u << ((c6_maps[t] >> 8) & 0x1f);
+                controlled |= clear | set;
+                value = (value & ~clear) | set;
+            }
+            bingo_cerf_update(controlled, value);
+            c6_sw_evt = c6_types;
+            ++c6_sw_writes;
+        }
+        if (bingo_test_cfg.cerf_poll_cycles) {
+            uint64_t start = bingo_mcycle();
+            while (bingo_mcycle() - start < bingo_test_cfg.cerf_poll_cycles) {}
+        }
+    }
+}
+
+uint32_t bingo_c6_sw_cerf_evt(void) {
+    return c6_sw_evt;
+}
+#endif
+
 // The task will be initized directly on a .h file generated from the mini compiler
 // So the whole scheduling process will be handled by the hardware scheduler
 // The host-side work is just in the begining to write the task_list_ptr and #num_tasks to the quad ctrl reg
@@ -915,6 +963,9 @@ void bingo_hw_scheduler_init(uint64_t dev_arg_base_addr, uint64_t dev_kernel_bas
         bingo_cerf_fb_set(type, bingo_test_cfg.cerf_fb_clear, bingo_test_cfg.cerf_fb_set);
         bingo_cerf_fb_enable(1u << type);
     }
+#ifdef BINGO_C6_SW_CERF
+    bingo_c6_cerf_init();
+#endif
 #else
     bingo_evlog_enable(BINGO_EVLOG_ENABLE);
     writew(BINGO_REMOTE_PROXY_TIMEOUT, (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_remote_proxy_timeout_addr()));
@@ -961,6 +1012,11 @@ void bingo_hw_scheduler_print_status(){
                 bingo_cerf_fb_evt(),
                 readw((uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_bingo_risk_addr())),
                 bingo_replay_blocked());
+#if BINGO_TEST_CFG && defined(BINGO_C6_SW_CERF)
+    printf_safe("Chip(%x, %x): [Host] C6 cerf_fb_mode=%d poll_cycles=%d sw_writes=%d sw_evt=0x%x\r\n",
+                get_current_chip_loc_x(), get_current_chip_loc_y(), bingo_test_cfg.cerf_fb_mode,
+                bingo_test_cfg.cerf_poll_cycles, c6_sw_writes, c6_sw_evt);
+#endif
 }
 
 uint32_t bingo_hw_scheduler(uint64_t* host_arg_list, uint64_t* host_kernel_list, int32_t* global_task_id_to_host_task_id){
@@ -973,6 +1029,9 @@ uint32_t bingo_hw_scheduler(uint64_t* host_arg_list, uint64_t* host_kernel_list,
     while (1) {
         // 1. First read the ready queue
         BINGO_TRACE_MARKER(BINGO_TRACE_MGR_GET_READY_START);
+#if BINGO_TEST_CFG && defined(BINGO_C6_SW_CERF)
+        bingo_c6_sw_cerf_wait();
+#endif
         current_global_task_id = bingo_hw_scheduler_get_global_task_id();
         BINGO_TRACE_MARKER(BINGO_TRACE_MGR_GET_READY_END);
         // 2. Then we get the host task id from the global task id

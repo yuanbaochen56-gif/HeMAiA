@@ -37,7 +37,12 @@ typedef struct __attribute__((aligned(128))) {
     uint32_t evlog_enable;
     uint32_t recovery_hold;
     uint32_t pm_access_level;
-    uint32_t reserved[2];
+    // C6 baselines, read only by images built with BINGO_C6_SW_CERF. The CERF
+    // degradation table is the one the image programs (compiler or T1 fields):
+    // 0 the manager applies it (as without the flag), 1 the host applies the
+    // same entries once it sees replay_stuck, 2 no degradation (fail-stop).
+    uint32_t cerf_fb_mode;
+    uint32_t cerf_poll_cycles;  // host cycles between polls in mode 1, 0 = back to back
     uint32_t wd_type_h[16];
     uint32_t wd_type_c[16];
 } bingo_test_cfg_t;

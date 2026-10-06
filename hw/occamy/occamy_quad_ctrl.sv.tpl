@@ -138,6 +138,8 @@ module ${name}_quad_ctrl
   logic [BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER-1:0][NrClustersPerQuad-1:0] bingo_core_fenced;
   logic [BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER-1:0][NrClustersPerQuad-1:0] bingo_replay_blocked;
   logic [BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER-1:0][NrClustersPerQuad-1:0] bingo_core_dead_suspect;
+  // Ready queues not empty; the host slot (extra slot of cluster 0) feeds BINGO_HOST_READY_PENDING
+  logic [BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER-1:0][NrClustersPerQuad-1:0] bingo_ready_queue_pending;
 
 
   // Quadrant Lite xbar
@@ -270,7 +272,8 @@ module ${name}_quad_ctrl
     .bingo_hw_manager_remote_link_error_i     (bingo_remote_link_error             ),
     .bingo_hw_manager_core_dead_suspect_i     (bingo_core_dead_suspect             ),
     .bingo_hw_manager_core_fenced_i           (bingo_core_fenced                   ),
-    .bingo_hw_manager_replay_blocked_i        (bingo_replay_blocked                )
+    .bingo_hw_manager_replay_blocked_i        (bingo_replay_blocked                ),
+    .bingo_hw_manager_host_ready_pending_i    (bingo_ready_queue_pending[BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER-1][0])
   );
 
 
@@ -472,6 +475,7 @@ module ${name}_quad_ctrl
     .core_dead_suspect_o                       (bingo_core_dead_suspect              ),
     .replay_stuck_o                            (bingo_replay_stuck                   ),
     .replay_blocked_o                          (bingo_replay_blocked                 ),
+    .ready_queue_pending_o                     (bingo_ready_queue_pending            ),
     // Level 3 remote dispatch (i_bingo_remote_link)
     .remote_dispatch_valid_o                   (bingo_rd_export_valid                ),
     .remote_dispatch_ready_i                   (bingo_rd_export_ready                ),

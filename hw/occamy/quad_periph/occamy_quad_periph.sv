@@ -76,7 +76,9 @@ module occamy_quad_periph import occamy_quad_periph_reg_pkg::*; #(
   input  logic [5:0]  bingo_hw_manager_remote_link_error_i,
   input  logic [BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER-1:0][BINGO_HW_MANAGER_NR_CLUSTER-1:0] bingo_hw_manager_core_dead_suspect_i,
   input  logic [BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER-1:0][BINGO_HW_MANAGER_NR_CLUSTER-1:0] bingo_hw_manager_core_fenced_i,
-  input  logic [BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER-1:0][BINGO_HW_MANAGER_NR_CLUSTER-1:0] bingo_hw_manager_replay_blocked_i
+  input  logic [BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER-1:0][BINGO_HW_MANAGER_NR_CLUSTER-1:0] bingo_hw_manager_replay_blocked_i,
+  // A ready task waits for the host (non-blocking poll of the ready/done queue)
+  input  logic        bingo_hw_manager_host_ready_pending_i
 );
 
   occamy_quad_periph_hw2reg_t hw2reg;
@@ -200,6 +202,8 @@ module occamy_quad_periph import occamy_quad_periph_reg_pkg::*; #(
   assign hw2reg.bingo_core_dead_suspect.de = 1'b1;
   assign hw2reg.bingo_core_fenced.de       = 1'b1;
   assign hw2reg.bingo_replay_blocked.de    = 1'b1;
+  assign hw2reg.bingo_host_ready_pending.d  = bingo_hw_manager_host_ready_pending_i;
+  assign hw2reg.bingo_host_ready_pending.de = 1'b1;
   occamy_quad_periph_reg_top #(
     .reg_req_t ( reg_req_t ),
     .reg_rsp_t ( reg_rsp_t  )

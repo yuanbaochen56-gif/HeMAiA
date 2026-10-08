@@ -26,7 +26,8 @@ def healthy_scenarios(original, l2):
                          wd_late=P9_RECOMMENDED if enabled else 0,
                          fault_pre_stall_from=0, dispatch_log=True,
                          evlog_enable=1, evlog_pair=False, evlog_allow_empty=True,
-                         risk_late=8000, risk_policy=0x12, risk_epoch=0,
+                         risk_late=0, risk_policy=0x12, risk_epoch=0,
+                         extra_flags="-DBINGO_RISK_LATE=0 -DBINGO_RISK_POLICY=0x12 -DBINGO_RISK_EPOCH=0",
                          p9_healthy=True, p9_workload=workload,
                          extra_cfg=deepcopy(l2), cfg_suffix="_l2",
                          timeout_cycles=100000, confirm_timeout_cycles=200000,
@@ -67,8 +68,14 @@ def evaluation_scenarios(original, l2, *, a, g, pre_stall_cycles,
                      p9_evaluation=True, p9_name=name, desc=f"P9 evaluation {name}",
                      extra_cfg=deepcopy(l2), cfg_suffix="_l2", park=park,
                      timeout_cycles=100000, confirm_timeout_cycles=200000)
+        # Existing T1 controls are data macros, not direct scene dictionary keys.
+        scene["extra_flags"] = (
+            f"-DBINGO_WD_FAULT_PRE_STALL_CYCLES={pre_stall_cycles} "
+            f"-DBINGO_WD_FAULT_AFTER_KERNEL=0 -DBINGO_RISK_LATE={static_late} "
+            f"-DBINGO_RISK_POLICY={scene['risk_policy']:#x} -DBINGO_RISK_EPOCH=0")
         if name == "d_p9_boost":
             scene.update(pm_boost_power_level=3, boost_policy=0x10101)
+            scene["extra_flags"] += " -DBINGO_PM_BOOST_POWER_LEVEL=3 -DBINGO_BOOST_POLICY=0x10101"
         if name == "d_p9_derate":
             scene["expect_derate_level"] = 12
         result[f"p9_{name}"] = scene

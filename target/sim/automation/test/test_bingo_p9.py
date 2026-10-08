@@ -53,7 +53,11 @@ class PredictiveScenarioTests(unittest.TestCase):
             self.assertEqual(changed, {"wd_late", "desc"})
             self.assertEqual(off["risk_policy"], 0x12)
             for scene in (off, on):
-                self.assertEqual(len(driver.test_cfg_bytes(driver.scenario_test_cfg(scene))), 384)
+                cfg = driver.scenario_test_cfg(scene)
+                self.assertEqual(len(driver.test_cfg_bytes(cfg)), 384)
+                self.assertEqual(cfg["risk_policy"], 0x12)
+                self.assertEqual(cfg["risk_late"], 0)
+                self.assertEqual(cfg["risk_epoch"], 0)
 
     def test_eight_g4_scenes_share_image_and_fault_fields_except_gid(self):
         scenes = evaluation_scenarios(driver.SCENARIOS, driver.L2_CFG_KEYS,
@@ -63,9 +67,17 @@ class PredictiveScenarioTests(unittest.TestCase):
         for scene in scenes.values():
             cfg = driver.scenario_test_cfg(scene)
             driver.check_same_ps_fault_cfg(base, cfg)
+            self.assertEqual(cfg["fault_pre_stall_cycles"], 7200)
+            self.assertEqual(cfg["fault_pre_stall_from"], 2)
+            self.assertEqual((cfg["fault_core"], cfg["fault_cluster"]), (1, 0))
+            self.assertEqual(cfg["risk_late"], 8000)
+            self.assertEqual(cfg["risk_policy"], scene["risk_policy"])
+            self.assertEqual(cfg["risk_epoch"], 0)
             self.assertEqual(driver.t1_image_flags(scene), "-DBINGO_WD_LATE -DBINGO_WD_ADAPT")
         self.assertEqual(scenes["p9_d_p9_derate"]["risk_policy"], 0xc32)
         self.assertEqual(scenes["p9_d_p9_boost"]["boost_policy"], 0x10101)
+        boost = driver.scenario_test_cfg(scenes["p9_d_p9_boost"])
+        self.assertEqual((boost["pm_boost_power_level"], boost["boost_policy"]), (3, 0x10101))
         self.assertFalse(scenes["p9_d_p9_noad"]["wd_adapt"] & 1)
         self.assertEqual(scenes["p9_s_p9"]["fault_gid"], 0xffffffff)
 

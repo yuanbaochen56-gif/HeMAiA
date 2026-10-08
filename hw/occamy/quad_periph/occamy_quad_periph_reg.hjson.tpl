@@ -656,5 +656,17 @@
       swaccess: "ro", hwaccess: "hwo",
       fields: [{ bits: "0", resval: "0", desc: "Host ready queue not empty." }]
     },
+    { name: "BINGO_WD_ADAPT",
+      desc: "Type/class watchdog bounds. History learns even when EN is zero and clears only on reset. Class zero or unavailable reserved bits retain static thresholds.",
+      swaccess: "rw", hwaccess: "hro",
+      fields: [
+        { bits: "0", name: "EN", resval: "0", desc: "Use learned thresholds; does not gate learning." },
+        { bits: "1", name: "LOAD_GUARD", resval: "0", desc: "Require current interval peak load no greater than learned load." },
+        { bits: "4:2", name: "SH_H", resval: "0", desc: "Shift of maximum interval for suspect threshold." },
+        { bits: "7:5", name: "SH_C", resval: "0", desc: "Shift of maximum interval for fence threshold." },
+        { bits: "11:8", name: "WARMUP", resval: "0", desc: "Minimum samples; zero means one." },
+        { bits: "31:12", name: "FLOOR", resval: "0", desc: "Suspect threshold floor in watchdog ticks." }
+      ]
+    },
   ]
 }

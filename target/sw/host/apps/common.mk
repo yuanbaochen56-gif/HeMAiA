@@ -17,6 +17,10 @@
 # (Proper fix: grouped targets `&:`, GNU make >= 4.3.)
 .NOTPARALLEL:
 
+# Discover the platform slot/type table only for A7 class grouping.
+# Replay and fallback still require explicit BingoDFG core_type_ids.
+export BINGO_PLATFORM_CFG = $(PLATFORM_H)
+
 # Root directory (absolute path to the host directory)
 ifndef HOST_DIR
 HOST_DIR = $(abspath $(dir $(lastword $(MAKEFILE_LIST)))/../..)

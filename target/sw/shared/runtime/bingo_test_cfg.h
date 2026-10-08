@@ -7,7 +7,11 @@
 
 // Test-only, little-endian image data. Each row spans sixteen 64-bit banks.
 #define BINGO_TEST_CFG_MAGIC 0x42475431u
+#ifdef BINGO_WD_ADAPT
+#define BINGO_TEST_CFG_VERSION 3u
+#else
 #define BINGO_TEST_CFG_VERSION 2u
+#endif
 
 typedef struct __attribute__((aligned(128))) {
     uint32_t magic;
@@ -45,6 +49,10 @@ typedef struct __attribute__((aligned(128))) {
     uint32_t cerf_poll_cycles;  // host cycles between polls in mode 1, 0 = back to back
     uint32_t wd_type_h[16];
     uint32_t wd_type_c[16];
+#ifdef BINGO_WD_ADAPT
+    uint32_t wd_adapt;
+    uint32_t wd_adapt_reserved[31];
+#endif
 } bingo_test_cfg_t;
 
 #define BINGO_TEST_CFG_INITIALIZER { \
@@ -52,7 +60,11 @@ typedef struct __attribute__((aligned(128))) {
     .fault_gid = UINT32_MAX, .fault_cluster = UINT32_MAX, .fault_core = UINT32_MAX \
 }
 
+#ifdef BINGO_WD_ADAPT
+_Static_assert(sizeof(bingo_test_cfg_t) == 384, "v3 test configuration must fit three rows");
+#else
 _Static_assert(sizeof(bingo_test_cfg_t) == 256, "v2 test configuration must fit two rows");
+#endif
 
 #if BINGO_TEST_CFG
 extern volatile bingo_test_cfg_t bingo_test_cfg;

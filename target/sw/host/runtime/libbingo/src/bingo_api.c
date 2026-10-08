@@ -955,6 +955,9 @@ void bingo_hw_scheduler_init(uint64_t dev_arg_base_addr, uint64_t dev_kernel_bas
     for (uint32_t type = 0; type < BINGO_WD_NUM_TYPES; ++type) {
         bingo_wd_type_set(type, bingo_test_cfg.wd_type_h[type], bingo_test_cfg.wd_type_c[type]);
     }
+#ifdef BINGO_WD_ADAPT
+    bingo_wd_adapt_set(bingo_test_cfg.wd_adapt);
+#endif
     bingo_evlog_enable(bingo_test_cfg.evlog_enable);
     if (bingo_test_cfg.cerf_fb_enable) {
         uint32_t type = BINGO_CORE_TYPE_ID(bingo_test_cfg.cerf_fb_cluster, bingo_test_cfg.cerf_fb_core);
@@ -1131,6 +1134,10 @@ void bingo_wd_type_set(uint32_t type, uint32_t h, uint32_t c) {
     if (type >= BINGO_WD_NUM_TYPES) return;
     writew(h, (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_bingo_wd_type_h_addr(type)));
     writew(c, (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_bingo_wd_type_c_addr(type)));
+    asm volatile("fence" ::: "memory");
+}
+void bingo_wd_adapt_set(uint32_t ctrl) {
+    writew(ctrl, (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_bingo_wd_adapt_addr()));
     asm volatile("fence" ::: "memory");
 }
 void bingo_cerf_fb_set(uint32_t core_type, uint32_t clear_group, uint32_t set_group) {

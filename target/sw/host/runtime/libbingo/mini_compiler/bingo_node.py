@@ -33,6 +33,8 @@ class BingoNode(metaclass=ABCMeta):
         self._node_type: Literal['normal', 'dummy', 'gating'] = "normal"
         # None uses the compiler's known-kernel replay-safety analysis.
         self.non_idempotent: bool | None = None
+        # None uses type/kernel numbering; zero explicitly opts this task out.
+        self.wd_class: int | None = None
         self._dep_check_enable: bool = False
         self._dep_check_list: list[int] = []
         self._dep_set_enable: bool = False

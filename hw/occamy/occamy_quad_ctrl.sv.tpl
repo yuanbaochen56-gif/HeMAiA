@@ -128,6 +128,7 @@ module ${name}_quad_ctrl
   logic [63:0]                           bingo_evlog_head;
   logic [15:0]                           bingo_evlog_dropped;
   logic [${2**bingo_core_type_id_width-1}:0][31:0] bingo_wd_type_h, bingo_wd_type_c;
+  logic [31:0]                           bingo_wd_adapt;
   // Boost choice: policy, credit per lost core, minimum load
   cfg_t                                  bingo_boost_policy;
   // CERF degradation table (index: core type) and the types that fired
@@ -260,6 +261,7 @@ module ${name}_quad_ctrl
     .bingo_hw_manager_risk_confirm_o          (bingo_risk_confirm                  ),
     .bingo_hw_manager_wd_type_h_o             (bingo_wd_type_h                     ),
     .bingo_hw_manager_wd_type_c_o             (bingo_wd_type_c                     ),
+    .bingo_hw_manager_wd_adapt_o              (bingo_wd_adapt                      ),
     .bingo_hw_manager_risk_clear_o            (bingo_risk_clear                    ),
     .bingo_hw_manager_risk_i                  (bingo_risk                          ),
     .bingo_evlog_enable_o                     (bingo_evlog_enable                  ),
@@ -438,6 +440,7 @@ module ${name}_quad_ctrl
     .bingo_hw_manager_risk_confirm_i           (bingo_risk_confirm                           ),
     .wd_type_h_i                              (bingo_wd_type_h                              ),
     .wd_type_c_i                              (bingo_wd_type_c                              ),
+    .wd_adapt_i                               (bingo_wd_adapt                               ),
     .bingo_hw_manager_risk_clear_i             (bingo_risk_clear                             ),
     .bingo_hw_manager_risk_o                   (bingo_risk                                   ),
     .bingo_hw_manager_cluster_access_i         (bingo_cluster_access_i                       ),

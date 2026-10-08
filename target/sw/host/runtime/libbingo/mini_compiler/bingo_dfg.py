@@ -191,6 +191,11 @@ class BingoDFG(DiGraphWrapper[BingoNode]):
         # Same slot/type table as BINGO_CORE_TYPE_ID in generated occamy.h.
         # Only required by CERF fallback; existing graphs do not consult it.
         self.core_type_ids = dict(core_type_ids or {})
+        # Platform discovery is only for A7 classification, not replay/fallback.
+        self._wd_type_ids = dict(core_type_ids or {})
+        if core_type_ids is None and os.environ.get("BINGO_PLATFORM_CFG"):
+            from bingo_platform import parse_bingo_core_type_ids
+            self._wd_type_ids = parse_bingo_core_type_ids(os.environ["BINGO_PLATFORM_CFG"])
         self._cerf_fallbacks: list[tuple[BingoNode, BingoNode]] = []
         self._cerf_fallback_table: dict = {}
         self._cerf_fallback_nodes: set[BingoNode] = set()
@@ -226,8 +231,12 @@ class BingoDFG(DiGraphWrapper[BingoNode]):
                 self._unsafe_replay_warned.add(node)
         return hazardous if node.non_idempotent is None else node.non_idempotent
 
-    def bingo_add_node(self, node_obj: BingoNode) -> None:
+    def bingo_add_node(self, node_obj: BingoNode, *, wd_class: int | None = None) -> None:
         """Add a node to the DFG."""
+        if wd_class is not None:
+            if type(wd_class) is not int or not 0 <= wd_class <= 7:
+                raise ValueError("wd_class must be in 0..7")
+            node_obj.wd_class = wd_class
 
         # Assign a unique ID to the node
         self.id += 1
@@ -1493,7 +1502,48 @@ class BingoDFG(DiGraphWrapper[BingoNode]):
     # ----------------------------------------------------------------
     # Node Packing / Unpacking
     # ----------------------------------------------------------------
-    def bingo_pack_node(self, node: BingoNode) -> int:
+    def _wd_class_shift(self) -> int:
+        return (41 + 2 * max(1, (self.num_clusters_per_chiplet - 1).bit_length()) +
+                max(1, (self.num_cores_per_cluster - 1).bit_length()) +
+                2 * self.num_cores_per_cluster + 2 * self.dep_tag_width)
+
+    def _wd_classes(self, extra_node=None, *, diagnostics=None) -> dict:
+        """Number distinct kernels separately for each chiplet and core type."""
+        nodes = list(self.node_list)
+        if extra_node is not None and extra_node not in nodes:
+            nodes.append(extra_node)
+        groups, result = {}, {}
+        available = 64 - self._wd_class_shift() >= 3
+
+        for node in sorted(nodes, key=lambda n: n.node_id):
+            if node.wd_class is not None and (type(node.wd_class) is not int or not 0 <= node.wd_class <= 7):
+                raise ValueError("wd_class must be in 0..7")
+            slot = (node.assigned_cluster_id, node.assigned_core_id)
+            if not available:
+                result[node] = 0
+            elif node.wd_class is not None:
+                result[node] = node.wd_class
+            elif node.node_type == "dummy" or not node.kernel_name:
+                result[node] = 0
+            elif slot not in self._wd_type_ids:
+                result[node] = 0
+            else:
+                group = (node.assigned_chiplet_id, self._wd_type_ids[slot])
+                kernels = groups.setdefault(group, {})
+                if node.kernel_name not in kernels:
+                    kernels[node.kernel_name] = len(kernels) + 1
+                value = kernels[node.kernel_name]
+                result[node] = value if value <= 7 else 0
+        if diagnostics is not None:
+            for group, kernels in groups.items():
+                overflow = list(kernels)[7:]
+                if overflow:
+                    diagnostics.append(
+                        f"A7: chiplet/type {group} has more than 7 kernels; "
+                        f"class 0 for {', '.join(overflow)}")
+        return result
+
+    def bingo_pack_node(self, node: BingoNode, *, wd_adapt: bool = False) -> int:
         """Pack the normal node into a 64-bit integer."""
         import math
         
@@ -1607,6 +1657,8 @@ class BingoDFG(DiGraphWrapper[BingoNode]):
         # Check if we exceeded 64 bits
         if current_shift > 64:
             raise ValueError(f"Packed task descriptor exceeds 64 bits: {current_shift} bits used.")
+        if wd_adapt:
+            packed_val |= self._wd_classes(node)[node] << current_shift
             
         return packed_val
     def bingo_unpack_node(self, packed_val: int) -> dict:
@@ -1693,6 +1745,7 @@ class BingoDFG(DiGraphWrapper[BingoNode]):
 
         fields['is_exit'] = (packed_val >> current_shift) & 0x1
         current_shift += 1
+        fields['wd_class'] = ((packed_val >> current_shift) & 7) if 64 - current_shift >= 3 else 0
 
         return fields
     def bingo_visualize_dfg(self, filename: str = "dfg_visualization", figsize: tuple = (20, 16)) -> None:
@@ -2004,6 +2057,7 @@ class BingoDFG(DiGraphWrapper[BingoNode]):
                  task_description_list += f"bingo_hw_scheduler_task_desc_list_chip_{chiplet_id:02x}[0] = 0;\n"
             else:
                 task_description_list += f"uint64_t* bingo_hw_scheduler_task_desc_list_chip_{chiplet_id:02x} = (uint64_t*)bingo_l3_alloc(0x{chiplet_id:02x}, bingo_hw_scheduler_num_task_desc_chip_{chiplet_id:02x} * sizeof(uint64_t));\n"
+                classes = self._wd_classes()
                 for idx, node in enumerate(local_nodes):
                     packed_val = self.bingo_pack_node(node)
                     fields = self.bingo_unpack_node(packed_val)
@@ -2015,7 +2069,7 @@ class BingoDFG(DiGraphWrapper[BingoNode]):
                     comment += f"    //         DepCheck: En={fields['dep_check_en']}, Code=0b{fields['dep_check_code']:0{self.num_cores_per_cluster}b}\n"
                     comment += f"    //         DepSet:   En={fields['dep_set_en']}, All={fields['dep_set_all']}, Chiplet={fields['dep_set_chiplet_id']:02x}, Cluster={fields['dep_set_cluster_id']}, Code=0b{fields['dep_set_code']:0{self.num_cores_per_cluster}b}"
                     
-                    task_description_list += f"bingo_hw_scheduler_task_desc_list_chip_{chiplet_id:02x}[{idx}] = 0x{packed_val:016X}; {comment}\n"
+                    task_description_list += f"bingo_hw_scheduler_task_desc_list_chip_{chiplet_id:02x}[{idx}] = 0x{packed_val:016X}ULL | BINGO_WD_CLASS_BITS({classes[node]}); {comment}\n"
             
         return task_description_list
     
@@ -2222,6 +2276,23 @@ class BingoDFG(DiGraphWrapper[BingoNode]):
         for include in extra_include_header_list:
             f.write(f'#include "{include}"\n')
         f.write("\n")
+        if 64 - self._wd_class_shift() >= 3:
+            f.write("#ifdef BINGO_WD_ADAPT\n")
+            f.write(f"#define BINGO_WD_CLASS_BITS(c) ((uint64_t)(c) << {self._wd_class_shift()})\n")
+            f.write("#else\n#define BINGO_WD_CLASS_BITS(c) 0ULL\n#endif\n\n")
+        else:
+            f.write("#ifdef BINGO_WD_ADAPT\n")
+            f.write(f'#error "A7 needs 3 reserved descriptor bits; this cfg has {64 - self._wd_class_shift()}"\n')
+            f.write("#endif\n")
+            f.write("#define BINGO_WD_CLASS_BITS(c) 0ULL\n\n")
+        diagnostics = []
+        self._wd_classes(diagnostics=diagnostics)
+        if diagnostics:
+            f.write("#ifdef BINGO_WD_ADAPT\n")
+            for message in diagnostics:
+                message = message.replace("\\", "\\\\").replace('"', '\\"').replace("\n", " ")
+                f.write(f'#warning "{message}"\n')
+            f.write("#endif\n\n")
 
     def _emit_debug_kernel_list(self, f):
         """Emit commented-out kernel name list for debugging."""

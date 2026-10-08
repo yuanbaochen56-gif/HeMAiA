@@ -1061,14 +1061,16 @@ TEST_CFG_MACROS = {
 
 
 def test_cfg_defaults(version: int = 2) -> dict:
-    if version not in (1, 2):
+    if version not in (1, 2, 3):
         raise ValueError("unsupported test configuration version")
     cfg = dict.fromkeys(TEST_CFG_FIELDS, 0)
     cfg.update(magic=0x42475431, version=version, fault_gid=0xFFFFFFFF,
                fault_cluster=0xFFFFFFFF, fault_core=0xFFFFFFFF, user=[0] * 4, evlog_enable=0,
                recovery_hold=0, pm_access_level=0)
-    if version == 2:
+    if version >= 2:
         cfg.update(wd_type_h=[0] * 16, wd_type_c=[0] * 16)
+    if version == 3:
+        cfg["wd_adapt"] = 0
     return cfg
 
 
@@ -1083,7 +1085,10 @@ def check_same_ps_fault_cfg(first: dict, second: dict) -> None:
 
 def scenario_test_cfg(sc: dict, extra_flags: str = "", *, check_pair: bool = True) -> dict:
     """Translate only data controls. Unknown flags must never change a T1 graph."""
-    cfg = test_cfg_defaults()
+    adaptive_image = "-DBINGO_WD_ADAPT" in shlex.split(sc.get("image_flags", ""))
+    cfg = test_cfg_defaults(3 if adaptive_image else 2)
+    if "wd_adapt" in sc:
+        cfg["wd_adapt"] = sc["wd_adapt"]
     cfg["evlog_enable"] = sc.get("evlog_enable", 0)
     cfg["recovery_hold"] = sc.get("recovery_hold", 0)
     cfg["pm_access_level"] = sc.get("pm_access_level", 0)
@@ -1130,7 +1135,7 @@ def t1_image_flags(sc: dict) -> str:
     if not isinstance(value, str):
         raise ValueError("T1 image_flags must be a flag string")
     flags = shlex.split(value)
-    if set(flags) - {"-DBINGO_WD_NO_HEARTBEAT", "-DBINGO_WD_NOP_HEARTBEAT", "-DBINGO_C6_SW_CERF"}:
+    if set(flags) - {"-DBINGO_WD_NO_HEARTBEAT", "-DBINGO_WD_NOP_HEARTBEAT", "-DBINGO_C6_SW_CERF", "-DBINGO_WD_ADAPT"}:
         raise ValueError("unsupported T1 image_flags")
     # A same-image pair may share image flags: both scenes then use one image.
     other_image = sc.get("same_as") and SCENARIOS[sc["same_as"]].get("image_flags", "") != value
@@ -1142,10 +1147,11 @@ def t1_image_flags(sc: dict) -> str:
 
 def test_cfg_bytes(cfg: dict) -> bytes:
     version = cfg["version"]
-    if (version not in (1, 2) or set(cfg) - set(TEST_CFG_FIELDS) - {
+    if (version not in (1, 2, 3) or set(cfg) - set(TEST_CFG_FIELDS) - {
             "user", "evlog_enable", "recovery_hold", "pm_access_level", "cerf_fb_mode", "cerf_poll_cycles",
-            "wd_type_h", "wd_type_c"}
-            or version == 1 and any(field in cfg for field in ("wd_type_h", "wd_type_c"))):
+            "wd_type_h", "wd_type_c", "wd_adapt"}
+            or version == 1 and any(field in cfg for field in ("wd_type_h", "wd_type_c"))
+            or version != 3 and "wd_adapt" in cfg):
         raise ValueError("unsupported test configuration layout")
     user = cfg.get("user", [0] * 4)
     if len(user) != 4 or any(not isinstance(v, int) or not 0 <= v <= 0xFFFFFFFF for v in user):
@@ -1162,12 +1168,17 @@ def test_cfg_bytes(cfg: dict) -> bytes:
     if c6[0] not in C6_MODES.values():
         raise ValueError("cerf_fb_mode must be 0 (hardware), 1 (software) or 2 (none)")
     words = [cfg[field] for field in TEST_CFG_FIELDS] + list(user) + [evlog] + p8 + c6
-    if version == 2:
+    if version >= 2:
         for field in ("wd_type_h", "wd_type_c"):
             values = cfg.get(field, [0] * 16)
             if len(values) != 16 or any(not isinstance(v, int) or not 0 <= v <= 0xFFFFFFFF for v in values):
                 raise ValueError(f"{field} must have sixteen words")
             words += values
+    if version == 3:
+        adapt = cfg.get("wd_adapt", 0)
+        if type(adapt) is not int or not 0 <= adapt <= 0xFFFFFFFF:
+            raise ValueError("wd_adapt must be a uint32 word")
+        words += [adapt] + [0] * 31
     return struct.pack("<" + "I" * len(words), *words)
 
 
@@ -1206,7 +1217,7 @@ def test_cfg_elf_location(elf: Path) -> dict:
         raise ValueError("unsupported LOAD virtual/physical address mapping")
     base = min(p[4] for p in loads)
     offset = address - base
-    if size not in (128, 256) or address % 128 or offset % 128:
+    if size not in (128, 256, 384) or address % 128 or offset % 128:
         raise ValueError("test configuration must occupy aligned complete bank rows")
     return dict(address=address, load_base=base, offset=offset, size=size)
 

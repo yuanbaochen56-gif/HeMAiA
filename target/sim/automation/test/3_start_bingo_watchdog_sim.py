@@ -150,6 +150,8 @@ from bingo_bender_pin import check_bingo_bender_pin  # noqa: E402
 from bingo_evlog import check_evlog, check_evlog_pair  # noqa: E402
 from bingo_p8 import recovery_hold_config, check_recovery_hold, check_access_level  # noqa: E402
 from bingo_c2 import healthy_problems  # noqa: E402
+from bingo_p9 import healthy_problems as p9_healthy_problems  # noqa: E402
+from bingo_p9_scenarios import healthy_scenarios as p9_healthy_scenarios  # noqa: E402
 
 HEMAIA_CI_CFG = "target/rtl/cfg/hemaia_ci.hjson"
 # The 1-cluster GEMM workloads need exactly one cluster, and they generate their
@@ -1033,6 +1035,7 @@ def c3_e2_scenarios() -> Dict[str, dict]:
 
 
 SCENARIOS.update(c3_e2_scenarios())
+SCENARIOS.update(p9_healthy_scenarios(SCENARIOS, L2_CFG_KEYS))
 
 TEST_CFG_FIELDS = (
     "magic", "version", "fault_gid", "fault_stall_cycles", "fault_cluster", "fault_core",
@@ -1077,18 +1080,25 @@ def test_cfg_defaults(version: int = 2) -> dict:
 def check_same_ps_fault_cfg(first: dict, second: dict) -> None:
     """Only the GID may differ in a declared same-image timing pair."""
     fields = ("fault_cluster", "fault_core", "fault_stall_cycles",
-              "fault_pre_stall_cycles", "fault_after_kernel")
-    different = [field for field in fields if first[field] != second[field]]
+              "fault_pre_stall_cycles", "fault_after_kernel", "fault_pre_stall_from")
+    different = [field for field in fields if first.get(field, 0) != second.get(field, 0)]
     if different:
         raise ValueError("same-ps pair has different fault fields: " + ", ".join(different))
 
 
 def scenario_test_cfg(sc: dict, extra_flags: str = "", *, check_pair: bool = True) -> dict:
     """Translate only data controls. Unknown flags must never change a T1 graph."""
-    adaptive_image = "-DBINGO_WD_ADAPT" in shlex.split(sc.get("image_flags", ""))
+    flags = shlex.split(sc.get("image_flags", ""))
+    late_image = "-DBINGO_WD_LATE" in flags
+    adaptive_image = "-DBINGO_WD_ADAPT" in flags or late_image
     cfg = test_cfg_defaults(3 if adaptive_image else 2)
     if "wd_adapt" in sc:
         cfg["wd_adapt"] = sc["wd_adapt"]
+    for field in ("wd_late", "fault_pre_stall_from"):
+        if field in sc:
+            if not late_image:
+                raise ValueError(f"{field} requires the BINGO_WD_LATE image flag")
+            cfg[field] = sc[field]
     cfg["evlog_enable"] = sc.get("evlog_enable", 0)
     cfg["recovery_hold"] = sc.get("recovery_hold", 0)
     cfg["pm_access_level"] = sc.get("pm_access_level", 0)
@@ -1135,13 +1145,15 @@ def t1_image_flags(sc: dict) -> str:
     if not isinstance(value, str):
         raise ValueError("T1 image_flags must be a flag string")
     flags = shlex.split(value)
-    if set(flags) - {"-DBINGO_WD_NO_HEARTBEAT", "-DBINGO_WD_NOP_HEARTBEAT", "-DBINGO_C6_SW_CERF", "-DBINGO_WD_ADAPT"}:
+    if set(flags) - {"-DBINGO_WD_NO_HEARTBEAT", "-DBINGO_WD_NOP_HEARTBEAT", "-DBINGO_C6_SW_CERF", "-DBINGO_WD_ADAPT", "-DBINGO_WD_LATE"}:
         raise ValueError("unsupported T1 image_flags")
     # A same-image pair may share image flags: both scenes then use one image.
     other_image = sc.get("same_as") and SCENARIOS[sc["same_as"]].get("image_flags", "") != value
     if flags and (not sc.get("t1") or other_image or any(
             sc is SCENARIOS.get(name) for names in T1_FAMILIES.values() for name in names)):
         raise ValueError("image_flags must not belong to a same-image family")
+    if "-DBINGO_WD_LATE" in flags and "-DBINGO_WD_ADAPT" not in flags:
+        flags.append("-DBINGO_WD_ADAPT")
     return " ".join(flags)
 
 
@@ -1149,9 +1161,10 @@ def test_cfg_bytes(cfg: dict) -> bytes:
     version = cfg["version"]
     if (version not in (1, 2, 3) or set(cfg) - set(TEST_CFG_FIELDS) - {
             "user", "evlog_enable", "recovery_hold", "pm_access_level", "cerf_fb_mode", "cerf_poll_cycles",
-            "wd_type_h", "wd_type_c", "wd_adapt"}
+            "wd_type_h", "wd_type_c", "wd_adapt", "wd_late", "fault_pre_stall_from"}
             or version == 1 and any(field in cfg for field in ("wd_type_h", "wd_type_c"))
-            or version != 3 and "wd_adapt" in cfg):
+            or version != 3 and any(field in cfg for field in
+                                   ("wd_adapt", "wd_late", "fault_pre_stall_from"))):
         raise ValueError("unsupported test configuration layout")
     user = cfg.get("user", [0] * 4)
     if len(user) != 4 or any(not isinstance(v, int) or not 0 <= v <= 0xFFFFFFFF for v in user):
@@ -1178,7 +1191,12 @@ def test_cfg_bytes(cfg: dict) -> bytes:
         adapt = cfg.get("wd_adapt", 0)
         if type(adapt) is not int or not 0 <= adapt <= 0xFFFFFFFF:
             raise ValueError("wd_adapt must be a uint32 word")
-        words += [adapt] + [0] * 31
+        late = [cfg.get(field, 0) for field in ("wd_late", "fault_pre_stall_from")]
+        if any(type(value) is not int or not 0 <= value <= 0xFFFFFFFF for value in late):
+            raise ValueError("wd_late and fault_pre_stall_from must be uint32 words")
+        if late[0] & 0xff0:
+            raise ValueError("wd_late reserved bits [11:4] must be zero")
+        words += [adapt] + late + [0] * 29
     return struct.pack("<" + "I" * len(words), *words)
 
 
@@ -2826,6 +2844,8 @@ def run_scenario(name: str, args: argparse.Namespace) -> bool:
     problems = evaluate(name, sc, log_text, uart_text)
     if sc.get("c2") or sc.get("c4_control"):
         problems += healthy_problems(log_text, uart_text, sc["dispatch_graph_csv"])
+    if sc.get("p9_healthy"):
+        problems += p9_healthy_problems(log_text)
     if sc.get("evlog_enable"):
         slots = (len(sc["expect_core_types"]) if "expect_core_types" in sc
                  else dispatch_host_slot()[1] + 1)

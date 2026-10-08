@@ -7,6 +7,9 @@
 
 // Test-only, little-endian image data. Each row spans sixteen 64-bit banks.
 #define BINGO_TEST_CFG_MAGIC 0x42475431u
+#if defined(BINGO_WD_LATE) && !defined(BINGO_WD_ADAPT)
+#define BINGO_WD_ADAPT
+#endif
 #ifdef BINGO_WD_ADAPT
 #define BINGO_TEST_CFG_VERSION 3u
 #else
@@ -51,7 +54,13 @@ typedef struct __attribute__((aligned(128))) {
     uint32_t wd_type_c[16];
 #ifdef BINGO_WD_ADAPT
     uint32_t wd_adapt;
+#ifdef BINGO_WD_LATE
+    uint32_t wd_late;
+    uint32_t fault_pre_stall_from;
+    uint32_t wd_adapt_reserved[29];
+#else
     uint32_t wd_adapt_reserved[31];
+#endif
 #endif
 } bingo_test_cfg_t;
 

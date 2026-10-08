@@ -355,7 +355,11 @@ inline uint32_t bingo_hw_offload_get_arg_ptr(uint32_t dev_task_id){
 #if BINGO_TEST_CFG
 inline int32_t bingo_hw_offload_manager(uint32_t fault_gid, uint32_t fault_stall_cycles,
         uint32_t fault_cluster, uint32_t fault_core, uint32_t fault_pre_stall_cycles,
-        uint32_t fault_after_kernel){
+        uint32_t fault_after_kernel
+#ifdef BINGO_WD_LATE
+        , uint32_t fault_pre_stall_from
+#endif
+        ){
 #else
 inline int32_t bingo_hw_offload_manager(){
 #endif
@@ -406,7 +410,11 @@ inline int32_t bingo_hw_offload_manager(){
             (fault_core == UINT32_MAX || snrt_cluster_core_idx() == fault_core)) {
             if (cur_global_task_id == fault_gid) {
                 if (!fault_after_kernel) bingo_wd_fault_stall(fault_stall_cycles);
-            } else if (fault_pre_stall_cycles != 0) {
+            } else if (fault_pre_stall_cycles != 0
+#ifdef BINGO_WD_LATE
+                       && cur_global_task_id >= fault_pre_stall_from
+#endif
+            ) {
                 bingo_wd_fault_stall(fault_pre_stall_cycles);
             }
         }
@@ -519,6 +527,9 @@ inline int32_t bingo_offload_manager(){
     uint32_t fault_core = cfg->fault_core;
     uint32_t fault_pre_stall_cycles = cfg->fault_pre_stall_cycles;
     uint32_t fault_after_kernel = cfg->fault_after_kernel;
+#ifdef BINGO_WD_LATE
+    uint32_t fault_pre_stall_from = cfg->fault_pre_stall_from;
+#endif
 #endif
 
     if (offload_type == 1){
@@ -528,7 +539,11 @@ inline int32_t bingo_offload_manager(){
         // Hardware offload
 #if BINGO_TEST_CFG
         return bingo_hw_offload_manager(fault_gid, fault_stall_cycles, fault_cluster,
-            fault_core, fault_pre_stall_cycles, fault_after_kernel);
+            fault_core, fault_pre_stall_cycles, fault_after_kernel
+#ifdef BINGO_WD_LATE
+            , fault_pre_stall_from
+#endif
+            );
 #else
         return bingo_hw_offload_manager();
 #endif

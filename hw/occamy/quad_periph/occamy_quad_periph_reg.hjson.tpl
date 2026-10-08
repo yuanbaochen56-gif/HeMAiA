@@ -668,5 +668,14 @@
         { bits: "31:12", name: "FLOOR", resval: "0", desc: "Suspect threshold floor in watchdog ticks." }
       ]
     },
+    { name: "BINGO_WD_LATE",
+      desc: "Predict late progress from learned type/class bounds, independently of watchdog adaptive detection. Zero disables prediction and learning exclusion.",
+      swaccess: "rw", hwaccess: "hro",
+      fields: [
+        { bits: "0", name: "EN", resval: "0", desc: "Enable learned late thresholds and exclusion of late executions." },
+        { bits: "3:1", name: "SH_L", resval: "0", desc: "Shift of learned maximum for late threshold." },
+        { bits: "31:12", name: "LFLOOR", resval: "0", desc: "Late threshold floor in watchdog ticks." }
+      ]
+    },
   ]
 }

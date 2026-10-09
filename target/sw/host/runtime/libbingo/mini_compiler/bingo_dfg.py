@@ -360,6 +360,9 @@ class BingoDFG(DiGraphWrapper[BingoNode]):
         but only after primary DONE, with whitelisted kernels, no input/output
         overlap and no A4 marking. This is not strict primary/backup exclusion.
         Partial DMA writes and post-fence late writes remain outside B1's model.
+        Descriptor order prioritizes selected primaries and all their ancestors.
+        The same stable topological rule drives sequencing, dummy passes, tags
+        and emission; legacy modes retain their original order.
         Without this opt-in, the legacy explicit single-task API is unchanged.
         """
         if chip not in self.chiplet_ids or type(core_type) is not int or not 0 < core_type < 32:
@@ -465,6 +468,24 @@ class BingoDFG(DiGraphWrapper[BingoNode]):
                 self.bingo_add_edge(primary, backup)
         if self._host_fallbacks and not nx.is_directed_acyclic_graph(self):
             raise ValueError("Host fallback expansion would create a cycle")
+
+    def _bingo_topological_order(self) -> list[BingoNode]:
+        """Stable D-union-P-first order, only for opt-in automatic pairs.
+
+        Recompute the ancestor closure after graph transforms, including dummy
+        nodes. Moving an ancestor-closed set to the front preserves every edge
+        and the original relative order within both partitions.
+        """
+        topo = list(nx.topological_sort(self))
+        primaries = {
+            n for n in self._host_fallbacks
+            if (n.assigned_chiplet_id, self.core_type_ids.get(
+                (n.assigned_cluster_id, n.assigned_core_id)))
+            in self._auto_host_fallback_types}
+        priority = set(primaries)
+        for primary in primaries:
+            priority.update(nx.ancestors(self, primary))
+        return [n for n in topo if n in priority] + [n for n in topo if n not in priority]
 
     def _compile_host_fallbacks(self) -> None:
         """Reserve private groups after manual groups and routers, then use P7c."""
@@ -805,7 +826,8 @@ class BingoDFG(DiGraphWrapper[BingoNode]):
         #                      |
         #                      v
         #                    gemm(Cl1)
-        for cur_node in self.node_list:
+        for cur_node in (self._bingo_topological_order()
+                         if self._auto_host_fallback_types else self.node_list):
             # First find all the successors
             succs_list = [
                 succ for succ in self.successors(cur_node)
@@ -930,7 +952,8 @@ class BingoDFG(DiGraphWrapper[BingoNode]):
         insert N-1 dummy_check nodes, each consuming one core's signal.
         The final normal task checks only the last remaining core.
         '''
-        for cur_node in self.node_list:
+        for cur_node in (self._bingo_topological_order()
+                         if self._auto_host_fallback_types else self.node_list):
             preds_list = [
                 pred for pred in self.predecessors(cur_node)
             ]
@@ -1021,7 +1044,7 @@ class BingoDFG(DiGraphWrapper[BingoNode]):
         """
         from collections import defaultdict
 
-        topo_order = list(nx.topological_sort(self))
+        topo_order = self._bingo_topological_order()
 
         # Group nodes by their (chiplet, cluster, core) assignment
         core_groups: dict[tuple, list[BingoNode]] = defaultdict(list)
@@ -1138,7 +1161,7 @@ class BingoDFG(DiGraphWrapper[BingoNode]):
         concurrency in placement, or widen DepTagWidth).
         """
         max_tags = 1 << tag_width
-        topo = list(nx.topological_sort(self))
+        topo = self._bingo_topological_order()
         pos = {n: i for i, n in enumerate(topo)}
 
         cells: dict = {}                      # (chip, cl, R, C) -> [(set_node, check_node), ...]
@@ -2147,7 +2170,7 @@ class BingoDFG(DiGraphWrapper[BingoNode]):
         # Use topological sort, but ensure Dummy Set nodes 
         # appear immediately after their source node.
         # 1. Get topological sort
-        topo_nodes = list(nx.topological_sort(self))
+        topo_nodes = self._bingo_topological_order()
         all_nodes = topo_nodes
         # # 2. Apply grouping logic
         # all_nodes = []

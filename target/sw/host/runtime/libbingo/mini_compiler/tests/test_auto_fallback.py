@@ -7,7 +7,9 @@ between backups, without placing backups on the device chain. Logical outputs
 are at least once, allowing ordered idempotent rewrites, not strict exclusion.
 """
 import json
+import importlib.util
 from pathlib import Path
+import re
 import sys
 import tempfile
 import unittest
@@ -278,6 +280,81 @@ class AutoFallbackTests(unittest.TestCase):
                 patch.object(reference, "_compile_host_fallbacks"), \
                 patch.object(reference, "_compile_cerf_fallbacks"):
             self.assertEqual(self.compile(reference), original)
+
+    def test_real_chain_emits_ancestor_closed_primary_prefix_and_safe_tags(self):
+        root = Path(__file__).resolve().parents[7]
+        recipe = root / "target/sw/host/apps/offload_bingo_hw/single_chip/workloads/dma_chain_autofb_2cluster/main_bingo.py"
+        spec = importlib.util.spec_from_file_location("p7b_real_chain", recipe)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        params = dict(A_size=384, chunk_size=64, chain_len=6, num_clusters=2)
+        platform = dict(num_chiplets=1, num_clusters_per_chiplet=2,
+                        num_cores_per_cluster=2, chiplet_ids=[0])
+        graph = module.create_dfg(params, module.define_memory_handles(params), platform, TYPES)
+        output = self.compile(graph)
+        by_id = {n.node_id: n for n in graph}
+        emitted = [by_id[int(i)] for i in re.findall(
+            r"task_desc_list_chip_00\[\d+\] = .*// Node ID (\d+)", output)]
+        self.assertEqual(len(emitted), len(graph))
+        primaries = set(graph._host_fallbacks)
+        priority = primaries | set().union(*(nx.ancestors(graph, p) for p in primaries))
+        self.assertEqual(set(emitted[:len(priority)]), priority)
+        self.assertEqual(emitted, graph._bingo_topological_order())
+        positions = {n: i for i, n in enumerate(emitted)}
+        self.assertTrue(all(positions[u] < positions[v] for u, v in graph.edges()))
+        self.assertTrue(nx.is_directed_acyclic_graph(graph))
+        for p, b in graph._host_fallbacks.items():
+            self.assertTrue(nx.has_path(graph, p, b))
+            self.assertFalse(any(nx.has_path(graph, b, q) for q in primaries))
+        for i in range(5):
+            self.assertTrue(nx.has_path(graph, graph._host_fallbacks[by_id[i]],
+                                       graph._host_fallbacks[by_id[i + 1]]))
+        for p, consumer in ((by_id[5], by_id[7]), (by_id[6], by_id[8])):
+            self.assertTrue(nx.has_path(graph, p, consumer))
+            self.assertTrue(nx.has_path(graph, graph._host_fallbacks[p], consumer))
+        # Prove reuse intervals using the REAL emitted FIFO order, not another
+        # ordinary topological sort. Every reused cell/tag must drain before set.
+        hb = nx.DiGraph(graph)
+        last, live = {}, {}
+        for n in emitted:
+            slot = (n.assigned_chiplet_id, n.assigned_cluster_id, n.assigned_core_id)
+            if slot in last:
+                hb.add_edge(last[slot], n)
+            last[slot] = n
+        for u, v in graph.edges():
+            if (u.dep_set_enable and v.dep_check_enable
+                    and v.assigned_core_id in u.dep_set_list
+                    and u.assigned_core_id in v.dep_check_list):
+                self.assertEqual(u.dep_set_tag, v.dep_check_tag)
+                key = (v.assigned_chiplet_id, v.assigned_cluster_id,
+                       v.assigned_core_id, u.assigned_core_id, u.dep_set_tag)
+                live.setdefault(key, []).append((u, v))
+        for edges in live.values():
+            edges.sort(key=lambda edge: positions[edge[0]])
+            for (_, drain), (producer, _) in zip(edges, edges[1:]):
+                self.assertTrue(drain is producer or nx.has_path(hb, drain, producer))
+
+    def test_priority_preserves_relative_order_and_manual_mode(self):
+        graph, tasks, _ = chain()
+        backups = graph.bingo_auto_host_fallback(0, 2)
+        graph._expand_host_fallbacks()
+        ordinary = list(nx.topological_sort(graph))
+        priority = set(tasks) | set().union(*(nx.ancestors(graph, p) for p in tasks))
+        self.assertEqual(graph._bingo_topological_order(),
+                         [n for n in ordinary if n in priority] +
+                         [n for n in ordinary if n not in priority])
+        self.assertTrue(all(b not in priority for b in backups))
+        manual, tasks, _ = chain(1)
+        manual.bingo_add_host_fallback(tasks[0])
+        self.assertEqual(manual._bingo_topological_order(), list(nx.topological_sort(manual)))
+
+    def test_tag_allocation_failure_is_not_silently_downgraded(self):
+        graph, _, _ = chain()
+        graph.bingo_auto_host_fallback(0, 2)
+        with patch.object(graph, "bingo_transform_dfg_allocate_dep_tags",
+                          side_effect=ValueError("dep-tag allocation failed")):
+            with self.assertRaisesRegex(ValueError, "dep-tag allocation failed"):
+                self.compile(graph)
 
 
 class GroupFallbackTests(unittest.TestCase):

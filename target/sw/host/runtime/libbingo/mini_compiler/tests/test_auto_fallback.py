@@ -1,0 +1,326 @@
+"""P7b opt-in shared B1 pairs and group-wide P7c registration.
+
+Manual B1 registration alone retains its one-node-per-type limit. Calling
+automatic registration opts that (chip, type) into multiple pairs: manual
+registrations before or after it share gp/gh and use pair-level ordering.
+"""
+import json
+from pathlib import Path
+import sys
+import tempfile
+import unittest
+from unittest.mock import patch
+import warnings
+
+import networkx as nx
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from bingo_dfg import BingoDFG
+from bingo_kernel_args import (
+    HostBingoKernelDummyArgs, HostBingoKernelIdmaArgs,
+    SnaxBingoKernelIdma1dCopyArgs, SnaxBingoKernelInt32AddArgs,
+)
+from bingo_mem_handle import BingoMemAlloc, BingoMemSymbol
+from bingo_node import BingoNode
+from test_cerf_fallback import compile_graph, node
+from test_host_fallback import TYPES, dummy
+
+
+def copy(graph, name, cluster=0, group=None):
+    task = BingoNode(0, cluster, 1, node_name=name,
+                     kernel_name="__snax_bingo_kernel_idma_1d_copy",
+                     kernel_args=SnaxBingoKernelIdma1dCopyArgs(
+                         BingoMemSymbol("source"), BingoMemAlloc(name, 64, "L3"), 64))
+    if group is not None:
+        task.cond_exec_en, task.cond_exec_group_id = True, group
+    graph.bingo_add_node(task)
+    return task
+
+
+def chain(length=6):
+    graph = BingoDFG(1, 2, 2, True, [0], core_type_ids=TYPES)
+    tasks = [copy(graph, f"copy_{i}") for i in range(length)]
+    for left, right in zip(tasks, tasks[1:]):
+        graph.bingo_add_edge(left, right)
+    check = dummy(graph, "check")
+    graph.bingo_add_edge(tasks[-1], check)
+    return graph, tasks, check
+
+
+class AutoFallbackTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+
+    def compile(self, graph):
+        return compile_graph(graph, self.tmp.name)
+
+    def test_six_pairs_are_acyclic_and_survive_all_passes(self):
+        graph, tasks, check = chain()
+        backups = graph.bingo_auto_host_fallback(0, 2)
+        self.assertEqual(len(backups), 6)
+        output = self.compile(graph)
+        self.assertTrue(nx.is_directed_acyclic_graph(graph))
+        for i, (primary, backup) in enumerate(zip(tasks, backups)):
+            self.assertTrue(nx.has_path(graph, primary, backup))
+            if i:
+                self.assertTrue(nx.has_path(graph, tasks[i - 1], backup))
+            self.assertTrue(nx.has_path(graph, backup, tasks[i + 1] if i < 5 else check))
+        self.assertEqual({n.cond_exec_group_id for n in tasks}, {0})
+        self.assertEqual({n.cond_exec_group_id for n in backups}, {1})
+        self.assertEqual(graph._host_fallback_masks, {0: (3, 1)})
+        self.assertIn("bingo_cerf_update(0x00000003u, 0x00000001u);", output)
+        self.assertEqual(output.count("bingo_cerf_fb_set("), 1)
+        report = json.loads((Path(self.tmp.name) / "host_fallback_report.json").read_text())
+        self.assertEqual(sum(row["selected"] for row in report), 6)
+        exits = [n for n in graph.node_list if n.kernel_name == "__snax_bingo_kernel_exit"
+                 and n.assigned_core_id == 1]
+        self.assertEqual(len(exits), 2)
+        self.assertTrue(all(n.cond_exec_en and n.cond_exec_group_id == 0 for n in exits))
+
+    def test_only_pair_edges_before_entry_exit(self):
+        graph, tasks, _ = chain()
+        backups = graph.bingo_auto_host_fallback(0, 2)
+        graph._expand_host_fallbacks()
+        for i in range(6):
+            self.assertTrue(graph.has_edge(tasks[i], backups[i]))
+            if i < 5:
+                self.assertTrue(graph.has_edge(backups[i], tasks[i + 1]))
+                self.assertFalse(graph.has_edge(tasks[-1], backups[i]))
+        self.assertTrue(nx.is_directed_acyclic_graph(graph))
+
+    def test_live_primary_finishes_after_switch_then_backup_rewrites_safely(self):
+        graph, tasks, _ = chain(1)
+        live = copy(graph, "live", cluster=1)
+        backups = graph.bingo_auto_host_fallback(0, 2)
+        self.compile(graph)
+        self.assertTrue(nx.has_path(graph, live, graph._host_fallbacks[live]))
+        # A primary already executing does not re-read gp. Its done releases
+        # the pair; the now-enabled gh executes, not skips, the same-output copy.
+        source = bytes(range(64))
+        destination = bytearray(64)
+        gp, gh, running = 1, 0, True
+        gp, gh = 0, 1
+        if running:
+            destination[:] = source
+        primary_done = True
+        executions = 0
+        if primary_done and gh:
+            destination[:] = source
+            executions += 1
+        self.assertEqual((gp, executions, bytes(destination)), (0, 1, source))
+        self.assertEqual(len(backups), 2)
+
+    def test_nonoverlapping_add_rewrite_and_inplace_rejection(self):
+        graph, tasks, _ = chain(1)
+        task = tasks[0]
+        task.kernel_name = "__snax_bingo_kernel_int32_add"
+        task.kernel_args = SnaxBingoKernelInt32AddArgs(
+            BingoMemSymbol("a"), BingoMemSymbol("b"), BingoMemAlloc("out", 64), 16)
+        backup, = graph.bingo_auto_host_fallback(0, 2)
+        self.assertIs(backup.kernel_args.output_addr, task.kernel_args.c_addr)
+        a, b = list(range(16)), list(range(16, 32))
+        output = [x + y for x, y in zip(a, b)]
+        output[:] = [x + y for x, y in zip(a, b)]
+        self.assertEqual(output, [16 + 2 * i for i in range(16)])
+        for kind in ("copy", "add"):
+            graph, tasks, _ = chain(1)
+            task = tasks[0]
+            if kind == "copy":
+                task.kernel_args.src_addr = task.kernel_args.dst_addr
+            else:
+                task.kernel_name = "__snax_bingo_kernel_int32_add"
+                shared = BingoMemAlloc("shared", 64)
+                task.kernel_args = SnaxBingoKernelInt32AddArgs(
+                    shared, BingoMemSymbol("b"), shared, 16)
+            self.assertEqual(graph.bingo_auto_host_fallback(0, 2), [])
+            self.assertIn("overlap", graph._auto_host_fallback_report[0]["reason"])
+
+    def test_skip_reasons_and_report(self):
+        changes = [
+            ("conditional", lambda n: setattr(n, "cond_exec_en", True), "unconditional"),
+            ("group", lambda n: setattr(n, "_gating_node", BingoNode(0, 0, 2)), "unconditional"),
+            ("marked", lambda n: setattr(n, "non_idempotent", True), "non-idempotent"),
+            ("unknown", lambda n: setattr(n, "kernel_name", "__snax_bingo_kernel_unknown"), "whitelisted"),
+            ("bare", lambda n: setattr(n.kernel_args, "src_addr", 123), "bare"),
+        ]
+        for name, change, reason in changes:
+            with self.subTest(name=name):
+                graph, tasks, _ = chain(1)
+                change(tasks[0])
+                self.assertEqual(graph.bingo_auto_host_fallback(0, 2), [])
+                self.assertIn(reason, graph._auto_host_fallback_report[0]["reason"])
+                if name == "group":
+                    # Use a real router reference for the separate emission check.
+                    tasks[0]._gating_node = dummy(graph, "router")
+                    tasks[0]._cond_node_index = 0
+                self.compile(graph)
+                report = json.loads((Path(self.tmp.name) / "host_fallback_report.json").read_text())
+                self.assertFalse(report[0]["selected"])
+
+    def test_suffix_rejection_cascades_and_compile_rechecks(self):
+        graph, tasks, check = chain()
+        late = dummy(graph, "late", 0, 1)
+        graph.bingo_add_edge(check, late)
+        self.assertEqual(graph.bingo_auto_host_fallback(0, 2), [])
+        self.assertTrue(all(not row["selected"] for row in graph._auto_host_fallback_report))
+        self.assertTrue(all("suffix" in row["reason"] for row in graph._auto_host_fallback_report
+                            if row["node_id"] in {n.node_id for n in tasks}))
+        graph, tasks, check = chain()
+        graph.bingo_auto_host_fallback(0, 2)
+        late = dummy(graph, "late", 0, 1)
+        graph.bingo_add_edge(check, late)
+        with self.assertRaisesRegex(ValueError, "outside CERF group"):
+            self.compile(graph)
+
+    def test_legacy_manual_limit_preserved_but_auto_explicitly_opts_in(self):
+        graph, tasks, _ = chain(2)
+        graph.bingo_add_host_fallback(tasks[0])
+        with self.assertRaisesRegex(ValueError, "one host fallback"):
+            graph.bingo_add_host_fallback(tasks[1])
+        self.assertEqual(len(graph.bingo_auto_host_fallback(0, 2)), 2)
+        self.compile(graph)
+
+    def test_manual_after_auto_shares_groups_and_pair_ordering(self):
+        """Auto opt-in also accepts later manual pairs of the same type."""
+        graph, tasks, check = chain()
+        backups = graph.bingo_auto_host_fallback(0, 2)
+        last = copy(graph, "manual_after_auto")
+        graph.remove_edge(tasks[-1], check)
+        graph.bingo_add_edge(tasks[-1], last)
+        graph.bingo_add_edge(last, check)
+        manual_backup = graph.bingo_add_host_fallback(last)
+        self.assertIs(graph.bingo_add_host_fallback(last), manual_backup)
+        tasks.append(last)
+        backups.append(manual_backup)
+        output = self.compile(graph)
+        self.assertTrue(nx.is_directed_acyclic_graph(graph))
+        self.assertEqual({n.cond_exec_group_id for n in tasks}, {0})
+        self.assertEqual({n.cond_exec_group_id for n in backups}, {1})
+        self.assertEqual(graph._host_fallback_masks, {0: (3, 1)})
+        self.assertEqual(output.count("bingo_cerf_fb_set("), 1)
+        for i, (primary, backup) in enumerate(zip(tasks, backups)):
+            self.assertTrue(nx.has_path(graph, primary, backup))
+            if i:
+                self.assertTrue(nx.has_path(graph, tasks[i - 1], backup))
+            self.assertTrue(nx.has_path(
+                graph, backup, tasks[i + 1] if i + 1 < len(tasks) else check))
+            if i + 1 < len(tasks):
+                self.assertFalse(nx.has_path(graph, tasks[-1], backup))
+
+    def test_handwritten_conflict_both_orders_and_group_overflow(self):
+        for before in (True, False):
+            graph, tasks, _ = chain()
+            primary = copy(graph, "manual", 1, 7)
+            backup = dummy(graph, "manual_backup")
+            backup.cond_exec_en, backup.cond_exec_group_id = True, 11
+            if before:
+                graph.bingo_add_cerf_fallback(primary, backup)
+                with self.assertRaisesRegex(ValueError, "handwritten"):
+                    graph.bingo_auto_host_fallback(0, 2)
+            else:
+                graph.bingo_auto_host_fallback(0, 2)
+                graph.bingo_add_cerf_fallback(primary, backup)
+                with self.assertRaisesRegex(ValueError, "handwritten"):
+                    self.compile(graph)
+        graph, _, _ = chain()
+        graph.bingo_auto_host_fallback(0, 2)
+        manual = dummy(graph, "group30")
+        manual.cond_exec_en, manual.cond_exec_group_id = True, 30
+        with self.assertRaisesRegex(ValueError, "overflow"):
+            self.compile(graph)
+
+    def test_auto_idempotent_registration_and_no_request_output_unchanged(self):
+        graph, _, _ = chain()
+        first = graph.bingo_auto_host_fallback(0, 2)
+        self.assertEqual(graph.bingo_auto_host_fallback(0, 2), first)
+        self.assertEqual(len(graph._auto_host_fallback_report), 6)
+        graph, _, _ = chain()
+        original = self.compile(graph)
+        reference, _, _ = chain()
+        with patch.object(reference, "_expand_host_fallbacks"), \
+                patch.object(reference, "_compile_host_fallbacks"), \
+                patch.object(reference, "_compile_cerf_fallbacks"):
+            self.assertEqual(self.compile(reference), original)
+
+
+class GroupFallbackTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+
+    def fixture(self):
+        graph = BingoDFG(1, 2, 2, True, [0], core_type_ids=TYPES)
+        ld = copy(graph, "ld", 0, 7)
+        gemm = node(graph, "gemm", 0, 0, 7)
+        backup_ld = copy(graph, "backup_ld", 1, 11)
+        backup_gemm = node(graph, "backup_gemm", 1, 0, 11)
+        graph.bingo_add_edge(ld, gemm)
+        graph.bingo_add_edge(backup_ld, backup_gemm)
+        graph.bingo_add_cerf_group_fallback(gemm, backup_gemm)
+        return graph, ld, gemm, backup_ld, backup_gemm
+
+    def compile(self, graph):
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            return compile_graph(graph, self.tmp.name)
+
+    def test_every_type_same_entries_and_both_protected_exits(self):
+        graph, ld, gemm, backup_ld, _ = self.fixture()
+        host = node(graph, "host_member", 0, 2, 7)
+        dummy_node = BingoNode(0, 0, 1)
+        dummy_node.node_type = "dummy"
+        dummy_node.cond_exec_en, dummy_node.cond_exec_group_id = True, 7
+        graph.bingo_add_node(dummy_node)
+        output = self.compile(graph)
+        self.assertEqual({key: value[2:] for key, value in graph._cerf_fallback_table.items()},
+                         {(0, 1): (7, 11), (0, 2): (7, 11)})
+        self.assertEqual(output.count("bingo_cerf_fb_set("), 2)
+        self.assertTrue(nx.has_path(graph, gemm, backup_ld))
+        self.assertTrue(nx.has_path(graph, host, backup_ld))
+        exits = [n for n in graph.node_list if n.kernel_name == "__snax_bingo_kernel_exit"
+                 and n.assigned_cluster_id == 0]
+        self.assertEqual(len(exits), 2)
+        self.assertTrue(all(n.cond_exec_en and n.cond_exec_group_id == 7 for n in exits))
+
+    def test_conflicting_existing_type_entry_rejected(self):
+        graph, _, _, _, _ = self.fixture()
+        primary = copy(graph, "conflict", 1, 8)
+        backup = node(graph, "conflict_backup", 0, 2, 12)
+        graph.bingo_add_cerf_fallback(primary, backup)
+        with self.assertRaisesRegex(ValueError, "Conflicting CERF fallback entries"):
+            self.compile(graph)
+
+    def test_each_type_suffix_checked(self):
+        for core in (0, 1):
+            graph, _, gemm, _, _ = self.fixture()
+            tail = node(graph, "tail", 0, core)
+            graph.bingo_add_edge(gemm, tail)
+            with self.subTest(core=core), self.assertRaisesRegex(ValueError, "outside CERF group"):
+                self.compile(graph)
+
+    def test_possible_substitute_exit_and_warning_for_every_type(self):
+        graph, ld, gemm, _, _ = self.fixture()
+        # Move the given backup to host so neither substitute carries it.
+        for n in list(graph.node_list):
+            if n.cond_exec_group_id == 11:
+                n.assigned_cluster_id, n.assigned_core_id = 0, 2
+                if isinstance(n.kernel_args, SnaxBingoKernelIdma1dCopyArgs):
+                    args = n.kernel_args
+                    n.kernel_name = "__host_bingo_kernel_idma"
+                    n.kernel_args = HostBingoKernelIdmaArgs(args.src_addr, args.dst_addr, args.size)
+                else:
+                    n.kernel_name = "__host_bingo_kernel_dummy"
+                    n.kernel_args = HostBingoKernelDummyArgs(0)
+        late = node(graph, "late_substitute", 1, 1)
+        graph.bingo_add_edge(gemm, late)
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            compile_graph(graph, self.tmp.name)
+        self.assertTrue(any("late_substitute" in str(w.message) for w in caught))
+        exits = [n for n in graph.node_list if n.kernel_name == "__snax_bingo_kernel_exit"]
+        self.assertTrue(all(n.cond_exec_en and n.cond_exec_group_id == 7 for n in exits))
+
+
+if __name__ == "__main__":
+    unittest.main()

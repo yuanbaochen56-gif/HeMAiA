@@ -348,9 +348,17 @@ class BingoDFG(DiGraphWrapper[BingoNode]):
         """Opt in to shared gp/gh B1 pairs for all eligible tasks of one type.
 
         Return selected backups in user-node order. Noneligible tasks are
-        skipped with reasons in host_fallback_report.json. A completed primary
-        on a live slot may run its backup after gh flips: the existing whitelist
-        checks guarantee same-output rewrites (no input/output overlap).
+        skipped with reasons in host_fallback_report.json. Manual registrations
+        before or after this opt-in share gp/gh and the same ordering rules.
+        For the selected primaries P of this (chip, type), each primary precedes
+        its backup. User edges within P are mirrored between backups, never
+        from a backup to a selected primary. External predecessors also precede
+        the backup; external consumers wait for both primary and backup. No
+        group-level sink-to-source edges are added in automatic mode.
+        The logical contract is at least once, allowing idempotent rewrites:
+        a completed primary may run its delayed backup after shared gh flips,
+        but only after primary DONE, with whitelisted kernels, no input/output
+        overlap and no A4 marking. This is not strict primary/backup exclusion.
         Partial DMA writes and post-fence late writes remain outside B1's model.
         Without this opt-in, the legacy explicit single-task API is unchanged.
         """
@@ -433,16 +441,27 @@ class BingoDFG(DiGraphWrapper[BingoNode]):
         """Read the final user edges before entry/exit insertion."""
         edges = {primary: (list(self.predecessors(primary)), list(self.successors(primary)))
                  for primary in self._host_fallbacks}
+        selected = {}
+        for primary in self._host_fallbacks:
+            key = (primary.assigned_chiplet_id, self.core_type_ids.get(
+                (primary.assigned_cluster_id, primary.assigned_core_id)))
+            selected.setdefault(key, set()).add(primary)
         for primary, backup in self._host_fallbacks.items():
             self._validate_host_fallback(primary)
             if backup not in self:
                 raise ValueError("Generated host fallback was removed from the DFG")
+            key = (primary.assigned_chiplet_id, self.core_type_ids.get(
+                (primary.assigned_cluster_id, primary.assigned_core_id)))
+            automatic = key in self._auto_host_fallback_types
             for pred in edges[primary][0]:
-                self.bingo_add_edge(pred, backup)
+                if automatic and pred in selected[key]:
+                    self.bingo_add_edge(self._host_fallbacks[pred], backup)
+                else:
+                    self.bingo_add_edge(pred, backup)
             for succ in edges[primary][1]:
-                self.bingo_add_edge(backup, succ)
-            if (primary.assigned_chiplet_id, self.core_type_ids.get(
-                    (primary.assigned_cluster_id, primary.assigned_core_id))) in self._auto_host_fallback_types:
+                if not automatic or succ not in selected[key]:
+                    self.bingo_add_edge(backup, succ)
+            if automatic:
                 self.bingo_add_edge(primary, backup)
         if self._host_fallbacks and not nx.is_directed_acyclic_graph(self):
             raise ValueError("Host fallback expansion would create a cycle")

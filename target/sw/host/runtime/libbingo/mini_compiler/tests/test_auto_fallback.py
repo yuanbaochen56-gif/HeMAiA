@@ -2,7 +2,9 @@
 
 Manual B1 registration alone retains its one-node-per-type limit. Calling
 automatic registration opts that (chip, type) into multiple pairs: manual
-registrations before or after it share gp/gh and use pair-level ordering.
+registrations before or after it share gp/gh and mirror the primary chain
+between backups, without placing backups on the device chain. Logical outputs
+are at least once, allowing ordered idempotent rewrites, not strict exclusion.
 """
 import json
 from pathlib import Path
@@ -64,8 +66,10 @@ class AutoFallbackTests(unittest.TestCase):
         for i, (primary, backup) in enumerate(zip(tasks, backups)):
             self.assertTrue(nx.has_path(graph, primary, backup))
             if i:
-                self.assertTrue(nx.has_path(graph, tasks[i - 1], backup))
-            self.assertTrue(nx.has_path(graph, backup, tasks[i + 1] if i < 5 else check))
+                self.assertTrue(nx.has_path(graph, backups[i - 1], backup))
+            for selected in tasks:
+                self.assertFalse(nx.has_path(graph, backup, selected))
+        self.assertTrue(nx.has_path(graph, backups[-1], check))
         self.assertEqual({n.cond_exec_group_id for n in tasks}, {0})
         self.assertEqual({n.cond_exec_group_id for n in backups}, {1})
         self.assertEqual(graph._host_fallback_masks, {0: (3, 1)})
@@ -79,14 +83,42 @@ class AutoFallbackTests(unittest.TestCase):
         self.assertTrue(all(n.cond_exec_en and n.cond_exec_group_id == 0 for n in exits))
 
     def test_only_pair_edges_before_entry_exit(self):
-        graph, tasks, _ = chain()
+        graph, tasks, check = chain()
         backups = graph.bingo_auto_host_fallback(0, 2)
         graph._expand_host_fallbacks()
         for i in range(6):
             self.assertTrue(graph.has_edge(tasks[i], backups[i]))
             if i < 5:
-                self.assertTrue(graph.has_edge(backups[i], tasks[i + 1]))
+                self.assertTrue(graph.has_edge(backups[i], backups[i + 1]))
                 self.assertFalse(graph.has_edge(tasks[-1], backups[i]))
+        self.assertEqual(
+            {(u, v) for u, v in graph.edges() if u in backups and v in backups},
+            set(zip(backups, backups[1:])))
+        self.assertFalse(any(graph.has_edge(b, p) for b in backups for p in tasks))
+        self.assertTrue(graph.has_edge(tasks[-1], check))
+        self.assertTrue(graph.has_edge(backups[-1], check))
+        self.assertTrue(nx.is_directed_acyclic_graph(graph))
+
+    def test_mirrors_branch_edges_and_keeps_external_dependencies(self):
+        graph, tasks, check = chain(4)
+        graph.remove_edge(tasks[1], tasks[2])
+        graph.bingo_add_edge(tasks[0], tasks[2])
+        graph.bingo_add_edge(tasks[1], tasks[3])
+        predecessor = dummy(graph, "external_input")
+        graph.bingo_add_edge(predecessor, tasks[0])
+        graph.bingo_add_edge(tasks[1], check)
+        user_edges = set(graph.edges())
+        backups = graph.bingo_auto_host_fallback(0, 2)
+        pairs = dict(zip(tasks, backups))
+        graph._expand_host_fallbacks()
+        self.assertEqual(
+            {(u, v) for u, v in graph.edges() if u in backups and v in backups},
+            {(pairs[u], pairs[v]) for u, v in user_edges if u in pairs and v in pairs})
+        self.assertFalse(any(graph.has_edge(b, p) for b in backups for p in tasks))
+        self.assertTrue(graph.has_edge(predecessor, backups[0]))
+        for primary in (tasks[1], tasks[-1]):
+            self.assertTrue(graph.has_edge(primary, check))
+            self.assertTrue(graph.has_edge(pairs[primary], check))
         self.assertTrue(nx.is_directed_acyclic_graph(graph))
 
     def test_live_primary_finishes_after_switch_then_backup_rewrites_safely(self):
@@ -175,14 +207,18 @@ class AutoFallbackTests(unittest.TestCase):
 
     def test_legacy_manual_limit_preserved_but_auto_explicitly_opts_in(self):
         graph, tasks, _ = chain(2)
-        graph.bingo_add_host_fallback(tasks[0])
+        manual = graph.bingo_add_host_fallback(tasks[0])
         with self.assertRaisesRegex(ValueError, "one host fallback"):
             graph.bingo_add_host_fallback(tasks[1])
-        self.assertEqual(len(graph.bingo_auto_host_fallback(0, 2)), 2)
+        backups = graph.bingo_auto_host_fallback(0, 2)
+        self.assertEqual(len(backups), 2)
+        self.assertIs(backups[0], manual)
         self.compile(graph)
+        self.assertTrue(nx.has_path(graph, manual, backups[1]))
+        self.assertFalse(any(nx.has_path(graph, b, p) for b in backups for p in tasks))
 
     def test_manual_after_auto_shares_groups_and_pair_ordering(self):
-        """Auto opt-in also accepts later manual pairs of the same type."""
+        """Later manual pairs share groups and mirror the backup chain."""
         graph, tasks, check = chain()
         backups = graph.bingo_auto_host_fallback(0, 2)
         last = copy(graph, "manual_after_auto")
@@ -202,11 +238,11 @@ class AutoFallbackTests(unittest.TestCase):
         for i, (primary, backup) in enumerate(zip(tasks, backups)):
             self.assertTrue(nx.has_path(graph, primary, backup))
             if i:
-                self.assertTrue(nx.has_path(graph, tasks[i - 1], backup))
-            self.assertTrue(nx.has_path(
-                graph, backup, tasks[i + 1] if i + 1 < len(tasks) else check))
+                self.assertTrue(nx.has_path(graph, backups[i - 1], backup))
+            self.assertFalse(any(nx.has_path(graph, backup, p) for p in tasks))
             if i + 1 < len(tasks):
                 self.assertFalse(nx.has_path(graph, tasks[-1], backup))
+        self.assertTrue(nx.has_path(graph, backups[-1], check))
 
     def test_handwritten_conflict_both_orders_and_group_overflow(self):
         for before in (True, False):

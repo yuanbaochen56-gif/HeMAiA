@@ -13,6 +13,8 @@
 #define BINGO_RET_EXIT 1
 #define BINGO_RET_FAIL 2
 
+#include "bingo_sdc_inject.h"
+
 //================================================================================
 // Debug
 //================================================================================
@@ -359,6 +361,9 @@ inline int32_t bingo_hw_offload_manager(uint32_t fault_gid, uint32_t fault_stall
 #ifdef BINGO_WD_LATE
         , uint32_t fault_pre_stall_from
 #endif
+#ifdef BINGO_SDC
+        , const volatile bingo_test_cfg_t *sdc_cfg
+#endif
         ){
 #else
 inline int32_t bingo_hw_offload_manager(){
@@ -435,6 +440,11 @@ inline int32_t bingo_hw_offload_manager(){
         // Start-of-task beat: reset watchdog after dispatch into ready queue.
         write_bingo_hw_manager_heartbeat(1);
         kernel_return_value = ((uint32_t (*)(uint32_t))cur_kernel_ptr)(cur_arg_ptr);
+#if defined(BINGO_SDC) && BINGO_TEST_CFG
+        if (kernel_return_value == BINGO_RET_SUCC) {
+            bingo_sdc_inject(cur_global_task_id, cur_kernel_ptr, cur_arg_ptr, sdc_cfg);
+        }
+#endif
 #if BINGO_TEST_CFG
         if (fault_after_kernel &&
             (fault_cluster == UINT32_MAX || snrt_cluster_idx() == fault_cluster) &&
@@ -542,6 +552,9 @@ inline int32_t bingo_offload_manager(){
             fault_core, fault_pre_stall_cycles, fault_after_kernel
 #ifdef BINGO_WD_LATE
             , fault_pre_stall_from
+#endif
+#ifdef BINGO_SDC
+            , cfg
 #endif
             );
 #else

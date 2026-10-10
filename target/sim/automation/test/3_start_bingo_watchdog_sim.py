@@ -1062,6 +1062,11 @@ TEST_CFG_MACROS = {
     "BINGO_RECOVERY_HOLD": "recovery_hold", "BINGO_PM_ACCESS_LEVEL": "pm_access_level",
 }
 
+SDC_CFG_FIELDS = (
+    "sdc_enable", "fault_sdc_gid", "fault_sdc_cluster", "fault_sdc_core",
+    "fault_sdc_offset", "fault_sdc_mask",
+)
+
 
 def test_cfg_defaults(version: int = 2) -> dict:
     if version not in (1, 2, 3):
@@ -1086,12 +1091,30 @@ def check_same_ps_fault_cfg(first: dict, second: dict) -> None:
         raise ValueError("same-ps pair has different fault fields: " + ", ".join(different))
 
 
+def test_cfg_image_defaults(version: int, image_flags: str = "") -> dict:
+    """Match the compiled initializer, including the opt-in SDC sentinels."""
+    cfg = test_cfg_defaults(version)
+    if "-DBINGO_SDC" in shlex.split(image_flags):
+        if version != 3:
+            raise ValueError("BINGO_SDC requires the v3 image layout")
+        cfg.update(sdc_enable=0, fault_sdc_gid=0xFFFFFFFF,
+                   fault_sdc_cluster=0xFFFFFFFF, fault_sdc_core=0xFFFFFFFF,
+                   fault_sdc_offset=0, fault_sdc_mask=0)
+    return cfg
+
+
 def scenario_test_cfg(sc: dict, extra_flags: str = "", *, check_pair: bool = True) -> dict:
     """Translate only data controls. Unknown flags must never change a T1 graph."""
     flags = shlex.split(sc.get("image_flags", ""))
     late_image = "-DBINGO_WD_LATE" in flags
-    adaptive_image = "-DBINGO_WD_ADAPT" in flags or late_image
-    cfg = test_cfg_defaults(3 if adaptive_image else 2)
+    sdc_image = "-DBINGO_SDC" in flags
+    adaptive_image = "-DBINGO_WD_ADAPT" in flags or late_image or sdc_image
+    cfg = test_cfg_image_defaults(3 if adaptive_image else 2, sc.get("image_flags", ""))
+    for field in SDC_CFG_FIELDS:
+        if field in sc:
+            if not sdc_image:
+                raise ValueError(f"{field} requires the BINGO_SDC image flag")
+            cfg[field] = sc[field]
     if "wd_adapt" in sc:
         cfg["wd_adapt"] = sc["wd_adapt"]
     for field in ("wd_late", "fault_pre_stall_from"):
@@ -1145,26 +1168,26 @@ def t1_image_flags(sc: dict) -> str:
     if not isinstance(value, str):
         raise ValueError("T1 image_flags must be a flag string")
     flags = shlex.split(value)
-    if set(flags) - {"-DBINGO_WD_NO_HEARTBEAT", "-DBINGO_WD_NOP_HEARTBEAT", "-DBINGO_C6_SW_CERF", "-DBINGO_WD_ADAPT", "-DBINGO_WD_LATE"}:
+    if set(flags) - {"-DBINGO_WD_NO_HEARTBEAT", "-DBINGO_WD_NOP_HEARTBEAT", "-DBINGO_C6_SW_CERF", "-DBINGO_WD_ADAPT", "-DBINGO_WD_LATE", "-DBINGO_SDC"}:
         raise ValueError("unsupported T1 image_flags")
     # A same-image pair may share image flags: both scenes then use one image.
     other_image = sc.get("same_as") and SCENARIOS[sc["same_as"]].get("image_flags", "") != value
     if flags and (not sc.get("t1") or other_image or any(
             sc is SCENARIOS.get(name) for names in T1_FAMILIES.values() for name in names)):
         raise ValueError("image_flags must not belong to a same-image family")
-    if "-DBINGO_WD_LATE" in flags and "-DBINGO_WD_ADAPT" not in flags:
+    if ("-DBINGO_WD_LATE" in flags or "-DBINGO_SDC" in flags) and "-DBINGO_WD_ADAPT" not in flags:
         flags.append("-DBINGO_WD_ADAPT")
     return " ".join(flags)
 
 
 def test_cfg_bytes(cfg: dict) -> bytes:
     version = cfg["version"]
-    if (version not in (1, 2, 3) or set(cfg) - set(TEST_CFG_FIELDS) - {
+    if (version not in (1, 2, 3) or set(cfg) - set(TEST_CFG_FIELDS) - set(SDC_CFG_FIELDS) - {
             "user", "evlog_enable", "recovery_hold", "pm_access_level", "cerf_fb_mode", "cerf_poll_cycles",
             "wd_type_h", "wd_type_c", "wd_adapt", "wd_late", "fault_pre_stall_from"}
             or version == 1 and any(field in cfg for field in ("wd_type_h", "wd_type_c"))
             or version != 3 and any(field in cfg for field in
-                                   ("wd_adapt", "wd_late", "fault_pre_stall_from"))):
+                                   ("wd_adapt", "wd_late", "fault_pre_stall_from") + SDC_CFG_FIELDS)):
         raise ValueError("unsupported test configuration layout")
     user = cfg.get("user", [0] * 4)
     if len(user) != 4 or any(not isinstance(v, int) or not 0 <= v <= 0xFFFFFFFF for v in user):
@@ -1196,7 +1219,14 @@ def test_cfg_bytes(cfg: dict) -> bytes:
             raise ValueError("wd_late and fault_pre_stall_from must be uint32 words")
         if late[0] & 0xff0:
             raise ValueError("wd_late reserved bits [11:4] must be zero")
-        words += [adapt] + late + [0] * 29
+        sdc = [cfg.get(field, 0) for field in SDC_CFG_FIELDS]
+        if any(type(value) is not int or not 0 <= value <= 0xFFFFFFFF for value in sdc):
+            raise ValueError("SDC controls must be uint32 words")
+        if sdc[0] not in (0, 1):
+            raise ValueError("sdc_enable must be 0 or 1")
+        if sdc[-1] > 0xFF:
+            raise ValueError("fault_sdc_mask must fit one byte")
+        words += [adapt] + late + sdc + [0] * 23
     return struct.pack("<" + "I" * len(words), *words)
 
 
@@ -2428,6 +2458,9 @@ def check_core_types(expected: Dict[int, int]) -> List[str]:
 
 def evaluate(name: str, sc: dict, log_text: str, uart_text: str) -> List[str]:
     """Return the list of failed expectations (empty = pass)."""
+    if sc.get("sdc"):
+        from bingo_sdc_check import evaluate_sdc
+        return evaluate_sdc(sc, log_text, uart_text)
     problems: List[str] = []
     if name in A5_FAMILY or (sc.get("c4") and "wd_type_h" in sc):
         problems += evaluate_type_threshold(sc, log_text)
@@ -2724,8 +2757,8 @@ class TestCfgSimRunner(NoTraceSimRunner):
         banks = task_dir / "bin/app_chip_0_0"
         unpatched = read_bank_image(banks)
         (self.output_dir / "test_cfg_unpatched.bin").write_bytes(unpatched)
-        if unpatched[location["offset"]:location["offset"] + location["size"]] != test_cfg_bytes(
-                test_cfg_defaults(self.test_cfg["version"])):
+        defaults = test_cfg_image_defaults(self.test_cfg["version"], tasks[0].get("extra_user_flags", ""))
+        if unpatched[location["offset"]:location["offset"] + location["size"]] != test_cfg_bytes(defaults):
             raise ValueError("unpatched image does not contain the default test configuration")
         self.test_cfg_record = patch_test_cfg(banks, location, self.test_cfg)
         (self.output_dir / "test_cfg.json").write_text(json.dumps(self.test_cfg_record, indent=2) + "\n")

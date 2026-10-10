@@ -7,7 +7,7 @@
 
 // Test-only, little-endian image data. Each row spans sixteen 64-bit banks.
 #define BINGO_TEST_CFG_MAGIC 0x42475431u
-#if defined(BINGO_WD_LATE) && !defined(BINGO_WD_ADAPT)
+#if (defined(BINGO_WD_LATE) || defined(BINGO_SDC)) && !defined(BINGO_WD_ADAPT)
 #define BINGO_WD_ADAPT
 #endif
 #ifdef BINGO_WD_ADAPT
@@ -54,7 +54,21 @@ typedef struct __attribute__((aligned(128))) {
     uint32_t wd_type_c[16];
 #ifdef BINGO_WD_ADAPT
     uint32_t wd_adapt;
+#ifdef BINGO_SDC
 #ifdef BINGO_WD_LATE
+    uint32_t wd_late;
+    uint32_t fault_pre_stall_from;
+#else
+    uint32_t sdc_p9_reserved[2];
+#endif
+    uint32_t sdc_enable;
+    uint32_t fault_sdc_gid;
+    uint32_t fault_sdc_cluster;
+    uint32_t fault_sdc_core;
+    uint32_t fault_sdc_offset;
+    uint32_t fault_sdc_mask;
+    uint32_t wd_adapt_reserved[23];
+#elif defined(BINGO_WD_LATE)
     uint32_t wd_late;
     uint32_t fault_pre_stall_from;
     uint32_t wd_adapt_reserved[29];
@@ -64,9 +78,17 @@ typedef struct __attribute__((aligned(128))) {
 #endif
 } bingo_test_cfg_t;
 
+#ifdef BINGO_SDC
+#define BINGO_TEST_CFG_SDC_INITIALIZER \
+    , .fault_sdc_gid = UINT32_MAX, .fault_sdc_cluster = UINT32_MAX, .fault_sdc_core = UINT32_MAX
+#else
+#define BINGO_TEST_CFG_SDC_INITIALIZER
+#endif
+
 #define BINGO_TEST_CFG_INITIALIZER { \
     .magic = BINGO_TEST_CFG_MAGIC, .version = BINGO_TEST_CFG_VERSION, \
     .fault_gid = UINT32_MAX, .fault_cluster = UINT32_MAX, .fault_core = UINT32_MAX \
+    BINGO_TEST_CFG_SDC_INITIALIZER \
 }
 
 #ifdef BINGO_WD_ADAPT

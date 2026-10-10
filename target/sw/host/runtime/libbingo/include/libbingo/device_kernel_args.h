@@ -58,6 +58,19 @@
     uint32_t cond_node_index;  \
     uint32_t scratchpad_ptr
 
+#ifdef BINGO_SDC
+__SNAX_KERNEL_ARGS_DEFINE __snax_bingo_kernel_sdc_compare_args {
+    uint32_t primary_addr_hi;
+    uint32_t primary_addr_lo;
+    uint32_t shadow_addr_hi;
+    uint32_t shadow_addr_lo;
+    uint32_t size;
+    uint32_t status_addr_hi;
+    uint32_t status_addr_lo;
+    BINGO_KERNEL_ARGS_TRAILER;
+} __snax_bingo_kernel_sdc_compare_args_t;
+#endif
+
 
 // Define the argument structures for the device kernels
 // Each structure is packed and aligned to 4 bytes

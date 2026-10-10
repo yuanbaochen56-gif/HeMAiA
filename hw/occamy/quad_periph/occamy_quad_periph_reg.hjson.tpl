@@ -661,7 +661,7 @@
       swaccess: "rw", hwaccess: "hro",
       fields: [
         { bits: "0", name: "EN", resval: "0", desc: "Use learned thresholds; does not gate learning." },
-        { bits: "1", name: "LOAD_GUARD", resval: "0", desc: "Require current interval peak load no greater than learned load." },
+        { bits: "1", name: "LOAD_GUARD", resval: "0", desc: "Require peak load over the whole execution, not reset by heartbeats, to be no greater than learned load." },
         { bits: "4:2", name: "SH_H", resval: "0", desc: "Shift of maximum interval for suspect threshold." },
         { bits: "7:5", name: "SH_C", resval: "0", desc: "Shift of maximum interval for fence threshold." },
         { bits: "11:8", name: "WARMUP", resval: "0", desc: "Minimum samples; zero means one." },

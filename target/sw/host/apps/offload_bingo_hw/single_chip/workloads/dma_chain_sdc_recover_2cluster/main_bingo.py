@@ -63,7 +63,7 @@ def golden_checks(mem):
         # own c variable name, including its generated shadow output name.
         if name == "input": addr = "(uintptr_t)s1b_input"
         else: addr = mem[name].get_c_var_name()
-        code += ["{", "char hex[129];", "const char digits[] = \"0123456789abcdef\";",
+        code += ["{", "char hex[129] = {0};", "const char digits[] = \"0123456789abcdef\";",
                  f"const volatile uint8_t *p = (const volatile uint8_t *)(uintptr_t){addr};",
                  "for (uint32_t i = 0; i < 64; ++i) { hex[2*i] = digits[p[i] >> 4]; hex[2*i+1] = digits[p[i] & 15]; }",
                  "hex[128] = 0;", f'printf_safe("[Host] SDC_BUFFER name={name} data=%s\\r\\n", hex);', "}"]

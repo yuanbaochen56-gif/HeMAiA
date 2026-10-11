@@ -1,0 +1,21 @@
+"""Hash-only seal of evidence/GateS1bR10, results/GateS1bR10 and every reused input.
+
+The R9 seal rule, pointed at R10: run after RESULT.md is written; manifest.json
+and manifest.sha256 are the only files excluded. The reused R8/R9 runs, the R9
+budgets and both frozen references are bound by hash through the R10 plan.
+"""
+from pathlib import Path
+
+import s1b_seal_r9 as seal
+
+W = Path(__file__).resolve().parents[1]
+
+
+def main():
+    seal.E = W / "evidence/GateS1bR10"
+    seal.RESULTS = W / "results/GateS1bR10"
+    seal.main()
+
+
+if __name__ == "__main__":
+    main()

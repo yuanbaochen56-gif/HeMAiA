@@ -1168,8 +1168,10 @@ def t1_image_flags(sc: dict) -> str:
     if not isinstance(value, str):
         raise ValueError("T1 image_flags must be a flag string")
     flags = shlex.split(value)
-    if set(flags) - {"-DBINGO_WD_NO_HEARTBEAT", "-DBINGO_WD_NOP_HEARTBEAT", "-DBINGO_C6_SW_CERF", "-DBINGO_WD_ADAPT", "-DBINGO_WD_LATE", "-DBINGO_SDC"}:
+    if set(flags) - {"-DBINGO_WD_NO_HEARTBEAT", "-DBINGO_WD_NOP_HEARTBEAT", "-DBINGO_C6_SW_CERF", "-DBINGO_WD_ADAPT", "-DBINGO_WD_LATE", "-DBINGO_SDC", "-DBINGO_SDC_QUIET"}:
         raise ValueError("unsupported T1 image_flags")
+    if "-DBINGO_SDC_QUIET" in flags and "-DBINGO_SDC" not in flags:
+        raise ValueError("BINGO_SDC_QUIET requires BINGO_SDC")
     # A same-image pair may share image flags: both scenes then use one image.
     other_image = sc.get("same_as") and SCENARIOS[sc["same_as"]].get("image_flags", "") != value
     if flags and (not sc.get("t1") or other_image or any(

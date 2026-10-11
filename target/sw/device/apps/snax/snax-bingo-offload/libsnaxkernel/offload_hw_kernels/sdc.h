@@ -50,8 +50,10 @@ SNAX_LIB_DEFINE uint32_t __snax_bingo_kernel_sdc_compare(void *arg) {
     bingo_kernel_scratchpad_t *sp = BINGO_GET_SP(arg, __snax_bingo_kernel_sdc_compare_args_t);
     sp->return_value = result;
     sp->num_return_values = 1;
+#ifndef BINGO_SDC_QUIET
     printf_safe("[BINGO_SDC] cluster=%u core=%u status_lo=0x%x result=%u\r\n",
                 snrt_cluster_idx(), snrt_cluster_core_idx(), a->status_addr_lo, result);
+#endif
     return BINGO_RET_SUCC;
 }
 #endif

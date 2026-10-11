@@ -27,6 +27,7 @@ from pathlib import Path
 import re
 import runpy
 import shutil
+import sys
 import traceback
 
 from bingo_sdc_recover_reference import reference_context
@@ -207,6 +208,18 @@ def integrity(sealed, bindings, budget_binding, record, profile_binding, plan_bi
     return profiles.load(profile_binding)
 
 
+def product_runner(product):
+    """The product runner module, loaded as the R10 runner does, without keeping its sys.path or module cache."""
+    path, loaded, root = list(sys.path), set(sys.modules), str(Path(product).resolve()) + os.sep
+    try:
+        return runpy.run_path(str(Path(product) / "target/sim/automation/test/3_start_bingo_watchdog_sim.py"))
+    finally:
+        sys.path[:] = path
+        for name, module in list(sys.modules.items()):
+            if name not in loaded and str(getattr(module, "__file__", None) or "").startswith(root):
+                del sys.modules[name]
+
+
 def rejudge_retained(sealed, bindings, record, profile_binding, plan_binding, budget_binding, retained, seeds):
     """The R11 runner's per-scene steps, offline, on the sealed raw outputs of the probe run."""
     profile = integrity(sealed, bindings, budget_binding, record, profile_binding, plan_binding)
@@ -238,7 +251,7 @@ def rejudge_retained(sealed, bindings, record, profile_binding, plan_binding, bu
     test_record = json.loads((output / "test_cfg.json").read_text())
     assert test_record["configuration"] == cfg
     product = Path(json.loads(Path(sealed["preparation_gate"]["path"]).read_text())["product_build_copy"])
-    module = runpy.run_path(str(product / "target/sim/automation/test/3_start_bingo_watchdog_sim.py"))
+    module = product_runner(product)
     module["check_t1_family"](seeds + [test_record])
     new.update(name=name, directory=str(output), image_id=test_record["image_id"],
                configuration=r8.CONFIGURATIONS[r8.scene_configuration(scene, cfg)])

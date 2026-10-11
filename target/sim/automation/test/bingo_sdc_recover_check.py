@@ -10,6 +10,7 @@ import re
 
 from bingo_c3 import classify
 from bingo_sdc_check import INJECT, MISMATCH, REPORT
+from bingo_sdc_recover_reference import absolute_latencies, compare_release, ReferenceError
 
 RECORD = re.compile(r"\[Host\] SDC_RECOVER ([^\r\n]+)")
 BUFFER = re.compile(r"\[Host\] SDC_BUFFER name=(\w+) data=([0-9a-f]{128})(?:\r?\n|$)")
@@ -34,7 +35,7 @@ def recovery_records(uart):
     return records
 
 
-def evaluate_recovery(scene, log, uart):
+def evaluate_recovery(scene, log, uart, *, reference_capture=False):
     problems = []
     try:
         rows = recovery_records(uart)
@@ -63,7 +64,13 @@ def evaluate_recovery(scene, log, uart):
             events[key] = int(stamp)
         fault_tx = scene.get("recovery_fault_tx")
         shadow_fault = scene.get("recovery_fault_shadow", False)
-        enabled = bool(scene["sdc_enable"])
+        dual = bool(scene["sdc_enable"])
+        recovery_enable = scene.get("recovery_enable", scene["sdc_enable"])
+        if type(recovery_enable) is not int or recovery_enable not in (0, 1):
+            raise ValueError("Invalid recovery-enable control")
+        if not reference_capture and recovery_enable != scene["sdc_enable"]:
+            raise ValueError("Independent recovery control is reference-only")
+        enabled = bool(recovery_enable)
         for r in rows:
             if r["tx"] not in (0, 1):
                 problems.append("Unbound recovery transaction")
@@ -84,7 +91,7 @@ def evaluate_recovery(scene, log, uart):
             dispatch = events.get(("DISPATCH", stage["resolver"]))
             if dispatch is None:
                 problems.append("Resolver report without DISPATCH")
-            if enabled:
+            if dual:
                 done = events.get(("DONE", stage["compare"]))
                 if done is None or dispatch is None or done >= dispatch:
                     problems.append("Resolver started before compare completion")
@@ -104,7 +111,7 @@ def evaluate_recovery(scene, log, uart):
                     int(next(k for k,v in graph["roles"].items() if v == "consumer"))]
                 for reader in readers:
                     at = events.get(("DISPATCH", reader))
-                    if reader == stages[1]["shadow"] and not enabled:
+                    if reader == stages[1]["shadow"] and not dual:
                         continue
                     if at is None or resolver_done is None or at <= resolver_done:
                         problems.append("Canonical reader did not wait for publication DONE")
@@ -115,7 +122,7 @@ def evaluate_recovery(scene, log, uart):
                     problems.append("Invalid third/vote timing")
                 if not mismatch and (r["third_start"] or r["third_end"]):
                     problems.append("Unexpected third execution timestamps")
-        if not enabled:
+        if not dual:
             for stage in stages:
                 for task in (stage["shadow"], stage["compare"]):
                     if any((kind,task) in events for kind in ("DISPATCH","DONE")):
@@ -134,7 +141,7 @@ def evaluate_recovery(scene, log, uart):
         else:
             raw = [tuple(map(int,x)) for x in MISMATCH.findall(uart)]
             wanted_raw = []
-            if enabled and fault_tx is not None:
+            if dual and fault_tx is not None:
                 st = stages[fault_tx]
                 wanted_raw = [(st["primary"],st["shadow"],st["compare"],18)]
             if raw != wanted_raw or list(map(int,REPORT.findall(uart))) != [len(wanted_raw)]:
@@ -152,12 +159,12 @@ def evaluate_recovery(scene, log, uart):
                 for tx in (0,1):
                     p,s = bytearray(src),bytearray(src)
                     if tx == fault_tx:
-                        if shadow_fault and enabled: s[17] ^= 4
+                        if shadow_fault and dual: s[17] ^= 4
                         elif not shadow_fault: p[17] ^= 4
                     canonical = src if enabled else bytes(p)
                     if buffers[f"P{tx}"] != bytes(p) or buffers[f"C{tx}"] != canonical:
                         problems.append("Primary/canonical bytes differ from independent oracle")
-                    if enabled and buffers[f"S{tx}"] != bytes(s):
+                    if dual and buffers[f"S{tx}"] != bytes(s):
                         problems.append("Shadow bytes differ from independent oracle")
                     if enabled and tx == fault_tx and buffers[f"T{tx}"] != src:
                         problems.append("Third execution did not use stable input")
@@ -185,10 +192,21 @@ def evaluate_recovery(scene, log, uart):
             executing = {str(task):stamp for (kind,task),stamp in events.items() if kind=="DISPATCH"}
             if set(eligibility) != set(executing):
                 problems.append("Readiness observations do not cover the exact executing set")
-            for task, stamp in executing.items():
-                ready = eligibility.get(task)
-                if type(ready) is not int or not 0 <= stamp-ready <= 1000000:
-                    problems.append("G-release exceeds 1us or invalid readiness")
+            if reference_capture:
+                if not dual or enabled or fault_tx is not None or negative:
+                    raise ReferenceError("Reference capture requires clean SDC dual execution ON, recovery OFF run")
+                absolute_latencies(eligibility, executing)
+            else:
+                if not scene.get("recovery_reference") or not scene.get("recovery_reference_context"):
+                    raise ReferenceError("Missing frozen L_ref: unobservable; STOP_USER")
+                if scene["recovery_reference_context"]["graph"] != graph:
+                    raise ReferenceError("Reference graph differs from recovery graph")
+                release = compare_release(eligibility, executing, scene["recovery_reference"],
+                                          scene["recovery_reference_context"])
+                if release["status"] != "PASS":
+                    problems.append("G-release extra exceeds 1us: " + str(release["tasks"]))
+    except ReferenceError as error:
+        problems.append(f"Unobservable G-release; STOP_USER: {error}")
     except (KeyError, ValueError, TypeError, OSError, StopIteration) as error:
         problems.append(f"Incomplete recovery evidence: {error}")
     return problems

@@ -1,8 +1,11 @@
 import copy
 import unittest
+import tempfile
+from pathlib import Path
 
 from bingo_sdc_recover_check import evaluate_recovery, recovery_records
 from bingo_sdc_recover_scenarios import recovery_scenarios
+from bingo_sdc_recover_reference import freeze_reference, METRIC
 from test_bingo_test_cfg import watchdog
 
 GRAPH = dict(roles={str(i):role for i,role in enumerate(
@@ -15,7 +18,7 @@ REPORT = dict(nodes=[dict(selected=True,node_id=s['primary'],shadow_id=s['shadow
 
 
 def fixture(scene):
-    enabled=scene['sdc_enable']; fault_tx=scene['recovery_fault_tx']
+    dual=scene['sdc_enable']; enabled=scene.get('recovery_enable',dual); fault_tx=scene['recovery_fault_tx']
     shadow=scene['recovery_fault_shadow']; log=[]; uart=[]; eligibility={}; stamp=1000000
     def event(kind,task,core=2,cluster=0):
         nonlocal stamp
@@ -26,7 +29,7 @@ def fixture(scene):
     original=bytes(((i*37+11)^(i>>2))&255 for i in range(64)); buffers={'input':original}; src=original
     for tx,st in enumerate(GRAPH['stages']):
         event('DISPATCH',st['primary'],1);event('DONE',st['primary'],1)
-        if enabled:
+        if dual:
             for task in (st['shadow'],st['compare']):
                 event('DISPATCH',task,1,1);event('DONE',task,1,1)
         event('DISPATCH',st['resolver']);event('DONE',st['resolver'])
@@ -64,6 +67,21 @@ def fixture(scene):
 
 
 class RecoveryCheckerTests(unittest.TestCase):
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.context = dict(graph=copy.deepcopy(GRAPH), metric=METRIC, fixture=True)
+        # Synthetic per-task timings only; no system reference is produced.
+        self.reference = freeze_reference(Path(self.directory.name)/"reference",
+            {str(i): 0 for i in range(11)}, {str(i): 100000 for i in range(11)},
+            self.context, dict(sdc_enable=1, recovery_enable=0, fault_tx=None, negative=False,
+                               recovery_runs_started=0, gates_status="PASS"))
+
+    def check(self, scene, log, uart):
+        scene = dict(scene, recovery_reference=self.reference,
+                     recovery_reference_context=self.context)
+        return evaluate_recovery(scene, log, uart)
+
     def scenes(self):return recovery_scenarios(dict(t1=True),REPORT,GRAPH)
 
     def test_flag_guards(self):
@@ -74,7 +92,7 @@ class RecoveryCheckerTests(unittest.TestCase):
 
     def test_six_semantic_fixtures(self):
         for name,scene in self.scenes().items():
-            with self.subTest(name=name):self.assertEqual(evaluate_recovery(*fixture(scene)),[])
+            with self.subTest(name=name):self.assertEqual(self.check(*fixture(scene)),[])
 
     def test_reject_semantic_evidence_mutations(self):
         sc,log,uart=fixture(self.scenes()['s1b_stage0_primary_on'])
@@ -88,18 +106,18 @@ class RecoveryCheckerTests(unittest.TestCase):
         # A reader before resolver DONE is rejected independent of its timestamp.
         cases[4]=(log.replace('task=4 core=2','task=40 core=2'),uart)
         for mutated_log,mutated_uart in cases:
-            self.assertTrue(evaluate_recovery(sc,mutated_log,mutated_uart))
+            self.assertTrue(self.check(sc,mutated_log,mutated_uart))
         no_ready=copy.deepcopy(sc);no_ready.pop('recovery_eligibility')
-        self.assertTrue(evaluate_recovery(no_ready,log,uart))
+        self.assertTrue(self.check(no_ready,log,uart))
         too_late=copy.deepcopy(sc);too_late['recovery_eligibility']['4']=0
-        self.assertTrue(evaluate_recovery(too_late,log,uart))
+        self.assertTrue(self.check(too_late,log,uart))
 
     def test_reject_missing_address_binding_and_skip_done(self):
         sc,log,uart=fixture(self.scenes()['s1b_healthy_off'])
         sc['recovery_graph'].pop('status_addresses')
-        self.assertTrue(evaluate_recovery(sc,log,uart))
+        self.assertTrue(self.check(sc,log,uart))
         sc,log,uart=fixture(self.scenes()['s1b_healthy_off'])
-        self.assertTrue(evaluate_recovery(sc,log+'[BINGO_DONE] 999 chip=0 task=2 core=1 cluster=1\n',uart))
+        self.assertTrue(self.check(sc,log+'[BINGO_DONE] 999 chip=0 task=2 core=1 cluster=1\n',uart))
         with self.assertRaises(ValueError):recovery_records('[Host] SDC_RECOVER tx=0 tx=0\n')
 
     def test_finite_negative_path_requires_no_done_or_consumers(self):
@@ -116,9 +134,49 @@ class RecoveryCheckerTests(unittest.TestCase):
         uart='[Host] SDC_RECOVER '+' '.join(f'{k}={hex(v) if k=="status_addr" else v}' for k,v in row.items())+'\n'
         uart+='[Host] Bingo status: replay_stuck=0 fenced=0x0\n[Host] Offload Finish with ret = 2\n'
         sc['recovery_eligibility']={k:v for k,v in sc['recovery_eligibility'].items() if k in ('10','0','1','2','3','4')}
-        self.assertEqual(evaluate_recovery(sc,log,uart),[])
-        self.assertTrue(evaluate_recovery(sc,log+'[BINGO_DONE] 8000000 chip=0 task=4 core=2 cluster=0\n',uart))
-        self.assertTrue(evaluate_recovery(sc,log+'[BINGO_DISPATCH] 8000001 chip=0 task=5 core=1 cluster=0\n',uart))
+        self.assertEqual(self.check(sc,log,uart),[])
+        self.assertTrue(self.check(sc,log+'[BINGO_DONE] 8000000 chip=0 task=4 core=2 cluster=0\n',uart))
+        self.assertTrue(self.check(sc,log+'[BINGO_DISPATCH] 8000001 chip=0 task=5 core=1 cluster=0\n',uart))
+
+    def test_reference_is_required_even_when_absolute_wait_is_small(self):
+        self.assertTrue(evaluate_recovery(*fixture(self.scenes()['s1b_healthy_off'])))
+
+    def test_reference_capture_retains_other_gates(self):
+        sc, log, uart = fixture(dict(self.scenes()['s1b_healthy_on'], recovery_enable=0))
+        self.assertEqual(evaluate_recovery(sc, log, uart, reference_capture=True), [])
+        self.assertTrue(evaluate_recovery(sc, log, uart.replace('commit=1', 'commit=0'),
+                                          reference_capture=True))
+        self.assertTrue(evaluate_recovery(*fixture(self.scenes()['s1b_healthy_on']),
+                                          reference_capture=True))
+        self.assertTrue(evaluate_recovery(*fixture(self.scenes()['s1b_healthy_off']),
+                                          reference_capture=True))
+        self.assertTrue(evaluate_recovery(sc, log.replace('task=2 ', 'task=22 '), uart,
+                                          reference_capture=True))
+        self.assertTrue(evaluate_recovery(sc, log, uart.replace('name=S0 data=', 'name=S0 data=00'),
+                                          reference_capture=True))
+        self.assertTrue(self.check(sc, log, uart))
+
+    def test_relative_boundary_and_failure_in_complete_checker(self):
+        sc, log, uart = fixture(self.scenes()['s1b_healthy_off'])
+        sc['recovery_eligibility']['10'] = 100000  # absolute 1.1us, extra exactly 1us
+        self.assertEqual(self.check(sc, log, uart), [])
+        sc['recovery_eligibility']['10'] -= 1
+        self.assertTrue(any('extra exceeds 1us' in p for p in self.check(sc, log, uart)))
+
+    def test_tampered_reference_stops_complete_checker(self):
+        sc, log, uart = fixture(self.scenes()['s1b_healthy_off'])
+        path = Path(self.reference['path']); path.chmod(0o600); path.write_text('tampered')
+        problems = self.check(sc, log, uart)
+        self.assertTrue(any('STOP_USER' in p and 'SHA256 mismatch' in p for p in problems))
+
+    def test_missing_reference_task_stops_complete_checker(self):
+        sc, log, uart = fixture(self.scenes()['s1b_healthy_off'])
+        self.reference = freeze_reference(Path(self.directory.name)/'missing_task',
+            {'10': 0}, {'10': 100000}, self.context,
+            dict(sdc_enable=1, recovery_enable=0, fault_tx=None, negative=False,
+                 recovery_runs_started=0, gates_status='PASS'))
+        self.assertTrue(any('STOP_USER' in p and 'Missing reference task' in p
+                            for p in self.check(sc, log, uart)))
 
 
 if __name__=='__main__':unittest.main()

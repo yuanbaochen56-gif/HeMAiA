@@ -49,7 +49,7 @@ def create_dfg(params, platform, core_type_ids):
  return g,roles,stages,mem
 
 
-def golden_checks(mem):
+def golden_checks(mem, padded_dumps=False):
     # Post-execute is diagnostic only; the resolver never sees this golden.
     code = ["asm volatile(\"fence rw, rw\" ::: \"memory\");",
             "uint32_t __recover_errors = 0;",
@@ -57,13 +57,17 @@ def golden_checks(mem):
             "((const volatile uint8_t *)(uintptr_t)ptr_s1b_sink)[i] != s1b_golden[i];",
             'printf_safe("[Host] Check [SDC_RECOVER_sink]: %s (%u / 64 bytes)\\r\\n", '
             '__recover_errors ? "FAIL" : "PASS", __recover_errors);']
+    # The WT cache checks the whole 64-bit response, including the NUL word.
+    # Cover that word inside an aligned, fully initialized object when opted in.
+    hex_declaration = ("char hex[136] __attribute__((aligned(8))) = {0};"
+                       if padded_dumps else "char hex[129] = {0};")
     for name in ("input", "P0", "S0", "T0", "C0", "P1", "S1", "T1", "C1", "sink"):
         addr = None
         # Handles are rendered by the compiler; known allocations retain their
         # own c variable name, including its generated shadow output name.
         if name == "input": addr = "(uintptr_t)s1b_input"
         else: addr = mem[name].get_c_var_name()
-        code += ["{", "char hex[129] = {0};", "const char digits[] = \"0123456789abcdef\";",
+        code += ["{", hex_declaration, "const char digits[] = \"0123456789abcdef\";",
                  f"const volatile uint8_t *p = (const volatile uint8_t *)(uintptr_t){addr};",
                  "for (uint32_t i = 0; i < 64; ++i) { hex[2*i] = digits[p[i] >> 4]; hex[2*i+1] = digits[p[i] & 15]; }",
                  "hex[128] = 0;", f'printf_safe("[Host] SDC_BUFFER name={name} data=%s\\r\\n", hex);', "}"]
@@ -79,6 +83,8 @@ def main():
     parser.add_argument("--hwcfg", type=Path)
     parser.add_argument("--platformcfg", type=Path, required=True)
     parser.add_argument("--data_h", type=Path)
+    parser.add_argument("--padded-dumps", action="store_true",
+                        help="Opt in to aligned, zeroed 136-byte diagnostic hex buffers")
     args = parser.parse_args()
     params = json.loads(args.cfg.read_text())
     platform = parse_platform_cfg(args.platformcfg)
@@ -91,7 +97,7 @@ def main():
     data_h.write_text(emit_header_file())
     graph.bingo_compile_dfg("Single-Chip DMA Chain with SDC Recovery", str(out),
         args.output_offload_file_name, extra_include_header_list=[data_h.name],
-        post_execute_code=golden_checks(mem))
+        post_execute_code=golden_checks(mem, args.padded_dumps))
     report = json.loads((out / "sdc_report.json").read_text())
     selected = [n for n in report["nodes"] if n["selected"]]
     if [n["status_index"] for n in selected] != [0,1]:

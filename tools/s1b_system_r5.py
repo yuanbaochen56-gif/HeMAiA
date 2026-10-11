@@ -17,7 +17,7 @@ import traceback
 W = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(W / "tools"), str(W / "util/automation_scripts"),
                str(W / "target/sim/automation/test")]
-from s1b_system_r1 import sha, write, judge, finite_trace, tcl_observer
+from s1b_system_r1 import sha, write, judge, finite_trace, tcl_observer, require_clean_product_log
 
 from bingo_sdc_recover_reference import (freeze_reference, load_reference, reference_context,
                                          require_reference_tasks, ReferenceError)
@@ -37,12 +37,7 @@ def scene_plan(sealed):
         (name, name, scene, False) for name, scene in sealed["scenes"].items()]
 
 
-def require_clean_product_log(log):
-    if "reading invalid data on port" in log:
-        raise ReferenceError("Product WT cache invalid-read warning: STOP_USER; no observer waiver")
-
-
-def main():
+def main(*, reference_binding=None):
     E.mkdir()
     ROOT.mkdir()
     sealed = json.loads(PRED.read_text())
@@ -52,8 +47,12 @@ def main():
                  predictions_sha256=pred_sha, runs=[], simulation_started=0, current=None,
                  retained_import_failure=str(W / "evidence/system_s1b_r1.console.log"))
     active, children = {}, {}
-    reference = None
+    reference = reference_binding
     context = reference_context(sealed)
+    if reference is not None:
+        load_reference(reference, context)
+        state["reference"] = reference
+        state["reference_frozen_before_runner"] = True
     original_popen = subprocess.Popen
     stop_guard = threading.Event()
     guard_error = []
@@ -141,7 +140,12 @@ def main():
             module["HeMAiASimRunner"]._container.__globals__["run_in_container"] = forbidden_container
             subprocess.Popen = OwnedPopen
             records = []
-            for output_name, name, scene, capture in scene_plan(sealed):
+            plan = scene_plan(sealed)
+            if reference is not None:
+                # R7 explicitly uses the offline-validated measured padded run.
+                # No recapture, replacement, or mutation of its pinned L_ref.
+                plan = plan[1:]
+            for output_name, name, scene, capture in plan:
                 state["current"] = name
                 state["reference_capture"] = capture
                 if not capture:

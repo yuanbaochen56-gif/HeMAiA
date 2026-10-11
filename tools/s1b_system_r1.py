@@ -25,7 +25,8 @@ sys.path[:0] = [str(W / "tools"), str(W / "util/automation_scripts"),
 from s1b_observations import readiness
 from bingo_sdc_recover_check import evaluate_recovery, recovery_records, EVENT
 from bingo_evlog import ITEM, SUMMARY, check_evlog
-from bingo_sdc_recover_reference import compare_release, reference_context
+from bingo_sdc_recover_reference import compare_release, reference_context, ReferenceError
+from s1b_envelope_r7 import success_envelope_us
 
 
 def sha(path):
@@ -38,6 +39,19 @@ def sha(path):
 
 def write(path, value):
     path.write_text(json.dumps(value, indent=2) + "\n")
+
+
+def require_clean_product_log(log):
+    cache_warnings = [line for line in log.splitlines()
+                      if "reading invalid data on port" in line.lower()
+                      or ("warning" in line.lower() and "cache" in line.lower())]
+    errors = re.findall(r"^.*\*\*\s*Error\b.*$", log, re.MULTILINE | re.IGNORECASE)
+    errors += [count for count in re.findall(r"\bErrors:\s*(\d+)", log, re.IGNORECASE) if int(count)]
+    if cache_warnings:
+        raise ReferenceError("Product WT cache warning: STOP_USER; no observer waiver")
+    if errors:
+        raise ReferenceError("Questa error: STOP_USER; zero-error gate")
+    return dict(status="PASS", cache_warnings=0, questa_errors=0)
 
 
 def tcl_observer(sealed, negative):
@@ -70,6 +84,7 @@ def tcl_observer(sealed, negative):
 
 
 def judge(name, scene, log, uart, observer, sealed, reference=None, *, reference_capture=False):
+    warning_gate = require_clean_product_log(log)
     observed = readiness(observer, sealed["descriptors"], sealed["clocks"]["manager_period_ps"])
     native_scene = dict(scene, recovery_eligibility=observed["eligibility"],
                         recovery_reference=reference, recovery_reference_context=reference_context(sealed))
@@ -83,7 +98,9 @@ def judge(name, scene, log, uart, observer, sealed, reference=None, *, reference
         task, stamp = int(task), int(stamp)
         (product_dispatch if kind == "DISPATCH" else product_done)[task] = stamp
         if kind == "DONE":
-            actual_done[f"{int(chip)}:{int(cluster)}:{int(core)}"].append(task)
+            # The frozen model's slot is (cluster, core). evaluate_recovery
+            # independently rejects every event outside chip0.
+            actual_done[f"{int(cluster)}:{int(core)}"].append(task)
     prediction = sealed["reference_prediction"] if reference_capture else sealed["predictions"][name]
     if dict(actual_done) != prediction["done_by_slot"]:
         problems.append("Per-slot DONE sequence differs from frozen tagged model")
@@ -130,7 +147,7 @@ def judge(name, scene, log, uart, observer, sealed, reference=None, *, reference
                  if node["kernel"] == "__host_bingo_kernel_entry")
     if end is not None and not scene.get("recovery_negative"):
         mismatch_count = sum(row["third"] for row in rows)
-        bound = sealed["budgets"]["normal_all_healthy_envelope"] + mismatch_count * 1024
+        bound = success_envelope_us(sealed["budgets"], mismatch_count)
         if end - product_dispatch[entry] > bound * 1000000:
             problems.append("Frozen success envelope exceeded")
     summaries = [tuple(map(int, pair)) for pair in SUMMARY.findall(uart)]
@@ -144,6 +161,7 @@ def judge(name, scene, log, uart, observer, sealed, reference=None, *, reference
         problems.append("Missing unique inherited pre-print EVLOG boundary")
     t_evlog = int(boundaries[0]) if boundaries else None
     return dict(status="FAIL" if problems else "PASS", problems=problems,
+                warning_gate=warning_gate,
                 readiness=observed, release=release, recovery=rows, dispatch=product_dispatch, done=product_done,
                 completion_ps=end, T_evlog_ps=t_evlog,
                 evlog=dict(summaries=summaries, items=items))

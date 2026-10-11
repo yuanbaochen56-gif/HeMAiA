@@ -29,6 +29,7 @@ except ImportError:
 
 from bingo_utils import DiGraphWrapper
 from bingo_node import BingoNode
+from bingo_sdc import DmrSupport
 from bingo_mem_handle import BingoMemAlloc, BingoMemAllocView, BingoMemSymbol, BingoMemFixedAddr
 from bingo_kernel_args import (
     BingoKernelArgs,
@@ -155,7 +156,7 @@ _REPLAY_SAFETY_KERNELS = {
 }
 
 
-class BingoDFG(DiGraphWrapper[BingoNode]):
+class BingoDFG(DmrSupport, DiGraphWrapper[BingoNode]):
     """Data Flow Graph (DFG) for Bingo."""
 
     def __init__(self,
@@ -205,6 +206,7 @@ class BingoDFG(DiGraphWrapper[BingoNode]):
         self._host_fallback_masks: dict[int, tuple[int, int]] = {}
         self._auto_host_fallback_types: set[tuple[int, int]] = set()
         self._auto_host_fallback_report: list[dict] = []
+        self._init_dmr()
         self.allow_unsafe_replay = allow_unsafe_replay
         self._unsafe_replay_warned: set[BingoNode] = set()
 
@@ -315,6 +317,8 @@ class BingoDFG(DiGraphWrapper[BingoNode]):
 
     def _validate_host_fallback_type(self, chip: int, type_id: int) -> None:
         """Type conflicts are errors, not per-node eligibility failures."""
+        if (chip, type_id) in self._sdc_types:
+            raise ValueError("Host fallback conflicts with DMR for this type")
         for primary, backup in self._cerf_fallbacks:
             if self._host_fallbacks.get(primary) is backup:
                 continue
@@ -490,6 +494,8 @@ class BingoDFG(DiGraphWrapper[BingoNode]):
                 (n.assigned_cluster_id, n.assigned_core_id)))
             in self._auto_host_fallback_types}
         priority = set(primaries)
+        primaries.update(self._sdc_pairs)
+        priority.update(primaries)
         for primary in primaries:
             priority.update(nx.ancestors(self, primary))
         return [n for n in topo if n in priority] + [n for n in topo if n not in priority]
@@ -2443,6 +2449,9 @@ class BingoDFG(DiGraphWrapper[BingoNode]):
         for include in extra_include_header_list:
             f.write(f'#include "{include}"\n')
         f.write("\n")
+        if self._sdc_pairs:
+            f.write('#if !defined(BINGO_SDC) || !BINGO_TEST_CFG\n#error "DMR requires BINGO_SDC and BINGO_TEST_CFG"\n#endif\n')
+            f.write('#include "bingo_test_cfg.h"\n')
         if 64 - self._wd_class_shift() >= 3:
             f.write("#ifdef BINGO_WD_ADAPT\n")
             f.write(f"#define BINGO_WD_CLASS_BITS(c) ((uint64_t)(c) << {self._wd_class_shift()})\n")
@@ -2638,6 +2647,7 @@ class BingoDFG(DiGraphWrapper[BingoNode]):
         f.write("\n")
         f.write('        OFFLOAD_BINGO_HW_DEBUG_PRINT_SAFE("Chip(%x, %x): [Host] Init HW Bingo Scheduler\\r\\n",\n')
         f.write('               get_current_chip_loc_x(), get_current_chip_loc_y());\n\n')
+        self._emit_dmr_init(f, chiplet_id)
 
         if chiplet_id in self._host_fallback_masks:
             mask, value = self._host_fallback_masks[chiplet_id]
@@ -2752,6 +2762,7 @@ class BingoDFG(DiGraphWrapper[BingoNode]):
                 self._emit_scheduler_launch(f, chiplet_id)
 
                 # F. Emit Post-Execute Code (runs after scheduler completes)
+                self._emit_dmr_report(f)
                 if post_execute_code:
                     f.write("\n        // Post-execution check\n")
                     for line in post_execute_code:
@@ -2764,6 +2775,7 @@ class BingoDFG(DiGraphWrapper[BingoNode]):
     def bingo_compile_dfg(self, app_name: str, output_dir: str, output_file_name: str, extra_include_header_list: list[str] | None, post_execute_code: list[str] | None = None) -> None:
         """Compile the DFG by assigning dep info and emitting C code."""
         # 1. Transformations
+        self._expand_dmr()
         self._expand_host_fallbacks()
         # Add Entry Node
         self.bingo_transform_dfg_add_entry_node()
@@ -2775,13 +2787,14 @@ class BingoDFG(DiGraphWrapper[BingoNode]):
         # Compile conditional regions (CERF group assignment)
         # Must be called before dummy node transforms.
         # No-op for non-conditional DFGs (returns empty dict).
-        if self._cerf_fallbacks or self._cerf_group_fallbacks or self._host_fallbacks:
+        if self._cerf_fallbacks or self._cerf_group_fallbacks or self._host_fallbacks or self._sdc_pairs:
             manual_groups = [n.cond_exec_group_id for n in self.node_list if n.cond_exec_en]
             if manual_groups:
                 self._next_cerf_group = max(self._next_cerf_group, max(manual_groups) + 1)
         self.bingo_compile_conditional_regions()
         self._compile_host_fallbacks()
         self._compile_cerf_fallbacks()
+        self._compile_dmr()
         self._validate_cerf_cross_group_edges()
         # Identity-aware deps: per-edge tags are allocated LAST (after dep-info
         # assignment). The allocator's min-chain-cover reuses a tag across edges
@@ -2814,6 +2827,7 @@ class BingoDFG(DiGraphWrapper[BingoNode]):
             extra_include_header_list=extra_include_header_list,
             post_execute_code=post_execute_code,
         )
+        self._write_dmr_report(output_dir)
         if self._auto_host_fallback_types:
             with open(os.path.join(output_dir, "host_fallback_report.json"), "w") as stream:
                 json.dump(self._auto_host_fallback_report, stream, indent=2)

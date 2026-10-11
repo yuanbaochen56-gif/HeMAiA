@@ -4,6 +4,7 @@ from typing import Union, Dict, Optional
 from bingo_mem_handle import BingoMemAlloc, BingoMemAllocView, BingoMemSymbol, BingoMemFixedAddr
 from bingo_helpers import _check_xdma_size_aligned
 
+
 class BingoKernelArgs(ABC):
     """
     Abstract base class for Kernel Arguments.
@@ -163,6 +164,25 @@ class BingoKernelArgs(ABC):
                 assignments[base_name] = f"(uint64_t){val}"
             else:
                 assignments[base_name] = f"(uint32_t){val}"
+
+class SnaxBingoKernelSdcCompareArgs(BingoKernelArgs):
+    KERNEL_NAME = "__snax_bingo_kernel_sdc_compare"
+
+    def __init__(self, primary_addr, shadow_addr, size, status_addr):
+        self.primary_addr = primary_addr
+        self.shadow_addr = shadow_addr
+        self.size = size
+        self.status_addr = status_addr
+
+    def get_struct_name(self):
+        return "__snax_bingo_kernel_sdc_compare_args_t"
+
+    def get_c_field_assignments(self, handle_name_map):
+        assignments = {}
+        for field in ("primary_addr", "shadow_addr", "status_addr"):
+            self._process_addr(getattr(self, field), field, assignments, handle_name_map)
+        assignments["size"] = str(self.size)
+        return assignments
 
 
 # -------------------------------------------------------------

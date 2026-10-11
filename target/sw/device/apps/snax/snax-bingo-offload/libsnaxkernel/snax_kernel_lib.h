@@ -36,6 +36,9 @@
 #include "offload_hw_kernels/idma.h"
 #include "offload_hw_kernels/xdma.h"
 #include "offload_hw_kernels/gemm.h"
+#ifdef BINGO_SDC
+#include "offload_hw_kernels/sdc.h"
+#endif
 
 //////////////////////// SYMBOL TABLE ////////////////////////
 // The host offload runtime looks up kernels by name through this table.
@@ -59,6 +62,9 @@ SNAX_SYMTAB_SECTION const snax_symbol_t __snax_symtab[] = {
     SNAX_EXPORT_FUNC(__snax_bingo_kernel_dummy),
     SNAX_EXPORT_FUNC(__snax_bingo_kernel_exit),
     SNAX_EXPORT_FUNC(__snax_bingo_kernel_int32_add),
+#ifdef BINGO_SDC
+    SNAX_EXPORT_FUNC(__snax_bingo_kernel_sdc_compare),
+#endif
     SNAX_EXPORT_FUNC(__snax_bingo_kernel_idma_1d_copy),
     SNAX_EXPORT_FUNC(__snax_bingo_kernel_idma_broadcast),
     SNAX_EXPORT_FUNC(__snax_bingo_kernel_idma_pairwise_swap),

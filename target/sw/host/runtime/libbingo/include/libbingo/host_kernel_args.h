@@ -178,3 +178,91 @@ __HOST_BINGO_KERNEL_ARGS_DEFINE __host_bingo_kernel_cerf_gating_args {
                                       // 0 = no activation array (all experts in active groups run).
     uint64_t scratchpad_ptr;
 } __host_bingo_kernel_cerf_gating_args_t;
+
+#ifdef BINGO_SDC_RECOVER
+#include <stddef.h>
+#if !defined(BINGO_SDC) || !defined(BINGO_SDC_QUIET) || !BINGO_TEST_CFG
+#error "BINGO_SDC_RECOVER requires SDC, QUIET and TEST_CFG"
+#endif
+
+typedef struct __attribute__((aligned(8))) {
+    uint32_t abi_version;
+    uint32_t transaction;
+    uint32_t enabled;
+    uint32_t detect_code;
+    uint32_t detect_valid;
+    uint32_t third_count;
+    uint32_t selected;
+    uint32_t commit_count;
+    uint32_t report_count;
+    uint32_t outcome;
+    uint32_t failure;
+    uint32_t phase;
+    uint64_t resolver_start_cc;
+    uint64_t status_read_cc;
+    uint64_t third_start_cc;
+    uint64_t third_end_cc;
+    uint64_t vote_end_cc;
+    uint64_t publish_end_cc;
+} bingo_sdc_recovery_state_t;
+_Static_assert(sizeof(bingo_sdc_recovery_state_t) == 96, "recovery state ABI");
+_Static_assert(offsetof(bingo_sdc_recovery_state_t, abi_version) == 0, "abi_version ABI");
+_Static_assert(offsetof(bingo_sdc_recovery_state_t, transaction) == 4, "transaction ABI");
+_Static_assert(offsetof(bingo_sdc_recovery_state_t, enabled) == 8, "enabled ABI");
+_Static_assert(offsetof(bingo_sdc_recovery_state_t, detect_code) == 12, "detect_code ABI");
+_Static_assert(offsetof(bingo_sdc_recovery_state_t, detect_valid) == 16, "detect_valid ABI");
+_Static_assert(offsetof(bingo_sdc_recovery_state_t, third_count) == 20, "third_count ABI");
+_Static_assert(offsetof(bingo_sdc_recovery_state_t, selected) == 24, "selected ABI");
+_Static_assert(offsetof(bingo_sdc_recovery_state_t, commit_count) == 28, "commit_count ABI");
+_Static_assert(offsetof(bingo_sdc_recovery_state_t, report_count) == 32, "report_count ABI");
+_Static_assert(offsetof(bingo_sdc_recovery_state_t, outcome) == 36, "outcome ABI");
+_Static_assert(offsetof(bingo_sdc_recovery_state_t, failure) == 40, "failure ABI");
+_Static_assert(offsetof(bingo_sdc_recovery_state_t, phase) == 44, "phase ABI");
+_Static_assert(offsetof(bingo_sdc_recovery_state_t, resolver_start_cc) == 48, "resolver_start_cc ABI");
+_Static_assert(offsetof(bingo_sdc_recovery_state_t, status_read_cc) == 56, "status_read_cc ABI");
+_Static_assert(offsetof(bingo_sdc_recovery_state_t, third_start_cc) == 64, "third_start_cc ABI");
+_Static_assert(offsetof(bingo_sdc_recovery_state_t, third_end_cc) == 72, "third_end_cc ABI");
+_Static_assert(offsetof(bingo_sdc_recovery_state_t, vote_end_cc) == 80, "vote_end_cc ABI");
+_Static_assert(offsetof(bingo_sdc_recovery_state_t, publish_end_cc) == 88, "publish_end_cc ABI");
+
+__HOST_BINGO_KERNEL_ARGS_DEFINE __host_bingo_kernel_sdc_recover_init_args {
+    uint64_t status0_addr;
+    uint64_t status1_addr;
+    uint64_t state_addr;
+    uint64_t transactions;
+    uint64_t enabled;
+    uint64_t scratchpad_ptr;
+} __host_bingo_kernel_sdc_recover_init_args_t;
+_Static_assert(sizeof(__host_bingo_kernel_sdc_recover_init_args_t) == 48, "recovery args ABI");
+_Static_assert(offsetof(__host_bingo_kernel_sdc_recover_init_args_t, status0_addr) == 0, "status0_addr ABI");
+_Static_assert(offsetof(__host_bingo_kernel_sdc_recover_init_args_t, status1_addr) == 8, "status1_addr ABI");
+_Static_assert(offsetof(__host_bingo_kernel_sdc_recover_init_args_t, state_addr) == 16, "state_addr ABI");
+_Static_assert(offsetof(__host_bingo_kernel_sdc_recover_init_args_t, transactions) == 24, "transactions ABI");
+_Static_assert(offsetof(__host_bingo_kernel_sdc_recover_init_args_t, enabled) == 32, "enabled ABI");
+_Static_assert(offsetof(__host_bingo_kernel_sdc_recover_init_args_t, scratchpad_ptr) == 40, "scratchpad_ptr ABI");
+
+__HOST_BINGO_KERNEL_ARGS_DEFINE __host_bingo_kernel_sdc_resolve_copy_args {
+    uint64_t src_addr;
+    uint64_t primary_addr;
+    uint64_t shadow_addr;
+    uint64_t third_addr;
+    uint64_t canonical_addr;
+    uint64_t status_addr;
+    uint64_t state_addr;
+    uint64_t size;
+    uint64_t transaction;
+    uint64_t scratchpad_ptr;
+} __host_bingo_kernel_sdc_resolve_copy_args_t;
+_Static_assert(sizeof(__host_bingo_kernel_sdc_resolve_copy_args_t) == 80, "recovery args ABI");
+_Static_assert(offsetof(__host_bingo_kernel_sdc_resolve_copy_args_t, src_addr) == 0, "src_addr ABI");
+_Static_assert(offsetof(__host_bingo_kernel_sdc_resolve_copy_args_t, primary_addr) == 8, "primary_addr ABI");
+_Static_assert(offsetof(__host_bingo_kernel_sdc_resolve_copy_args_t, shadow_addr) == 16, "shadow_addr ABI");
+_Static_assert(offsetof(__host_bingo_kernel_sdc_resolve_copy_args_t, third_addr) == 24, "third_addr ABI");
+_Static_assert(offsetof(__host_bingo_kernel_sdc_resolve_copy_args_t, canonical_addr) == 32, "canonical_addr ABI");
+_Static_assert(offsetof(__host_bingo_kernel_sdc_resolve_copy_args_t, status_addr) == 40, "status_addr ABI");
+_Static_assert(offsetof(__host_bingo_kernel_sdc_resolve_copy_args_t, state_addr) == 48, "state_addr ABI");
+_Static_assert(offsetof(__host_bingo_kernel_sdc_resolve_copy_args_t, size) == 56, "size ABI");
+_Static_assert(offsetof(__host_bingo_kernel_sdc_resolve_copy_args_t, transaction) == 64, "transaction ABI");
+_Static_assert(offsetof(__host_bingo_kernel_sdc_resolve_copy_args_t, scratchpad_ptr) == 72, "scratchpad_ptr ABI");
+
+#endif

@@ -1168,10 +1168,13 @@ def t1_image_flags(sc: dict) -> str:
     if not isinstance(value, str):
         raise ValueError("T1 image_flags must be a flag string")
     flags = shlex.split(value)
-    if set(flags) - {"-DBINGO_WD_NO_HEARTBEAT", "-DBINGO_WD_NOP_HEARTBEAT", "-DBINGO_C6_SW_CERF", "-DBINGO_WD_ADAPT", "-DBINGO_WD_LATE", "-DBINGO_SDC", "-DBINGO_SDC_QUIET"}:
+    if set(flags) - {"-DBINGO_WD_NO_HEARTBEAT", "-DBINGO_WD_NOP_HEARTBEAT", "-DBINGO_C6_SW_CERF", "-DBINGO_WD_ADAPT", "-DBINGO_WD_LATE", "-DBINGO_SDC", "-DBINGO_SDC_QUIET", "-DBINGO_SDC_RECOVER"}:
         raise ValueError("unsupported T1 image_flags")
     if "-DBINGO_SDC_QUIET" in flags and "-DBINGO_SDC" not in flags:
         raise ValueError("BINGO_SDC_QUIET requires BINGO_SDC")
+    if "-DBINGO_SDC_RECOVER" in flags and (not sc.get("t1") or
+            not {"-DBINGO_SDC", "-DBINGO_SDC_QUIET"}.issubset(flags)):
+        raise ValueError("BINGO_SDC_RECOVER requires SDC, QUIET and TEST_CFG")
     # A same-image pair may share image flags: both scenes then use one image.
     other_image = sc.get("same_as") and SCENARIOS[sc["same_as"]].get("image_flags", "") != value
     if flags and (not sc.get("t1") or other_image or any(
@@ -2460,6 +2463,9 @@ def check_core_types(expected: Dict[int, int]) -> List[str]:
 
 def evaluate(name: str, sc: dict, log_text: str, uart_text: str) -> List[str]:
     """Return the list of failed expectations (empty = pass)."""
+    if sc.get("sdc_recover"):
+        from bingo_sdc_recover_check import evaluate_recovery
+        return evaluate_recovery(sc, log_text, uart_text)
     if sc.get("sdc"):
         from bingo_sdc_check import evaluate_sdc
         return evaluate_sdc(sc, log_text, uart_text)

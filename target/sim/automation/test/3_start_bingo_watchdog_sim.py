@@ -136,7 +136,7 @@ import struct
 import subprocess
 import sys
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, NamedTuple, Optional, Tuple
 
 _SCRIPT = Path(__file__).resolve()
 _REPO_ROOT = _SCRIPT.parents[4]  # target/sim/automation/test -> repo root
@@ -2492,33 +2492,40 @@ def check_core_types(expected: Dict[int, int]) -> List[str]:
     return []
 
 
-def evaluate(name: str, sc: dict, log_text: str, uart_text: str) -> List[str]:
-    """Return the list of failed expectations (empty = pass)."""
-    if sc.get("b2_offloads"):
-        # Two offloads in one run: each is judged as the run it repeats
-        return evaluate_b2(name, sc, log_text, uart_text, SCENARIOS, evaluate,
-                           len(sc["expect_core_types"]))
-    if sc.get("sdc_recover"):
-        from bingo_sdc_recover_check import evaluate_recovery
-        return evaluate_recovery(sc, log_text, uart_text)
-    if sc.get("sdc"):
-        from bingo_sdc_check import evaluate_sdc
-        return evaluate_sdc(sc, log_text, uart_text)
+class RunLog(NamedTuple):
+    """The events of one run that most checks look at, parsed once."""
+    eoc_ok: bool
+    events: List[Tuple[int, ...]]   # [BINGO_WD]: (time, chip, core, cluster, dead_suspect, fenced)
+    remaps: List[str]
+    replays: List[str]
+    stuck: List[str]
+    asserts: List[str]
+    other_asserts: List[str]        # (includes the host reading X, which derails it before EOC)
+    csr: List[str]
+    checks: List[Tuple[str, str]]   # host 'Check [...]: PASS|FAIL' lines
+
+    @classmethod
+    def parse(cls, log_text: str, uart_text: str) -> "RunLog":
+        return cls(
+            eoc_ok=SIM_OK_MARKER in log_text and SIM_ERR_MARKER not in log_text,
+            events=[tuple(int(x) if x is not None else 0 for x in m.groups())
+                    for m in WD_RE.finditer(log_text)],
+            remaps=REMAP_RE.findall(log_text),
+            replays=REPLAY_RE.findall(log_text),
+            stuck=STUCK_RE.findall(log_text),
+            asserts=ASSERT_RE.findall(log_text),
+            other_asserts=re.findall(r"^.*(?:\[ASSERT FAILED\]|Assertion.*failed|reading invalid data).*$",
+                                     log_text, flags=re.M),
+            csr=CSR_RE.findall(log_text),
+            checks=CHECK_RE.findall(uart_text),
+        )
+
+
+def feature_problems(name: str, sc: dict, log_text: str, uart_text: str) -> List[str]:
+    """The checks of the feature the scene exercises (one fallback family at most)."""
     problems: List[str] = []
     if name in A5_FAMILY or (sc.get("c4") and "wd_type_h" in sc):
         problems += evaluate_type_threshold(sc, log_text)
-    eoc_ok = SIM_OK_MARKER in log_text and SIM_ERR_MARKER not in log_text
-    # (time, chip, core, cluster, dead_suspect, fenced)
-    events = [tuple(int(x) if x is not None else 0 for x in m.groups()) for m in WD_RE.finditer(log_text)]
-    remaps = REMAP_RE.findall(log_text)
-    replays = REPLAY_RE.findall(log_text)
-    stuck = STUCK_RE.findall(log_text)
-    asserts = ASSERT_RE.findall(log_text)
-    # (includes the host reading X, which derails it before EOC)
-    other_asserts = re.findall(r"^.*(?:\[ASSERT FAILED\]|Assertion.*failed|reading invalid data).*$",
-                               log_text, flags=re.M)
-    csr = CSR_RE.findall(log_text)
-    checks = CHECK_RE.findall(uart_text)
     if sc.get("early_exit_conf"):
         problems += evaluate_early_exit_conf(sc, log_text, uart_text)
     elif sc.get("early_exit"):
@@ -2542,8 +2549,12 @@ def evaluate(name: str, sc: dict, log_text: str, uart_text: str) -> List[str]:
         problems += evaluate_risk_controls(sc, log_text, uart_text)
     if "risk_confirm" in sc:
         problems += evaluate_risk_confirm(sc, log_text)
+    return problems
 
-    # Fault precursors: late beats and at-risk events only where expected, on the victim
+
+def precursor_problems(sc: dict, log_text: str, uart_text: str) -> List[str]:
+    """Fault precursors: late beats and at-risk events only where expected, on the victim."""
+    problems: List[str] = []
     vc = sc.get("victim", VICTIM)
     late = [tuple(int(x) for x in m.groups()) for m in LATE_RE.finditer(log_text)]
     if late != [(vc[1], vc[2])] * sc.get("expect_late", 0):
@@ -2556,38 +2567,54 @@ def evaluate(name: str, sc: dict, log_text: str, uart_text: str) -> List[str]:
                            1 << (vc[1] + HEMAIA_CI_SLOTS * vc[2]) if sc.get("expect_risk") else 0)
     if host_risk and int(host_risk.group(1), 16) != expected_risk:
         problems.append(f"host risk=0x{host_risk.group(1)}")
+    return problems
 
-    if sc["expect_eoc"] and not eoc_ok:
-        problems.append(f"expected '{SIM_OK_MARKER}' without errors")
-    if not sc["expect_eoc"] and eoc_ok:
-        problems.append("run finished although the victim task hangs forever")
-    victim = sc.get("victim", VICTIM)
-    substitute = sc.get("substitute")
+
+def end_of_run_problems(sc: dict, run: RunLog) -> List[str]:
+    if sc["expect_eoc"] and not run.eoc_ok:
+        return [f"expected '{SIM_OK_MARKER}' without errors"]
+    if not sc["expect_eoc"] and run.eoc_ok:
+        return ["run finished although the victim task hangs forever"]
+    return []
+
+
+def level3_problems(sc: dict, log_text: str) -> List[str]:
     if sc.get("remote_loopback", False):
-        problems += evaluate_remote_loopback(sc, log_text)
-    elif sc.get("remote_reject", False):
-        problems += evaluate_remote_reject(sc, log_text)
-    else:
-        # Level 3 stays idle: nothing exported, imported or sent over the link
-        l3 = [l for l in log_text.splitlines()
-              if re.search(r"\[BINGO_(EXPORT|IMPORT|REMOTE_DONE_OUT|REMOTE_DONE_IN|RLINK_\w+)\]", l)]
-        if l3:
-            problems.append(f"{len(l3)} unexpected level-3 event(s): {l3[:3]}")
-    # The sticky link / remote-done / proxy-timeout flags stay clear in every scenario
+        return evaluate_remote_loopback(sc, log_text)
+    if sc.get("remote_reject", False):
+        return evaluate_remote_reject(sc, log_text)
+    # Level 3 stays idle: nothing exported, imported or sent over the link
+    l3 = [l for l in log_text.splitlines()
+          if re.search(r"\[BINGO_(EXPORT|IMPORT|REMOTE_DONE_OUT|REMOTE_DONE_IN|RLINK_\w+)\]", l)]
+    if l3:
+        return [f"{len(l3)} unexpected level-3 event(s): {l3[:3]}"]
+    return []
+
+
+def sticky_flag_problems(log_text: str) -> List[str]:
+    """The sticky link / remote-done / proxy-timeout flags stay clear in every scenario."""
     status = re.findall(r"\[BINGO_STATUS\] \d+ chip=\d+ (.*)", log_text)
     if status and not ("remote_done_mismatch=0 " in status[-1] and "link_error=0 " in status[-1] + " " and
                        "remote_timeout=0" in status[-1]):
-        problems.append(f"final [BINGO_STATUS] {status[-1]}")
+        return [f"final [BINGO_STATUS] {status[-1]}"]
+    return []
+
+
+def takeover_problems(sc: dict, log_text: str, uart_text: str, run: RunLog) -> List[str]:
+    """Where the victim's work went: parked, nowhere, or to the substitute only."""
+    problems: List[str] = []
+    victim = sc.get("victim", VICTIM)
+    substitute = sc.get("substitute")
     if sc.get("remote_loopback", False) or sc.get("remote_reject", False):
         pass
     elif sc.get("park", False):
         problems += evaluate_park(sc, log_text, uart_text)
     elif substitute is None:
         # No core may take over the victim's tasks: nothing moves
-        if remaps:
-            problems.append(f"{len(remaps)} unexpected [BINGO_REMAP] event(s): {remaps[:3]}")
-        if replays:
-            problems.append(f"{len(replays)} unexpected [BINGO_REPLAY] event(s): {replays[:3]}")
+        if run.remaps:
+            problems.append(f"{len(run.remaps)} unexpected [BINGO_REMAP] event(s): {run.remaps[:3]}")
+        if run.replays:
+            problems.append(f"{len(run.replays)} unexpected [BINGO_REPLAY] event(s): {run.replays[:3]}")
     else:
         # Everything the victim held or gets later moves to the substitute only
         # (substitute_cluster: level 2, another cluster of the chip)
@@ -2596,18 +2623,18 @@ def evaluate(name: str, sc: dict, log_text: str, uart_text: str) -> List[str]:
         # (chip, task, logical_core, from, to, cluster, to_cluster)
         moved = [tuple(int(x) for x in m.groups()) for m in REPLAY_FIELDS_RE.finditer(log_text)]
         if not any(r[1] == sc["fault_gid"] for r in moved):
-            problems.append(f"task {sc['fault_gid']} was not replayed: {replays[:3]}")
+            problems.append(f"task {sc['fault_gid']} was not replayed: {run.replays[:3]}")
         wrong = [r for r in moved
                  if (r[0], r[3], r[4], r[5], r[6]) != (chip, core, substitute, cluster, sub_cluster)]
-        if wrong or len(moved) != len(replays):
+        if wrong or len(moved) != len(run.replays):
             problems.append(f"replay other than core {core} -> {substitute} (cluster {cluster} -> "
-                            f"{sub_cluster}): {replays[:3]}")
+                            f"{sub_cluster}): {run.replays[:3]}")
         # (chip, task, logical_core, physical_core, physical cluster)
         routed = [tuple(int(x) for x in m.groups()) for m in REMAP_FIELDS_RE.finditer(log_text)]
         wrong = [r for r in routed if (r[0], r[2], r[3], r[4]) != (chip, core, substitute, sub_cluster)]
-        if wrong or len(routed) != len(remaps):
+        if wrong or len(routed) != len(run.remaps):
             problems.append(f"remap other than logical core {core} -> {substitute} "
-                            f"(cluster {sub_cluster}): {remaps[:3]}")
+                            f"(cluster {sub_cluster}): {run.remaps[:3]}")
         if sc.get("expect_takeover", False):
             problems += exit_absorb_problems(log_text, uart_text, (chip, core, cluster))
         retired = [tuple(int(x) for x in m.groups()) for m in RETIRED_RE.finditer(log_text)]
@@ -2618,61 +2645,107 @@ def evaluate(name: str, sc: dict, log_text: str, uart_text: str) -> List[str]:
         if drops != [(*victim, sc["fault_gid"])]:
             problems.append(f"[BINGO_FENCE] expected one dropped done of task {sc['fault_gid']} "
                             f"on {victim}, got {drops}")
-    if asserts:
-        problems.append(f"{len(asserts)} [BINGO_ASSERT] violation(s): {asserts[:3]}")
-    if other_asserts:
-        problems.append(f"{len(other_asserts)} RTL assertion failure(s): {other_asserts[:3]}")
+    return problems
+
+
+def error_problems(sc: dict, run: RunLog) -> List[str]:
+    """RTL assertions, replay_stuck as expected, unknown CSRs, failed or missing host checks."""
+    problems: List[str] = []
+    if run.asserts:
+        problems.append(f"{len(run.asserts)} [BINGO_ASSERT] violation(s): {run.asserts[:3]}")
+    if run.other_asserts:
+        problems.append(f"{len(run.other_asserts)} RTL assertion failure(s): {run.other_asserts[:3]}")
     # (s13: stuck through the remote reject, not a local [BINGO_REPLAY_STUCK])
-    expect_stuck = sc.get("expect_fence", False) and substitute is None and not sc.get("remote_reject", False)
+    expect_stuck = (sc.get("expect_fence", False) and sc.get("substitute") is None
+                    and not sc.get("remote_reject", False))
     # (s28: the substitute dies too and has no live core of its type left)
     expect_stuck = sc.get("expect_replay_stuck", expect_stuck)
-    if expect_stuck != bool(stuck):
-        problems.append(f"[BINGO_REPLAY_STUCK] expected {expect_stuck}, got {stuck[:1]}")
-    if csr:
-        problems.append(f"{len(csr)} [BINGO_CSR] unknown-address event(s): {csr[:3]}")
-    failed_checks = [c for c in checks if c[1] == "FAIL"]
+    if expect_stuck != bool(run.stuck):
+        problems.append(f"[BINGO_REPLAY_STUCK] expected {expect_stuck}, got {run.stuck[:1]}")
+    if run.csr:
+        problems.append(f"{len(run.csr)} [BINGO_CSR] unknown-address event(s): {run.csr[:3]}")
+    failed_checks = [c for c in run.checks if c[1] == "FAIL"]
     if failed_checks:
         problems.append(f"host check(s) failed: {failed_checks}")
-    if sc["expect_eoc"] and not checks:
+    if sc["expect_eoc"] and not run.checks:
         problems.append("no host 'Check [...]: PASS' line in the UART log")
+    return problems
 
-    victim_events = [(e[4], e[5]) for e in events if (e[1], e[2], e[3]) == victim]
-    other_events = [e for e in events if (e[1], e[2], e[3]) != victim]
+
+def watchdog_problems(sc: dict, run: RunLog) -> List[str]:
+    """The [BINGO_WD] sequence: none when healthy, else the expected one on the victim only."""
+    victim = sc.get("victim", VICTIM)
+    victim_events = [(e[4], e[5]) for e in run.events if (e[1], e[2], e[3]) == victim]
+    other_events = [e for e in run.events if (e[1], e[2], e[3]) != victim]
     stall = sc["fault_stall_cycles"]
     if stall is None:
-        if events:
-            problems.append(f"unexpected [BINGO_WD] events in a healthy run: {events}")
+        if run.events:
+            return [f"unexpected [BINGO_WD] events in a healthy run: {run.events}"]
+        return []
+    problems: List[str] = []
+    # (s28: the substitute also dies) (chip, core, cluster) -> [(dead_suspect, fenced)]
+    others: Dict[Tuple[int, int, int], list] = {}
+    for e in other_events:
+        others.setdefault((e[1], e[2], e[3]), []).append((e[4], e[5]))
+    if others != sc.get("expect_wd_other", {}):
+        problems.append(f"[BINGO_WD] events on non-victim cores: {other_events}")
+    # (dead_suspect, fenced) per [BINGO_WD] line of the victim
+    if sc.get("expect_fence", False):
+        expected = [(1, 0), (1, 1)]
     else:
-        # (s28: the substitute also dies) (chip, core, cluster) -> [(dead_suspect, fenced)]
-        others: Dict[Tuple[int, int, int], list] = {}
-        for e in other_events:
-            others.setdefault((e[1], e[2], e[3]), []).append((e[4], e[5]))
-        if others != sc.get("expect_wd_other", {}):
-            problems.append(f"[BINGO_WD] events on non-victim cores: {other_events}")
-        # (dead_suspect, fenced) per [BINGO_WD] line of the victim
-        if sc.get("expect_fence", False):
-            expected = [(1, 0), (1, 1)]
-        else:
-            expected = [(1, 0), (0, 0)] if stall > 0 else [(1, 0)]
-        # (s19: parked before the hang, the victim never misses its timeout)
-        expected = sc.get("expect_wd", expected)
-        if victim_events != expected:
-            problems.append(f"victim {victim} (dead_suspect, fenced) sequence {victim_events}, expected {expected}")
+        expected = [(1, 0), (0, 0)] if stall > 0 else [(1, 0)]
+    # (s19: parked before the hang, the victim never misses its timeout)
+    expected = sc.get("expect_wd", expected)
+    if victim_events != expected:
+        problems.append(f"victim {victim} (dead_suspect, fenced) sequence {victim_events}, expected {expected}")
+    return problems
 
+
+def dispatch_problems(sc: dict, log_text: str, checker_passed: bool) -> List[str]:
+    """Every dispatch has its done; only the injected permanently hung task stays
+    pending on its fenced slot (and, with fault_any_core, on each slot that ends fenced)."""
+    pending = [(*sc["victim"], sc["fault_gid"])] if sc.get("expect_fence") else []
+    if sc.get("fault_any_core"):
+        for slot, seq in sc.get("expect_wd_other", {}).items():
+            if seq and tuple(seq[-1]) == (1, 1):      # declared to end fenced
+                pending.append((*slot, sc["fault_gid"]))
+    try:
+        dispatch_done_pairs(log_text, pending, graph_csv=sc.get("dispatch_graph_csv"),
+                            host_slot=dispatch_host_slot(), checker_passed=checker_passed)
+    except (OSError, ValueError, KeyError) as error:
+        return [str(error)]
+    return []
+
+
+def evaluate(name: str, sc: dict, log_text: str, uart_text: str) -> List[str]:
+    """Return the list of failed expectations (empty = pass).
+
+    B2 and SDC runs have their own judges. Every other run goes through the
+    checks above in this order, which is also the order of the problems.
+    """
+    if sc.get("b2_offloads"):
+        # Two offloads in one run: each is judged as the run it repeats
+        return evaluate_b2(name, sc, log_text, uart_text, SCENARIOS, evaluate,
+                           len(sc["expect_core_types"]))
+    if sc.get("sdc_recover"):
+        from bingo_sdc_recover_check import evaluate_recovery
+        return evaluate_recovery(sc, log_text, uart_text)
+    if sc.get("sdc"):
+        from bingo_sdc_check import evaluate_sdc
+        return evaluate_sdc(sc, log_text, uart_text)
+    run = RunLog.parse(log_text, uart_text)
+    problems = feature_problems(name, sc, log_text, uart_text)
+    problems += precursor_problems(sc, log_text, uart_text)
+    problems += end_of_run_problems(sc, run)
+    problems += level3_problems(sc, log_text)
+    problems += sticky_flag_problems(log_text)
+    problems += takeover_problems(sc, log_text, uart_text, run)
+    problems += error_problems(sc, run)
+    problems += watchdog_problems(sc, run)
     if sc.get("dispatch_log"):
-        # The injected permanently hung task remains pending on its fenced slot.
-        pending = [(*sc["victim"], sc["fault_gid"])] if sc.get("expect_fence") else []
-        if sc.get("fault_any_core"):
-            for slot, seq in sc.get("expect_wd_other", {}).items():
-                if seq and tuple(seq[-1]) == (1, 1):      # declared to end fenced
-                    pending.append((*slot, sc["fault_gid"]))
-        try:
-            dispatch_done_pairs(log_text, pending, graph_csv=sc.get("dispatch_graph_csv"),
-                                host_slot=dispatch_host_slot(), checker_passed=not problems)
-        except (OSError, ValueError, KeyError) as error:
-            problems.append(str(error))
-    print(f"[{name}] eoc_ok={eoc_ok} wd_events={events} remaps={len(remaps)} "
-          f"replays={len(replays)} csr_unknown={len(csr)} checks={checks}")
+        problems += dispatch_problems(sc, log_text, checker_passed=not problems)
+    print(f"[{name}] eoc_ok={run.eoc_ok} wd_events={run.events} remaps={len(run.remaps)} "
+          f"replays={len(run.replays)} csr_unknown={len(run.csr)} checks={run.checks}")
     return problems
 
 

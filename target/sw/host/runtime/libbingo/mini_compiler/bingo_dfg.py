@@ -143,6 +143,8 @@ def _gemm_replay_hazard(args):
     return getattr(args, "accumPrevC", 0) != 0
 
 
+_EXIT_KERNELS = ("__snax_bingo_kernel_exit", "__host_bingo_kernel_exit")
+
 # Explicit known kernels only. Unknown kernels and bare addresses remain opt-in.
 _REPLAY_SAFETY_KERNELS = {
     ("__snax_bingo_kernel_int32_add", SnaxBingoKernelInt32AddArgs): _add_replay_hazard,
@@ -408,7 +410,7 @@ class BingoDFG(DmrSupport, DiGraphWrapper[BingoNode]):
                         == (primary.assigned_chiplet_id, primary.assigned_cluster_id,
                             primary.assigned_core_id)
                         and n.kernel_name and n not in selected
-                        and n.kernel_name not in ("__snax_bingo_kernel_exit", "__host_bingo_kernel_exit")]
+                        and n.kernel_name not in _EXIT_KERNELS]
                 if late:
                     skipped[primary] = "Protected slot has mandatory suffix outside selected primaries: " + \
                         ", ".join(n.node_name for n in late)
@@ -528,32 +530,21 @@ class BingoDFG(DmrSupport, DiGraphWrapper[BingoNode]):
             self._host_fallback_masks[chip] = (old_mask | controlled, old_value | (1 << gp))
             self.bingo_add_cerf_fallback(primary, backup)
 
-    def _compile_cerf_fallbacks(self) -> None:
-        """Add branch ordering, guard protected exits and build one table per chip."""
-        if not self._cerf_fallbacks and not self._cerf_group_fallbacks:
-            return
+    @staticmethod
+    def _cerf_slot(node):
+        return (node.assigned_chiplet_id, node.assigned_cluster_id, node.assigned_core_id)
 
-        def slot(node):
-            return (node.assigned_chiplet_id, node.assigned_cluster_id,
-                    node.assigned_core_id)
+    def _cerf_core_type(self, node) -> int:
+        key = (node.assigned_cluster_id, node.assigned_core_id)
+        if key not in self.core_type_ids:
+            raise ValueError(f"Missing core_type_ids for CERF fallback slot {self._cerf_slot(node)}")
+        value = self.core_type_ids[key]
+        if not isinstance(value, int) or not 0 <= value < 32:
+            raise ValueError(f"CERF fallback core type {value} does not fit its 32-bit mask")
+        return value
 
-        def core_type(node):
-            key = (node.assigned_cluster_id, node.assigned_core_id)
-            if key not in self.core_type_ids:
-                raise ValueError(f"Missing core_type_ids for CERF fallback slot {slot(node)}")
-            value = self.core_type_ids[key]
-            if not isinstance(value, int) or not 0 <= value < 32:
-                raise ValueError(f"CERF fallback core type {value} does not fit its 32-bit mask")
-            return value
-
-        table = {}
-        protected = {}
-        fallback_nodes = set()
-        backup_nodes = set()
-        ordering_edges = []
-        same_type_backups = []
-        substitutes = {}  # slot -> (primary group, primary nodes)
-        exit_kernels = ("__snax_bingo_kernel_exit", "__host_bingo_kernel_exit")
+    def _cerf_fallback_pairs(self) -> list:
+        """(primary, backup) per explicit fallback, then one per member of each group fallback."""
         pairs = list(self._cerf_fallbacks)
         for primary, backup in self._cerf_group_fallbacks:
             if not primary.cond_exec_en or not backup.cond_exec_en:
@@ -562,9 +553,20 @@ class BingoDFG(DmrSupport, DiGraphWrapper[BingoNode]):
                        if n.assigned_chiplet_id == primary.assigned_chiplet_id
                        and n.cond_exec_en and n.cond_exec_group_id == primary.cond_exec_group_id
                        and n.node_type != "dummy"
-                       and n.kernel_name not in ("__snax_bingo_kernel_exit", "__host_bingo_kernel_exit")
-                       and core_type(n) != 0]
+                       and n.kernel_name not in _EXIT_KERNELS
+                       and self._cerf_core_type(n) != 0]
             pairs.extend((n, backup) for n in members if (n, backup) not in pairs)
+        return pairs
+
+    def _plan_cerf_fallbacks(self, pairs: list) -> dict:
+        """Validate every pair and collect what the fallbacks need, without changing the DFG:
+        the table entry per (chip, type), the protected slot of each primary, the ordering
+        edges from each primary branch to its backup, and the possible substitute slots."""
+        slot = self._cerf_slot
+        plan = dict(table={}, protected={}, fallback_nodes=set(), backup_nodes=set(),
+                    ordering_edges=[], same_type_backups=[],
+                    substitutes={})  # slot -> (primary group, primary nodes)
+        table, protected, substitutes = plan["table"], plan["protected"], plan["substitutes"]
         for primary, backup in pairs:
             if primary not in self or backup not in self:
                 raise ValueError("CERF fallback representatives must belong to this DFG")
@@ -578,7 +580,7 @@ class BingoDFG(DmrSupport, DiGraphWrapper[BingoNode]):
             if clear == set_group:
                 raise ValueError("CERF fallback primary and backup need distinct groups")
             chip = primary.assigned_chiplet_id
-            type_id = core_type(primary)
+            type_id = self._cerf_core_type(primary)
             key = (chip, type_id)
             if key in table and table[key][2:] != (clear, set_group):
                 raise ValueError(f"Conflicting CERF fallback entries for chip {chip} core type {type_id}")
@@ -607,19 +609,19 @@ class BingoDFG(DmrSupport, DiGraphWrapper[BingoNode]):
                 warnings.warn(
                     f"CERF primary group {clear} contains non-idempotent tasks; "
                     "the backup must not read the primary output",
-                    UserWarning, stacklevel=2)
+                    UserWarning, stacklevel=3)
             primary_set, backup_set = set(primary_nodes), set(backups)
             sinks = [n for n in primary_nodes if not any(s in primary_set for s in self.successors(n))]
             sources = [n for n in backups if not any(p in backup_set for p in self.predecessors(n))]
             if (self._host_fallbacks.get(primary) is backup
                     and (chip, type_id) in self._auto_host_fallback_types):
-                ordering_edges.append((primary, backup))
+                plan["ordering_edges"].append((primary, backup))
             else:
-                ordering_edges.extend((sink, source) for sink in sinks for source in sources)
-            fallback_nodes.update(primary_set | backup_set)
-            backup_nodes.update(backup_set)
-            if any(core_type(n) == type_id for n in backups):
-                same_type_backups.append(primary.node_name)
+                plan["ordering_edges"].extend((sink, source) for sink in sinks for source in sources)
+            plan["fallback_nodes"].update(primary_set | backup_set)
+            plan["backup_nodes"].update(backup_set)
+            if any(self._cerf_core_type(n) == type_id for n in backups):
+                plan["same_type_backups"].append(primary.node_name)
             # Possible substitutes: the other slots of this type on the chip
             # that hold no backup task. When one of them dies too, holding the
             # primary's tasks, the type is stuck and the CERF must also skip
@@ -638,59 +640,75 @@ class BingoDFG(DmrSupport, DiGraphWrapper[BingoNode]):
         for sub_slot, (group, _) in substitutes.items():
             if sub_slot in protected and protected[sub_slot] != group:
                 raise ValueError(f"Conflicting CERF fallback groups for protected slot {sub_slot}")
+        return plan
 
+    def _check_cerf_fallback_order(self, plan: dict) -> list:
+        """With the ordering edges added: still a DAG, and nothing outside the primary's group
+        follows the primary branch on its protected slot (except the exit). Returns the
+        substitutes with tasks that do not precede the primary branch (only warned about:
+        without the fallback the second death stalls as well)."""
+        slot = self._cerf_slot
         preview = nx.DiGraph(self)
-        preview.add_edges_from(ordering_edges)
+        preview.add_edges_from(plan["ordering_edges"])
         if not nx.is_directed_acyclic_graph(preview):
             raise ValueError("CERF fallback branch ordering would create a cycle")
         topo = list(nx.topological_sort(preview))
-        for protected_slot, group in protected.items():
+        for protected_slot, group in plan["protected"].items():
             first = next(i for i, n in enumerate(topo)
                          if slot(n) == protected_slot and n.cond_exec_en
                          and n.cond_exec_group_id == group)
             for node in topo[first + 1:]:
                 if slot(node) != protected_slot or not node.kernel_name:
                     continue
-                if node.kernel_name in exit_kernels:
+                if node.kernel_name in _EXIT_KERNELS:
                     continue
                 if not node.cond_exec_en or node.cond_exec_group_id != group or node.cond_exec_invert:
                     raise ValueError(
                         f"Task '{node.node_name}' on protected slot {protected_slot} "
                         f"follows the primary branch outside CERF group {group}")
-        # A substitute's own tasks must be done before the primary branch
-        # starts, or belong to it. Otherwise only the second death stalls, as
-        # without the fallback, so this is a warning.
         late_substitutes = []
-        for sub_slot, (group, primary_nodes) in substitutes.items():
+        for sub_slot, (group, primary_nodes) in plan["substitutes"].items():
             before = set().union(*(nx.ancestors(preview, n) for n in primary_nodes))
             late = [n.node_name for n in self.node_list
-                    if slot(n) == sub_slot and n.kernel_name and n.kernel_name not in exit_kernels
+                    if slot(n) == sub_slot and n.kernel_name and n.kernel_name not in _EXIT_KERNELS
                     and n not in before
                     and not (n.cond_exec_en and n.cond_exec_group_id == group
                              and not n.cond_exec_invert)]
             if late:
                 late_substitutes.append((sub_slot, late))
+        return late_substitutes
 
-        for source, target in ordering_edges:
+    def _apply_cerf_fallbacks(self, plan: dict) -> None:
+        """Add the ordering edges, gate the exits of protected and substitute slots with
+        the primary's group, and leave the backup branch to CERF alone."""
+        for source, target in plan["ordering_edges"]:
             if not self.has_edge(source, target):
                 self.bingo_add_edge(source, target)
-        exit_groups = {**{s: g for s, (g, _) in substitutes.items()}, **protected}
+        exit_groups = {**{s: g for s, (g, _) in plan["substitutes"].items()}, **plan["protected"]}
         for node in self.node_list:
-            if slot(node) in exit_groups and node.kernel_name in exit_kernels:
+            if self._cerf_slot(node) in exit_groups and node.kernel_name in _EXIT_KERNELS:
                 node.cond_exec_en = True
-                node.cond_exec_group_id = exit_groups[slot(node)]
+                node.cond_exec_group_id = exit_groups[self._cerf_slot(node)]
                 node.cond_exec_invert = False
         # The router selected the primary, so its activation array still says
         # "skip backup" after a hardware fallback. CERF alone gates that branch.
-        for node in backup_nodes:
+        for node in plan["backup_nodes"]:
             node._gating_node = None
             node._cond_node_index = None
             if node.kernel_args:
                 node.kernel_args._gating_sp_c_expr = None
                 node.kernel_args._cond_node_index = None
-        self._cerf_fallback_table = table
-        self._cerf_fallback_nodes = fallback_nodes
-        for name in same_type_backups:
+        self._cerf_fallback_table = plan["table"]
+        self._cerf_fallback_nodes = plan["fallback_nodes"]
+
+    def _compile_cerf_fallbacks(self) -> None:
+        """Add branch ordering, guard protected exits and build one table per chip."""
+        if not self._cerf_fallbacks and not self._cerf_group_fallbacks:
+            return
+        plan = self._plan_cerf_fallbacks(self._cerf_fallback_pairs())
+        late_substitutes = self._check_cerf_fallback_order(plan)
+        self._apply_cerf_fallbacks(plan)
+        for name in plan["same_type_backups"]:
             warnings.warn(
                 f"CERF fallback for '{name}' has a same-type backup; reachable "
                 "substitution levels can select it as a substitute and prevent degradation",
@@ -700,6 +718,7 @@ class BingoDFG(DmrSupport, DiGraphWrapper[BingoNode]):
                 f"CERF fallback: tasks {late} on possible substitute slot {sub_slot} do not "
                 "precede the primary branch; if both cores of its type die, the fallback stalls",
                 UserWarning, stacklevel=2)
+
 
     def bingo_insert_node_between(self, from_node_obj: BingoNode, to_node_obj: BingoNode, new_node_obj: BingoNode) -> None:
         """Insert a new node between two existing nodes in the DFG."""

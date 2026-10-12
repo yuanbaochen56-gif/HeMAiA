@@ -8,6 +8,9 @@
 // switches the test fault off, so the second offload is a healthy run, and
 // clears the two soc_ctrl words the device writes once per run.
 #include "offload_bingo_hw.h"
+#if BINGO_TEST_CFG
+#include "bingo_test_cfg.h"
+#endif
 
 // The second wake waits at most max(factor x first wake, min) host cycles
 // for the kernel table (first wake = wake to kernel table ready).

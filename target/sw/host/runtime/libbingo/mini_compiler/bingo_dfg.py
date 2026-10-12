@@ -1367,7 +1367,20 @@ class BingoDFG(DmrSupport, DiGraphWrapper[BingoNode]):
             dict mapping each conditionally-gated BingoNode to its CERF
             group id.  Also stored in ``self._node_to_cerf_group``.
         """
-        # -- Validate core assignments ----------------------------------------
+        self._check_core_assignments()
+        gating_to_targets = self._conditional_targets()
+        if not gating_to_targets:
+            self._node_to_cerf_group = {}
+            return {}
+        self._check_no_gated_gating(gating_to_targets)
+        inserted_gating_nodes = self._insert_gating_nodes(gating_to_targets)
+        self._check_conditional_well_formed(gating_to_targets)
+        node_to_group = self._assign_cerf_groups(gating_to_targets)
+        self._node_to_cerf_group = node_to_group
+        self._fill_gating_kernel_args(inserted_gating_nodes, gating_to_targets)
+        return node_to_group
+
+    def _check_core_assignments(self) -> None:
         unassigned = [n for n in self.node_list if n.assigned_core_id < 0]
         if unassigned:
             names = ", ".join(n.node_name for n in unassigned[:5])
@@ -1379,21 +1392,23 @@ class BingoDFG(DmrSupport, DiGraphWrapper[BingoNode]):
                 f"explicit (chiplet, cluster, core) in BingoNode()."
             )
 
-        # -- Step 1: identify gating nodes and their conditional targets ------
+    def _conditional_targets(self) -> dict:
+        """Step 1: gating node -> the targets of its conditional edges."""
         gating_to_targets: dict[BingoNode, set[BingoNode]] = {}
         for u, v, data in self.edges(data=True):
             if data.get("cond", False):
                 gating_to_targets.setdefault(u, set()).add(v)
+        return gating_to_targets
 
-        if not gating_to_targets:
-            self._node_to_cerf_group = {}
-            return {}
+    @staticmethod
+    def _check_no_gated_gating(gating_to_targets: dict) -> None:
+        """A CERF-gated node must not be the source of new cond edges.
 
-        # -- Sanity: a CERF-gated node must not be the source of new cond edges --
-        # If node X is a conditional target (will be CERF-gated) and also has
-        # outgoing conditional edges, the compiler would insert a gating node on
-        # X's (CERF-skippable) cluster. When that cluster is inactive the gating
-        # node cannot run, deadlocking all downstream targets.
+        If node X is a conditional target (will be CERF-gated) and also has
+        outgoing conditional edges, the compiler would insert a gating node on
+        X's (CERF-skippable) cluster. When that cluster is inactive the gating
+        node cannot run, deadlocking all downstream targets.
+        """
         all_cond_targets: set[BingoNode] = set()
         for targets in gating_to_targets.values():
             all_cond_targets.update(targets)
@@ -1411,7 +1426,9 @@ class BingoDFG(DmrSupport, DiGraphWrapper[BingoNode]):
                     f"CERF-gated computations, use post_execute_code in "
                     f"bingo_compile_dfg() instead.")
 
-        # -- Auto-insert gating nodes for sources with cond_dic ------
+    def _insert_gating_nodes(self, gating_to_targets: dict) -> dict:
+        """Auto-insert a gating node after each source with a cond_dic; it takes over the
+        source's targets in gating_to_targets. Returns source -> (gating node, cond_dic)."""
         inserted_gating_nodes = {}  # source_node → (gating_node, cond_dic)
         for source_node in list(gating_to_targets.keys()):
             # Collect cond_dic from edges (all edges from same source share config)
@@ -1442,7 +1459,10 @@ class BingoDFG(DmrSupport, DiGraphWrapper[BingoNode]):
             inserted_gating_nodes[source_node] = (gating_node, cond_dic)
             # Transfer target ownership from source to gating_node
             gating_to_targets[gating_node] = gating_to_targets.pop(source_node)
+        return inserted_gating_nodes
 
+    def _check_conditional_well_formed(self, gating_to_targets: dict) -> None:
+        """WF1 acyclic, WF2 one gating source per target, WF5 gating node precedes its targets."""
         # -- WF1: Acyclicity (only checked when conditional edges exist) ------
         if not nx.is_directed_acyclic_graph(self):
             raise ValueError(
@@ -1473,13 +1493,15 @@ class BingoDFG(DmrSupport, DiGraphWrapper[BingoNode]):
                         f"Well-formedness condition WF5 violated."
                     )
 
-        # -- Step 3: per gating node — connected-component grouping -----------
-        #
-        # CERF group reuse: if all gating nodes are totally ordered
-        # (each is an ancestor of the next), their conditional targets
-        # execute at different times and can safely share group IDs.
-        # The clear-before-set protocol in the gating task ensures that
-        # stale group values from a previous layer are overwritten.
+    def _assign_cerf_groups(self, gating_to_targets: dict) -> dict:
+        """Steps 2-4: per gating node, one CERF group per connected component of its targets.
+
+        CERF group reuse: if all gating nodes are totally ordered
+        (each is an ancestor of the next), their conditional targets
+        execute at different times and can safely share group IDs.
+        The clear-before-set protocol in the gating task ensures that
+        stale group values from a previous layer are overwritten.
+        """
         node_to_group: dict[BingoNode, int] = {}
 
         gating_ordered = [
@@ -1525,27 +1547,15 @@ class BingoDFG(DmrSupport, DiGraphWrapper[BingoNode]):
             if max_cerf <= 0:
                 max_cerf = 32  # will overflow, _alloc_cerf_group raises
 
-            # Assign cond_node_index to each target for SW guard
-            expert_idx_counter = 0
-
-            group_ids = []
             if num_components <= max_cerf:
                 # Normal: 1 CERF group per component (no group sharing)
-                for component in components:
-                    hint = ("Sequential gating reuse is active — "
-                            "too many experts per layer."
-                            if reuse_groups else
-                            "Consider reducing experts or making "
-                            "gating nodes sequential for reuse.")
-                    gid = self._alloc_cerf_group(hint)
-                    for node in component:
-                        node.cond_exec_en = True
-                        node.cond_exec_group_id = gid
-                        node.cond_exec_invert = False
-                        node._cond_node_index = expert_idx_counter
-                        node_to_group[node] = gid
-                    expert_idx_counter += 1
-                    group_ids.append(gid)
+                hint = ("Sequential gating reuse is active — "
+                        "too many experts per layer."
+                        if reuse_groups else
+                        "Consider reducing experts or making "
+                        "gating nodes sequential for reuse.")
+                # (allocated one by one as the components are annotated, as before)
+                component_gids = (self._alloc_cerf_group(hint) for _ in components)
             else:
                 # CERF group sharing: multiple components per group.
                 # Distributes components round-robin across available groups.
@@ -1553,17 +1563,19 @@ class BingoDFG(DmrSupport, DiGraphWrapper[BingoNode]):
                 allocated_gids = [self._alloc_cerf_group(
                     f"Sharing mode: {num_components} components across {n_groups} groups"
                 ) for _ in range(n_groups)]
-                for comp_idx, component in enumerate(components):
-                    gid = allocated_gids[comp_idx % n_groups]
-                    for node in component:
-                        node.cond_exec_en = True
-                        node.cond_exec_group_id = gid
-                        node.cond_exec_invert = False
-                        node._cond_node_index = expert_idx_counter
-                        node_to_group[node] = gid
-                    expert_idx_counter += 1
-                    if gid not in group_ids:
-                        group_ids.append(gid)
+                component_gids = (allocated_gids[i % n_groups] for i in range(num_components))
+            # Assign cond_node_index to each target for SW guard
+            group_ids = []
+            for expert_idx, (component, gid) in enumerate(zip(components, component_gids)):
+                for node in component:
+                    node.cond_exec_en = True
+                    node.cond_exec_group_id = gid
+                    node.cond_exec_invert = False
+                    node._cond_node_index = expert_idx
+                    node_to_group[node] = gid
+                if gid not in group_ids:
+                    group_ids.append(gid)
+            if num_components > max_cerf:
                 print(f"CERF group sharing: {num_components} components "
                       f"mapped to {n_groups} groups "
                       f"({num_components/n_groups:.1f} components/group)")
@@ -1574,14 +1586,15 @@ class BingoDFG(DmrSupport, DiGraphWrapper[BingoNode]):
             # Set gating node reference on all guarded expert nodes (for SW guard wiring)
             for target in targets:
                 target._gating_node = gating_node
+        return node_to_group
 
-        self._node_to_cerf_group = node_to_group
+    def _fill_gating_kernel_args(self, inserted_gating_nodes: dict, gating_to_targets: dict) -> None:
+        """Kernel and arguments of each inserted gating node, by its cond_dic mode.
 
-        # -- Auto-populate gating kernel args for inserted gating nodes ------
-        # All modes use the unified __host_bingo_kernel_cerf_gating kernel.
+        All modes use the unified __host_bingo_kernel_cerf_gating kernel.
+        """
         for source_node, (gating_node, cond_dic) in inserted_gating_nodes.items():
             cerf_controlled_mask = sum(1 << g for g in gating_node.cerf_write_groups)
-            num_groups = len(gating_node.cerf_write_groups)
             mode_str = cond_dic.get('mode', 'static')
 
             gating_node.kernel_name = "__host_bingo_kernel_cerf_gating"
@@ -1640,8 +1653,6 @@ class BingoDFG(DmrSupport, DiGraphWrapper[BingoNode]):
             self._gating_cerf_mappings[gating_node] = {
                 i: gid for i, gid in enumerate(sorted(gating_node.cerf_write_groups))
             }
-
-        return node_to_group
 
     def bingo_define_conditional_region(
         self,

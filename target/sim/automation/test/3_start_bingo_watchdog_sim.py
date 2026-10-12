@@ -153,6 +153,7 @@ from bingo_c2 import healthy_problems  # noqa: E402
 from bingo_p9 import healthy_problems as p9_healthy_problems  # noqa: E402
 from bingo_p9_scenarios import healthy_scenarios as p9_healthy_scenarios  # noqa: E402
 from bingo_r1_scenarios import r1a_scenarios, r1b_scenarios  # noqa: E402
+from bingo_b2_scenarios import b2_0_scenarios  # noqa: E402
 
 HEMAIA_CI_CFG = "target/rtl/cfg/hemaia_ci.hjson"
 # The 1-cluster GEMM workloads need exactly one cluster, and they generate their
@@ -1039,6 +1040,7 @@ SCENARIOS.update(c3_e2_scenarios())
 SCENARIOS.update(p9_healthy_scenarios(SCENARIOS, L2_CFG_KEYS))
 SCENARIOS.update(r1a_scenarios(SCENARIOS))
 SCENARIOS.update(r1b_scenarios(SCENARIOS))
+SCENARIOS.update(b2_0_scenarios(SCENARIOS))
 
 TEST_CFG_FIELDS = (
     "magic", "version", "fault_gid", "fault_stall_cycles", "fault_cluster", "fault_core",

@@ -152,6 +152,7 @@ from bingo_p8 import recovery_hold_config, check_recovery_hold, check_access_lev
 from bingo_c2 import healthy_problems  # noqa: E402
 from bingo_p9 import healthy_problems as p9_healthy_problems  # noqa: E402
 from bingo_p9_scenarios import healthy_scenarios as p9_healthy_scenarios  # noqa: E402
+from bingo_r1_scenarios import r1a_scenarios  # noqa: E402
 
 HEMAIA_CI_CFG = "target/rtl/cfg/hemaia_ci.hjson"
 # The 1-cluster GEMM workloads need exactly one cluster, and they generate their
@@ -1036,6 +1037,7 @@ def c3_e2_scenarios() -> Dict[str, dict]:
 
 SCENARIOS.update(c3_e2_scenarios())
 SCENARIOS.update(p9_healthy_scenarios(SCENARIOS, L2_CFG_KEYS))
+SCENARIOS.update(r1a_scenarios(SCENARIOS))
 
 TEST_CFG_FIELDS = (
     "magic", "version", "fault_gid", "fault_stall_cycles", "fault_cluster", "fault_core",
@@ -2104,17 +2106,21 @@ def evaluate_host_fallback(sc: dict, log_text: str, uart_text: str) -> List[str]
     problems = []
     faulty = sc["fault_stall_cycles"] is not None
     double = sc.get("fault_any_core", False)
+    # R1: a single fault whose type has no substitute at the fence degrades to
+    # the host backup at once: no replay, the stuck victim keeps its exit
+    fence_cerf = faulty and not double and sc.get("host_fallback_fence_cerf", False)
+    cerf = double or fence_cerf
     fb = [tuple(map(int, m.groups())) for m in CERF_FB_RE.finditer(log_text)]
-    if len(fb) != int(double) or any(e[1:] != (2, 0, 1) for e in fb):
+    if len(fb) != int(cerf) or any(e[1:] != (2, 0, 1) for e in fb):
         problems.append(f"automatic host fallback CERF events {fb}, expected "
-                        f"{'one type 2 g0 -> g1' if double else 'none'}")
+                        f"{'one type 2 g0 -> g1' if cerf else 'none'}")
     seen = {}
     for m in DISPATCH_RE.finditer(log_text):
         t, chip, task, core, cluster = map(int, m.groups())
         seen.setdefault(task, []).append((chip, core, cluster, t))
     expected = {
-        "copy": [(0, 1, 0), (0, 1, 1)] if faulty else [(0, 1, 0)],
-        "backup": [(0, 2, 0)] if double else [],
+        "copy": [(0, 1, 0), (0, 1, 1)] if faulty and not fence_cerf else [(0, 1, 0)],
+        "backup": [(0, 2, 0)] if cerf else [],
         "check": [(0, 2, 0)],
         # A single fault routes the victim's exit away: the manager absorbs it.
         "primary_exit": [] if faulty else [(0, 1, 0)],
@@ -2125,14 +2131,14 @@ def evaluate_host_fallback(sc: dict, log_text: str, uart_text: str) -> List[str]
         if actual != want:
             problems.append(f"automatic host fallback {name} task {ids[name]} slots {actual}, expected {want}")
     absorbed = absorbed_exit_slots(log_text)
-    if absorbed != ([(0, 1, 0)] if faulty and not double else []):
+    if absorbed != ([(0, 1, 0)] if faulty and not cerf else []):
         problems.append(f"absorbed exits {absorbed}, expected one victim exit only for a single fault")
     if "taken over" in uart_text:
         problems.append("an exit task was taken over by another core")
     replay_times = [int(t) for t in re.findall(
         rf"\[BINGO_REPLAY\] (\d+) chip=0 task={ids['copy']} ", log_text)]
-    if len(replay_times) != int(faulty):
-        problems.append("expected exactly one copy replay on fault, none when healthy")
+    if len(replay_times) != int(faulty and not fence_cerf):
+        problems.append("expected exactly one copy replay on a replayed fault, none otherwise")
     if faulty and len(seen.get(ids["copy"], [])) == 2 and len(replay_times) == 1:
         original, replayed = seen[ids["copy"]]
         fences = [int(m.group(1)) for m in WD_RE.finditer(log_text)
@@ -2146,16 +2152,23 @@ def evaluate_host_fallback(sc: dict, log_text: str, uart_text: str) -> List[str]
         if (not fences or not stuck or not
                 fences[0] <= stuck[0] <= fb[0][0] < seen[ids["backup"]][0][3] < seen[ids["check"]][0][3]):
             problems.append("expected substitute fence <= stuck <= CERF < host backup < check")
+    if fence_cerf and len(fb) == 1 and seen.get(ids["backup"]) and seen.get(ids["check"]):
+        fences = [int(m.group(1)) for m in WD_RE.finditer(log_text)
+                  if (m.group(2), m.group(3), m.group(4), m.group(6)) == ("0", "1", "0", "1")]
+        stuck = [int(t) for t in re.findall(r"\[BINGO_REPLAY_STUCK\] (\d+) chip=0 core=1 cluster=0:", log_text)]
+        if (not fences or not stuck or not
+                fences[0] <= stuck[0] <= fb[0][0] < seen[ids["backup"]][0][3] < seen[ids["check"]][0][3]):
+            problems.append("expected victim fence <= stuck <= CERF < host backup < check")
     host = re.search(r"\[Host\] Bingo status: .* cerf=0x([0-9a-fA-F]+) "
                      r"cerf_fb_en=0x([0-9a-fA-F]+) cerf_fb_evt=0x([0-9a-fA-F]+)", uart_text)
-    expected_status = (2 if double else 1, 4, 4 if double else 0)
+    expected_status = (2 if cerf else 1, 4, 4 if cerf else 0)
     if not host or tuple(int(v, 16) for v in host.groups()) != expected_status:
         problems.append(f"automatic host fallback CERF/en/evt expected {expected_status}")
     output = "C_l3" if sc.get("add_host_fallback") else "A_L1"
     marker = "AddHostFallback" if sc.get("add_host_fallback") else "DmaHostFallback"
     if CHECK_RE.findall(uart_text) != [(output, "PASS")]:
         problems.append(f"expected exactly one Check [{output}]: PASS")
-    if f"[{marker}] check complete; host fallback {int(double)}" not in uart_text:
+    if f"[{marker}] check complete; host fallback {int(cerf)}" not in uart_text:
         problems.append("missing automatic host fallback completion marker")
     print(f"[host_fallback] task_ids={ids} events={fb}")
     return problems

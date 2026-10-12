@@ -152,7 +152,7 @@ from bingo_p8 import recovery_hold_config, check_recovery_hold, check_access_lev
 from bingo_c2 import healthy_problems  # noqa: E402
 from bingo_p9 import healthy_problems as p9_healthy_problems  # noqa: E402
 from bingo_p9_scenarios import healthy_scenarios as p9_healthy_scenarios  # noqa: E402
-from bingo_r1_scenarios import r1a_scenarios  # noqa: E402
+from bingo_r1_scenarios import r1a_scenarios, r1b_scenarios  # noqa: E402
 
 HEMAIA_CI_CFG = "target/rtl/cfg/hemaia_ci.hjson"
 # The 1-cluster GEMM workloads need exactly one cluster, and they generate their
@@ -1038,6 +1038,7 @@ def c3_e2_scenarios() -> Dict[str, dict]:
 SCENARIOS.update(c3_e2_scenarios())
 SCENARIOS.update(p9_healthy_scenarios(SCENARIOS, L2_CFG_KEYS))
 SCENARIOS.update(r1a_scenarios(SCENARIOS))
+SCENARIOS.update(r1b_scenarios(SCENARIOS))
 
 TEST_CFG_FIELDS = (
     "magic", "version", "fault_gid", "fault_stall_cycles", "fault_cluster", "fault_core",
@@ -1110,7 +1111,8 @@ def scenario_test_cfg(sc: dict, extra_flags: str = "", *, check_pair: bool = Tru
     flags = shlex.split(sc.get("image_flags", ""))
     late_image = "-DBINGO_WD_LATE" in flags
     sdc_image = "-DBINGO_SDC" in flags
-    adaptive_image = "-DBINGO_WD_ADAPT" in flags or late_image or sdc_image
+    fence_image = "-DBINGO_FENCE_FB" in flags
+    adaptive_image = "-DBINGO_WD_ADAPT" in flags or late_image or sdc_image or fence_image
     cfg = test_cfg_image_defaults(3 if adaptive_image else 2, sc.get("image_flags", ""))
     for field in SDC_CFG_FIELDS:
         if field in sc:
@@ -1124,6 +1126,10 @@ def scenario_test_cfg(sc: dict, extra_flags: str = "", *, check_pair: bool = Tru
             if not late_image:
                 raise ValueError(f"{field} requires the BINGO_WD_LATE image flag")
             cfg[field] = sc[field]
+    if "fence_fb" in sc:
+        if not fence_image:
+            raise ValueError("fence_fb requires the BINGO_FENCE_FB image flag")
+        cfg["fence_fb"] = sc["fence_fb"]
     cfg["evlog_enable"] = sc.get("evlog_enable", 0)
     cfg["recovery_hold"] = sc.get("recovery_hold", 0)
     cfg["pm_access_level"] = sc.get("pm_access_level", 0)
@@ -1170,7 +1176,7 @@ def t1_image_flags(sc: dict) -> str:
     if not isinstance(value, str):
         raise ValueError("T1 image_flags must be a flag string")
     flags = shlex.split(value)
-    if set(flags) - {"-DBINGO_WD_NO_HEARTBEAT", "-DBINGO_WD_NOP_HEARTBEAT", "-DBINGO_C6_SW_CERF", "-DBINGO_WD_ADAPT", "-DBINGO_WD_LATE", "-DBINGO_SDC", "-DBINGO_SDC_QUIET", "-DBINGO_SDC_RECOVER"}:
+    if set(flags) - {"-DBINGO_WD_NO_HEARTBEAT", "-DBINGO_WD_NOP_HEARTBEAT", "-DBINGO_C6_SW_CERF", "-DBINGO_WD_ADAPT", "-DBINGO_WD_LATE", "-DBINGO_SDC", "-DBINGO_SDC_QUIET", "-DBINGO_SDC_RECOVER", "-DBINGO_FENCE_FB"}:
         raise ValueError("unsupported T1 image_flags")
     if "-DBINGO_SDC_QUIET" in flags and "-DBINGO_SDC" not in flags:
         raise ValueError("BINGO_SDC_QUIET requires BINGO_SDC")
@@ -1182,7 +1188,9 @@ def t1_image_flags(sc: dict) -> str:
     if flags and (not sc.get("t1") or other_image or any(
             sc is SCENARIOS.get(name) for names in T1_FAMILIES.values() for name in names)):
         raise ValueError("image_flags must not belong to a same-image family")
-    if ("-DBINGO_WD_LATE" in flags or "-DBINGO_SDC" in flags) and "-DBINGO_WD_ADAPT" not in flags:
+    if "-DBINGO_FENCE_FB" in flags and ({"-DBINGO_SDC", "-DBINGO_WD_LATE"} & set(flags)):
+        raise ValueError("BINGO_FENCE_FB is not combined with BINGO_SDC or BINGO_WD_LATE")
+    if ("-DBINGO_WD_LATE" in flags or "-DBINGO_SDC" in flags or "-DBINGO_FENCE_FB" in flags) and "-DBINGO_WD_ADAPT" not in flags:
         flags.append("-DBINGO_WD_ADAPT")
     return " ".join(flags)
 
@@ -1191,10 +1199,10 @@ def test_cfg_bytes(cfg: dict) -> bytes:
     version = cfg["version"]
     if (version not in (1, 2, 3) or set(cfg) - set(TEST_CFG_FIELDS) - set(SDC_CFG_FIELDS) - {
             "user", "evlog_enable", "recovery_hold", "pm_access_level", "cerf_fb_mode", "cerf_poll_cycles",
-            "wd_type_h", "wd_type_c", "wd_adapt", "wd_late", "fault_pre_stall_from"}
+            "wd_type_h", "wd_type_c", "wd_adapt", "wd_late", "fault_pre_stall_from", "fence_fb"}
             or version == 1 and any(field in cfg for field in ("wd_type_h", "wd_type_c"))
             or version != 3 and any(field in cfg for field in
-                                   ("wd_adapt", "wd_late", "fault_pre_stall_from") + SDC_CFG_FIELDS)):
+                                   ("wd_adapt", "wd_late", "fault_pre_stall_from", "fence_fb") + SDC_CFG_FIELDS)):
         raise ValueError("unsupported test configuration layout")
     user = cfg.get("user", [0] * 4)
     if len(user) != 4 or any(not isinstance(v, int) or not 0 <= v <= 0xFFFFFFFF for v in user):
@@ -1233,7 +1241,10 @@ def test_cfg_bytes(cfg: dict) -> bytes:
             raise ValueError("sdc_enable must be 0 or 1")
         if sdc[-1] > 0xFF:
             raise ValueError("fault_sdc_mask must fit one byte")
-        words += [adapt] + late + sdc + [0] * 23
+        fence = cfg.get("fence_fb", 0)
+        if type(fence) is not int or not 0 <= fence <= 0xFFFF:
+            raise ValueError("fence_fb must fit sixteen core types")
+        words += [adapt] + late + sdc + [fence] + [0] * 22
     return struct.pack("<" + "I" * len(words), *words)
 
 
@@ -2106,9 +2117,9 @@ def evaluate_host_fallback(sc: dict, log_text: str, uart_text: str) -> List[str]
     problems = []
     faulty = sc["fault_stall_cycles"] is not None
     double = sc.get("fault_any_core", False)
-    # R1a: a single fault with no substitute degrades at the fence. The
-    # victim exit and the possible substitute's exit are in the cleared group,
-    # so neither is dispatched (the substitute exit would block the exit chain).
+    # R1: a single fault with no substitute (level-1 hardware, or the type's
+    # fence-fallback bit) degrades at the fence. The victim exit and the
+    # possible substitute's exit are in the cleared group: neither is dispatched.
     fence_cerf = faulty and not double and sc.get("host_fallback_fence_cerf", False)
     cerf = double or fence_cerf
     fb = [tuple(map(int, m.groups())) for m in CERF_FB_RE.finditer(log_text)]

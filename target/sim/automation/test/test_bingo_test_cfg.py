@@ -80,6 +80,37 @@ class TestConfigurationTests(unittest.TestCase):
                                       "pm_access_level 116", "cerf_fb_mode 120", "cerf_poll_cycles 124",
                                       "wd_type_h 128", "wd_type_c 192"])
 
+    def test_layout_table_matches_every_native_variant(self):
+        """TEST_CFG_LAYOUT gives the offset and size the C header has under each flag set."""
+        variants = {
+            (): (), ("BINGO_WD_ADAPT",): ("wd_adapt",),
+            ("BINGO_WD_LATE",): ("wd_adapt", "wd_late", "fault_pre_stall_from"),
+            ("BINGO_SDC",): ("wd_adapt", *watchdog.SDC_CFG_FIELDS),
+            ("BINGO_SDC", "BINGO_WD_LATE"): ("wd_adapt", "wd_late", "fault_pre_stall_from",
+                                             *watchdog.SDC_CFG_FIELDS),
+            ("BINGO_FENCE_FB",): ("wd_adapt", "fence_fb"),
+        }
+        v2 = [name for name, _, first in watchdog.TEST_CFG_LAYOUT if first <= 2]
+        for flags, v3 in variants.items():
+            with self.subTest(flags=flags), tempfile.TemporaryDirectory() as directory:
+                version = 3 if flags else 2
+                source = '#include <stddef.h>\n#include <stdio.h>\n#include "bingo_test_cfg.h"\n'
+                source += 'int main(void) {\nprintf("size %zu\\n", sizeof(bingo_test_cfg_t));\n'
+                source += "".join(f'printf("{f} %zu\\n", offsetof(bingo_test_cfg_t, {f}));\n'
+                                  for f in v2 + list(v3))
+                source += "return 0; }\n"
+                path = Path(directory)
+                (path / "layout.c").write_text(source)
+                subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
+                                *[f"-D{flag}" for flag in flags],
+                                "-I", str(ROOT / "target/sw/shared/runtime"),
+                                str(path / "layout.c"), "-o", str(path / "layout")], check=True)
+                output = subprocess.check_output([str(path / "layout")], text=True).split()
+                found = dict(zip(output[::2], map(int, output[1::2])))
+                size = sum(4 * words for _, words, first in watchdog.TEST_CFG_LAYOUT if first <= version)
+                self.assertEqual(found.pop("size"), size)
+                self.assertEqual(found, {f: watchdog.test_cfg_offset(f) for f in v2 + list(v3)})
+
     def test_user_defaults_preserve_v1_and_v2_bytes(self):
         for version in (1, 2):
             cfg = watchdog.test_cfg_defaults(version)

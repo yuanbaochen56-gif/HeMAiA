@@ -198,6 +198,28 @@ SDC_CFG_FIELDS = (
     "sdc_enable", "fault_sdc_gid", "fault_sdc_cluster", "fault_sdc_core",
     "fault_sdc_offset", "fault_sdc_mask",
 )
+# The whole block, bingo_test_cfg_t of target/sw/shared/runtime/bingo_test_cfg.h,
+# in order: (field, 32-bit words, first layout version). Version 1 ends after
+# cerf_poll_cycles (128 bytes), version 2 after wd_type_c (256 bytes); version 3
+# adds a row whose fields have these offsets in every v3 image, whatever its flags.
+TEST_CFG_LAYOUT = (
+    tuple((field, 1, 1) for field in TEST_CFG_FIELDS)
+    + (("user", 4, 1), ("evlog_enable", 1, 1), ("recovery_hold", 1, 1), ("pm_access_level", 1, 1),
+       ("cerf_fb_mode", 1, 1), ("cerf_poll_cycles", 1, 1), ("wd_type_h", 16, 2), ("wd_type_c", 16, 2),
+       ("wd_adapt", 1, 3), ("wd_late", 1, 3), ("fault_pre_stall_from", 1, 3))
+    + tuple((field, 1, 3) for field in SDC_CFG_FIELDS)
+    + (("fence_fb", 1, 3), ("wd_adapt_reserved", 22, 3))
+)
+
+
+def test_cfg_offset(field: str) -> int:
+    """Byte offset of a T1 field in every layout version that has it."""
+    offset = 0
+    for name, words, _ in TEST_CFG_LAYOUT:
+        if name == field:
+            return offset
+        offset += 4 * words
+    raise KeyError(field)
 
 
 def test_cfg_defaults(version: int = 2) -> dict:
@@ -347,13 +369,15 @@ def test_cfg_bytes(cfg: dict) -> bytes:
         raise ValueError("cerf_fb_mode and cerf_poll_cycles must be uint32 words")
     if c6[0] not in C6_MODES.values():
         raise ValueError("cerf_fb_mode must be 0 (hardware), 1 (software) or 2 (none)")
-    words = [cfg[field] for field in TEST_CFG_FIELDS] + list(user) + [evlog] + p8 + c6
+    values = {field: cfg[field] for field in TEST_CFG_FIELDS}
+    values.update(user=list(user), evlog_enable=evlog, recovery_hold=p8[0], pm_access_level=p8[1],
+                  cerf_fb_mode=c6[0], cerf_poll_cycles=c6[1])
     if version >= 2:
         for field in ("wd_type_h", "wd_type_c"):
-            values = cfg.get(field, [0] * 16)
-            if len(values) != 16 or any(not isinstance(v, int) or not 0 <= v <= 0xFFFFFFFF for v in values):
+            values[field] = cfg.get(field, [0] * 16)
+            if len(values[field]) != 16 or any(not isinstance(v, int) or not 0 <= v <= 0xFFFFFFFF
+                                               for v in values[field]):
                 raise ValueError(f"{field} must have sixteen words")
-            words += values
     if version == 3:
         adapt = cfg.get("wd_adapt", 0)
         if type(adapt) is not int or not 0 <= adapt <= 0xFFFFFFFF:
@@ -373,7 +397,13 @@ def test_cfg_bytes(cfg: dict) -> bytes:
         fence = cfg.get("fence_fb", 0)
         if type(fence) is not int or not 0 <= fence <= 0xFFFF:
             raise ValueError("fence_fb must fit sixteen core types")
-        words += [adapt] + late + sdc + [fence] + [0] * 22
+        values.update(zip(("wd_adapt", "wd_late", "fault_pre_stall_from", *SDC_CFG_FIELDS, "fence_fb"),
+                          [adapt, *late, *sdc, fence]))
+    words = []
+    for field, count, first in TEST_CFG_LAYOUT:
+        if first <= version:
+            value = values.get(field, [0] * count if count > 1 else 0)
+            words += value if count > 1 else [value]
     return struct.pack("<" + "I" * len(words), *words)
 
 

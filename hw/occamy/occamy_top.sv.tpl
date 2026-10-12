@@ -27,6 +27,10 @@ module ${name}_top
   /// Accelerator clock
   input  logic [${len(occamy_cfg["clusters"])}-1:0] clk_acc_i,
   input  logic [${len(occamy_cfg["clusters"])}-1:0] rst_acc_ni,
+% if occamy_cfg["s1_quadrant"].get("acc_reset", False):
+  /// Accelerator reset request (quadrant and clusters, active low)
+  input  logic        acc_rst_req_ni,
+% endif
   /// Peripheral clock
   input  logic        clk_periph_i,
   input  logic        rst_periph_ni,
@@ -181,6 +185,9 @@ module ${name}_top
     .rst_ni,
     .clk_acc_i,
     .rst_acc_ni,
+% if occamy_cfg["s1_quadrant"].get("acc_reset", False):
+    .acc_rst_req_ni,
+% endif
     .test_mode_i,
     .chip_id_i                    ( chip_id_i                   ),
     .boot_addr_i                  ( boot_addr                   ),

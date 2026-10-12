@@ -167,6 +167,8 @@ import ${name}_pkg::*;
   if occamy_cfg["hemaia_multichip"]["single_chip"] is False:
     num_d2d_clk_domain = 4
   num_acc_clk_domain = len(occamy_cfg["clusters"])
+  # Accelerator reset request: one more channel after all others (its clock is unused)
+  num_acc_rst_channel = 1 if occamy_cfg["s1_quadrant"].get("acc_reset", False) else 0
 %>
   // Control Clock / clk_periph_i: Peripheral Slow Speed Clock
   // Master Clock / clk_i: Oscillator Clock
@@ -190,7 +192,7 @@ import ${name}_pkg::*;
   ${soc_axi_lite_narrow_periph_xbar.out_hemaia_clk_rst_controller.rsp_type()} hemaia_clk_rst_controller_rsp;
 
 
-  localparam int HeMAiADefaultDivision[${1+num_acc_clk_domain+num_d2d_clk_domain}] = '{
+  localparam int HeMAiADefaultDivision[${1+num_acc_clk_domain+num_d2d_clk_domain+num_acc_rst_channel}] = '{
     14
   % for _ in range(num_acc_clk_domain):
     ,14
@@ -198,10 +200,13 @@ import ${name}_pkg::*;
   % if occamy_cfg["hemaia_multichip"]["single_chip"] is False:
     ,2,2,2,2
   % endif
+  % if num_acc_rst_channel:
+    ,14
+  % endif
   };
-  localparam int ResetDelays[${1+num_acc_clk_domain+num_d2d_clk_domain}] = '{default: 3};
+  localparam int ResetDelays[${1+num_acc_clk_domain+num_d2d_clk_domain+num_acc_rst_channel}] = '{default: 3};
 
-  logic [${1+num_acc_clk_domain+num_d2d_clk_domain-1}:0] clk_vec, rst_n_vec;
+  logic [${1+num_acc_clk_domain+num_d2d_clk_domain+num_acc_rst_channel-1}:0] clk_vec, rst_n_vec;
   (* syn_keep = 1, syn_preserve = 1 *)
   logic clk_host;
 % if occamy_cfg["hemaia_multichip"]["single_chip"] is False: 
@@ -247,7 +252,7 @@ import ${name}_pkg::*;
 % endif
   hemaia_clk_rst_controller #(
     .USE_VENDOR_PLL(${use_vendor_pll}),
-    .NumClocks(${1+num_acc_clk_domain+num_d2d_clk_domain}),
+    .NumClocks(${1+num_acc_clk_domain+num_d2d_clk_domain+num_acc_rst_channel}),
     .MaxDivisionWidth(8),
     .DefaultDivision(HeMAiADefaultDivision),
     .ResetDelays(ResetDelays),
@@ -355,6 +360,9 @@ import ${name}_pkg::*;
     .rst_ni             (rst_host_n),
     .clk_acc_i          (clk_acc),
     .rst_acc_ni         (rst_acc_n),
+% if num_acc_rst_channel:
+    .acc_rst_req_ni     (rst_n_vec[${1+num_acc_clk_domain+num_d2d_clk_domain}]),
+% endif
     .sram_cfgs_i        ('0),
     .clk_periph_i       (clk_periph_i),
     .rst_periph_ni      (rst_periph_ni),

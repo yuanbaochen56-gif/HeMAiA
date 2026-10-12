@@ -575,6 +575,10 @@ void bingo_wd_type_set(uint32_t type, uint32_t h, uint32_t c);
 void bingo_wd_adapt_set(uint32_t ctrl);
 // Predictive late threshold, [11:4] reserved and always written as zero.
 void bingo_wd_late_set(uint32_t ctrl);
+// Fence fallback (bit t = core type t, 0 = off): a fenced or parked core of a
+// set type takes no substitute, so a fence leaves its tasks to the CERF
+// degradation of that type. Write it before the first task is dispatched.
+void bingo_fence_fb_set(uint32_t type_mask);
 
 void bingo_hw_scheduler_init(uint64_t dev_arg_base_addr, uint64_t dev_kernel_base_addr, uint32_t num_dev_tasks, uint64_t global_task_id_to_dev_task_id_base_addr, uint32_t num_total_tasks, uint64_t bingo_hw_scheduler_task_desc_list_base, uint32_t bingo_hw_scheduler_num_task_desc);
 

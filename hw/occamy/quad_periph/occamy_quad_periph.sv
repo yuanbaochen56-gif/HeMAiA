@@ -65,6 +65,8 @@ module occamy_quad_periph import occamy_quad_periph_reg_pkg::*; #(
   output logic [NumBingoCoreTypes-1:0][31:0] bingo_hw_manager_wd_type_c_o,
   output logic [31:0] bingo_hw_manager_wd_adapt_o,
   output logic [31:0] bingo_hw_manager_wd_late_o,
+  // Fence fallback: core types that take no substitute (0 = off)
+  output logic [NumBingoCoreTypes-1:0]      bingo_hw_manager_fence_fb_o,
   output reg_data_t   bingo_hw_manager_risk_clear_o,
   input  reg_data_t   bingo_hw_manager_risk_i,
   output logic       bingo_evlog_enable_o,
@@ -161,6 +163,7 @@ module occamy_quad_periph import occamy_quad_periph_reg_pkg::*; #(
       reg2hw.bingo_wd_late.lfloor.q, 8'b0,
       reg2hw.bingo_wd_late.sh_l.q, reg2hw.bingo_wd_late.en.q
   };
+  assign bingo_hw_manager_fence_fb_o = reg2hw.bingo_fence_fb.q;
   for (genvar t = 0; t < NumBingoCoreTypes; t++) begin : gen_bingo_wd_type
     assign bingo_hw_manager_wd_type_h_o[t] = reg2hw.bingo_wd_type_h[t].q;
     assign bingo_hw_manager_wd_type_c_o[t] = reg2hw.bingo_wd_type_c[t].q;

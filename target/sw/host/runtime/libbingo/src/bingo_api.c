@@ -14,6 +14,11 @@
 #include "bingo_test_cfg.h"
 volatile bingo_test_cfg_t bingo_test_cfg __attribute__((section(".data"), used)) =
     BINGO_TEST_CFG_INITIALIZER;
+// A control the init writes: the T1 block's field in an evaluation image,
+// otherwise the compile-time macro (the preprocessed default build is unchanged)
+#define BINGO_CFG(field, macro) bingo_test_cfg.field
+#else
+#define BINGO_CFG(field, macro) macro
 #endif
 uint64_t global_task_id = 0; // Internal monotonically increasing id source, notice this is used in each chiplet
 
@@ -741,24 +746,22 @@ void bingo_hw_scheduler_init_pm(){
     // For chip testing, we should choose another value derived from the 4Ghz PLL
     writew(BINGO_PM_NORMAL_POWER_LEVEL,  (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_norm_power_level_addr()));
     // 2b. quad_ctrl_boost_power_level_addr: level while a core runs a dead core's tasks (0 = off)
+    writew(BINGO_CFG(pm_boost_power_level, BINGO_PM_BOOST_POWER_LEVEL),
+           (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_boost_power_level_addr()));
+    writew(BINGO_CFG(boost_policy, BINGO_BOOST_POLICY),
+           (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_bingo_boost_policy_addr()));
+    // 2c. quad_ctrl_idle_entry_delay_addr: cycles of idleness before a domain drops to the idle level (0 = at once)
+    writew(BINGO_CFG(pm_idle_entry_delay, BINGO_PM_IDLE_ENTRY_DELAY),
+           (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_idle_entry_delay_addr()));
+    // 2d. quad_ctrl_access_wake_hold_addr: cycles an accessed cluster stays awake after the last access (0 = off)
+    writew(BINGO_CFG(pm_access_wake_hold, BINGO_PM_ACCESS_WAKE_HOLD),
+           (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_access_wake_hold_addr()));
+    bingo_pm_set_recovery_hold(BINGO_CFG(recovery_hold, BINGO_RECOVERY_HOLD));
+    bingo_pm_set_access_level(BINGO_CFG(pm_access_level, BINGO_PM_ACCESS_LEVEL));
 #if BINGO_TEST_CFG
-    writew(bingo_test_cfg.pm_boost_power_level, (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_boost_power_level_addr()));
-    writew(bingo_test_cfg.boost_policy, (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_bingo_boost_policy_addr()));
-    writew(bingo_test_cfg.pm_idle_entry_delay, (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_idle_entry_delay_addr()));
-    writew(bingo_test_cfg.pm_access_wake_hold, (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_access_wake_hold_addr()));
-    bingo_pm_set_recovery_hold(bingo_test_cfg.recovery_hold);
-    bingo_pm_set_access_level(bingo_test_cfg.pm_access_level);
     printf_safe("Chip(%x, %x): [Host] Bingo PM: test configuration\r\n",
                 get_current_chip_loc_x(), get_current_chip_loc_y());
 #else
-    writew(BINGO_PM_BOOST_POWER_LEVEL,   (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_boost_power_level_addr()));
-    writew(BINGO_BOOST_POLICY,           (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_bingo_boost_policy_addr()));
-    // 2c. quad_ctrl_idle_entry_delay_addr: cycles of idleness before a domain drops to the idle level (0 = at once)
-    writew(BINGO_PM_IDLE_ENTRY_DELAY,    (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_idle_entry_delay_addr()));
-    // 2d. quad_ctrl_access_wake_hold_addr: cycles an accessed cluster stays awake after the last access (0 = off)
-    writew(BINGO_PM_ACCESS_WAKE_HOLD,    (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_access_wake_hold_addr()));
-    bingo_pm_set_recovery_hold(BINGO_RECOVERY_HOLD);
-    bingo_pm_set_access_level(BINGO_PM_ACCESS_LEVEL);
     printf_safe("Chip(%x, %x): [Host] Bingo PM: idle_level=%d normal_level=%d boost_level=%d idle_entry_delay=%d access_wake_hold=%d boost_policy=0x%x\r\n",
                 get_current_chip_loc_x(), get_current_chip_loc_y(),
                 BINGO_PM_IDLE_POWER_LEVEL, BINGO_PM_NORMAL_POWER_LEVEL,
@@ -944,14 +947,27 @@ void bingo_hw_scheduler_init(uint64_t dev_arg_base_addr, uint64_t dev_kernel_bas
     }
     // Init the power manager
     bingo_hw_scheduler_init_pm();
+    // (the default build enables the event log first, an evaluation image after
+    // its other controls; each keeps its order)
+#if !BINGO_TEST_CFG
+    bingo_evlog_enable(BINGO_EVLOG_ENABLE);
+#endif
     // Level 3: proxy timeout (0 = wait forever for a remote done)
+    writew(BINGO_CFG(remote_proxy_timeout, BINGO_REMOTE_PROXY_TIMEOUT),
+           (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_remote_proxy_timeout_addr()));
+    // Core parking (0 = none): the slots drain before any task is offloaded
+    writew(BINGO_CFG(park_req, BINGO_PARK_REQ),
+           (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_bingo_park_req_addr()));
+    // Fault precursors (0 = off)
+    writew(BINGO_CFG(risk_late, BINGO_RISK_LATE),
+           (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_bingo_risk_late_addr()));
+    writew(BINGO_CFG(risk_epoch, BINGO_RISK_EPOCH),
+           (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_bingo_risk_epoch_addr()));
+    writew(BINGO_CFG(risk_policy, BINGO_RISK_POLICY),
+           (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_bingo_risk_policy_addr()));
+    writew(BINGO_CFG(risk_confirm, BINGO_RISK_CONFIRM),
+           (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_bingo_risk_confirm_addr()));
 #if BINGO_TEST_CFG
-    writew(bingo_test_cfg.remote_proxy_timeout, (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_remote_proxy_timeout_addr()));
-    writew(bingo_test_cfg.park_req, (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_bingo_park_req_addr()));
-    writew(bingo_test_cfg.risk_late, (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_bingo_risk_late_addr()));
-    writew(bingo_test_cfg.risk_epoch, (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_bingo_risk_epoch_addr()));
-    writew(bingo_test_cfg.risk_policy, (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_bingo_risk_policy_addr()));
-    writew(bingo_test_cfg.risk_confirm, (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_bingo_risk_confirm_addr()));
     for (uint32_t type = 0; type < BINGO_WD_NUM_TYPES; ++type) {
         bingo_wd_type_set(type, bingo_test_cfg.wd_type_h[type], bingo_test_cfg.wd_type_c[type]);
     }
@@ -971,15 +987,6 @@ void bingo_hw_scheduler_init(uint64_t dev_arg_base_addr, uint64_t dev_kernel_bas
     bingo_c6_cerf_init();
 #endif
 #else
-    bingo_evlog_enable(BINGO_EVLOG_ENABLE);
-    writew(BINGO_REMOTE_PROXY_TIMEOUT, (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_remote_proxy_timeout_addr()));
-    // Core parking (0 = none): the slots drain before any task is offloaded
-    writew(BINGO_PARK_REQ,             (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_bingo_park_req_addr()));
-    // Fault precursors (0 = off)
-    writew(BINGO_RISK_LATE,            (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_bingo_risk_late_addr()));
-    writew(BINGO_RISK_EPOCH,           (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_bingo_risk_epoch_addr()));
-    writew(BINGO_RISK_POLICY,          (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_bingo_risk_policy_addr()));
-    writew(BINGO_RISK_CONFIRM,         (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_bingo_risk_confirm_addr()));
 #ifdef BINGO_CERF_FB_CLUSTER
     // CERF degradation for the core type of one slot (off unless defined)
     bingo_cerf_fb_set(BINGO_CORE_TYPE_ID(BINGO_CERF_FB_CLUSTER, BINGO_CERF_FB_CORE),

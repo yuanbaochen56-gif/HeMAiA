@@ -153,7 +153,8 @@ from bingo_c2 import healthy_problems  # noqa: E402
 from bingo_p9 import healthy_problems as p9_healthy_problems  # noqa: E402
 from bingo_p9_scenarios import healthy_scenarios as p9_healthy_scenarios  # noqa: E402
 from bingo_r1_scenarios import r1a_scenarios, r1b_scenarios  # noqa: E402
-from bingo_b2_scenarios import b2_0_scenarios  # noqa: E402
+from bingo_b2_scenarios import b2_0_scenarios, b2_v3_scenarios  # noqa: E402
+from bingo_b2_check import evaluate_b2  # noqa: E402
 
 HEMAIA_CI_CFG = "target/rtl/cfg/hemaia_ci.hjson"
 # The 1-cluster GEMM workloads need exactly one cluster, and they generate their
@@ -1041,6 +1042,7 @@ SCENARIOS.update(p9_healthy_scenarios(SCENARIOS, L2_CFG_KEYS))
 SCENARIOS.update(r1a_scenarios(SCENARIOS))
 SCENARIOS.update(r1b_scenarios(SCENARIOS))
 SCENARIOS.update(b2_0_scenarios(SCENARIOS))
+SCENARIOS.update(b2_v3_scenarios(SCENARIOS))
 
 TEST_CFG_FIELDS = (
     "magic", "version", "fault_gid", "fault_stall_cycles", "fault_cluster", "fault_core",
@@ -2492,6 +2494,10 @@ def check_core_types(expected: Dict[int, int]) -> List[str]:
 
 def evaluate(name: str, sc: dict, log_text: str, uart_text: str) -> List[str]:
     """Return the list of failed expectations (empty = pass)."""
+    if sc.get("b2_offloads"):
+        # Two offloads in one run: each is judged as the run it repeats
+        return evaluate_b2(name, sc, log_text, uart_text, SCENARIOS, evaluate,
+                           len(sc["expect_core_types"]))
     if sc.get("sdc_recover"):
         from bingo_sdc_recover_check import evaluate_recovery
         return evaluate_recovery(sc, log_text, uart_text)
@@ -2912,11 +2918,13 @@ def run_scenario(name: str, args: argparse.Namespace) -> bool:
         except (OSError, ValueError, KeyError) as error:
             print(f"[{name}] cannot load generated host fallback graph: {error}")
     problems = evaluate(name, sc, log_text, uart_text)
-    if sc.get("c2") or sc.get("c4_control"):
+    # (a B2 run has two offloads: evaluate_b2 applied the per-run checks to each)
+    single = not sc.get("b2_offloads")
+    if single and (sc.get("c2") or sc.get("c4_control")):
         problems += healthy_problems(log_text, uart_text, sc["dispatch_graph_csv"])
     if sc.get("p9_healthy"):
         problems += p9_healthy_problems(log_text)
-    if sc.get("evlog_enable"):
+    if single and sc.get("evlog_enable"):
         slots = (len(sc["expect_core_types"]) if "expect_core_types" in sc
                  else dispatch_host_slot()[1] + 1)
         problems += check_evlog(log_text, uart_text, slots,
@@ -2927,7 +2935,7 @@ def run_scenario(name: str, args: argparse.Namespace) -> bool:
                 problems += check_evlog_pair((reference / "sim_run.log").read_text(), log_text)
             else:
                 problems.append("missing disabled EVLOG pair reference")
-    elif "evlog_enable" in sc and "[EVLOG]" in uart_text:
+    elif single and "evlog_enable" in sc and "[EVLOG]" in uart_text:
         problems.append("disabled EVLOG printed items")
     problems += runner.core_type_problems
     if sc.get("p8_recovery"):
@@ -2943,7 +2951,7 @@ def run_scenario(name: str, args: argparse.Namespace) -> bool:
             problems += check_early_exit_conf_pair(first_log, first_uart, log_text, uart_path.read_bytes())
         except OSError as error:
             problems.append(f"cannot read confidence pair reference: {error}")
-    if sc["expect_eoc"] and log_text:
+    if single and sc["expect_eoc"] and log_text:
         # The host prints the manager's status at the end; its fenced bitmap must
         # match the last [BINGO_STATUS] of the RTL (register order; 0 without
         # such a line)

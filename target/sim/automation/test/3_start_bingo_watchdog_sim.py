@@ -2881,10 +2881,11 @@ class TestCfgSimRunner(NoTraceSimRunner):
         return info
 
 
-def run_scenario(name: str, args: argparse.Namespace) -> bool:
-    os.environ["PYTHONHASHSEED"] = "0"
-    sc = dict(SCENARIOS[name])
-    image_flags = t1_image_flags(SCENARIOS[name])
+WORKLOADS = Path("target/sw/host/apps/offload_bingo_hw/single_chip/workloads")
+
+
+def apply_run_options(sc: dict, args: argparse.Namespace) -> None:
+    """Values that come from an earlier run (P8 recovery hold) or the command line (sweeps)."""
     if sc.get("recovery_hold_from"):
         previous = Path(args.out_root) / sc["recovery_hold_from"]
         logs = list(previous.glob("task_*/bin/sim_run.log"))
@@ -2897,14 +2898,12 @@ def run_scenario(name: str, args: argparse.Namespace) -> bool:
         sc["timeout_cycles"] = args.wd_timeout
         if sc.get("confirm_timeout_cycles"):
             sc["confirm_timeout_cycles"] = 2 * args.wd_timeout
-    if sc.get("t1"):
-        test_cfg = scenario_test_cfg(sc, args.extra_flags)
-    out_dir = Path(args.out_root) / name
-    print(f"\n===== {name}: {sc['desc']} =====")
-    cfg = make_cfg(sc["cfg"], sc["timeout_cycles"], sc.get("cluster_swap"),
-                   sc.get("confirm_timeout_cycles"), sc.get("extra_cfg"), sc.get("cfg_suffix", ""))
-    clean_app_builds(sc["workload"])
 
+
+def scene_task(sc: dict, args: argparse.Namespace, image_flags: str) -> dict:
+    """The app build of a scene: fault-injection flags, then the scene's and the
+    command line's flags. A T1 image is built with its image flags only; its
+    fault and controls are patched into the image instead."""
     task = make_task(host_app_type="offload_bingo_hw", chip_type="single_chip",
                      workload=sc["workload"], dev_app="snax-bingo-offload")
     if sc["fault_stall_cycles"] is not None and not sc.get("early_exit"):
@@ -2922,6 +2921,11 @@ def run_scenario(name: str, args: argparse.Namespace) -> bool:
 
     if sc.get("t1"):
         task["extra_user_flags"] = ("-DBINGO_TEST_CFG=1 " + image_flags).strip()
+    return task
+
+
+def scene_runner(sc: dict, test_cfg: Optional[dict], cfg: str, out_dir: Path,
+                 args: argparse.Namespace) -> HeMAiASimRunner:
     runner_cls = (TestCfgSimRunner if sc.get("t1") else
                   EarlyExitSimRunner if sc.get("early_exit") else
                   CoreTypeCheckedSimRunner if args.keep_traces else NoTraceSimRunner)
@@ -2951,7 +2955,13 @@ def run_scenario(name: str, args: argparse.Namespace) -> bool:
     )
     if "evlog_enable" in sc:
         runner.plusargs.append("+evlog_check")
-    runner.run([task])
+    return runner
+
+
+def collect_run(name: str, sc: dict, runner: HeMAiASimRunner, out_dir: Path,
+                task: dict) -> Tuple[Path, Path, str, str]:
+    """After the simulation: record what the build found out (graph task IDs) in
+    sc, keep the generated graph next to the result, and read both logs."""
     if sc.get("early_exit") or sc.get("early_exit_conf"):
         sc["early_exit_task_ids"] = runner.early_exit_task_ids
         sc["fault_gid"] = runner.early_exit_task_ids["gemm2"]
@@ -2963,14 +2973,11 @@ def run_scenario(name: str, args: argparse.Namespace) -> bool:
     uart_path = bin_dir / "uart_chip_0_0.log"
     log_text = log_path.read_text(errors="replace") if log_path.exists() else ""
     uart_text = uart_path.read_text(errors="replace") if uart_path.exists() else ""
+    graph_csv = _REPO_ROOT / WORKLOADS / sc["workload"] / "final_dfg.csv"
     if sc.get("dispatch_log"):
-        graph_csv = (_REPO_ROOT / "target/sw/host/apps/offload_bingo_hw/single_chip/workloads"
-                     / sc["workload"] / "final_dfg.csv")
         sc["dispatch_graph_csv"] = out_dir / "final_dfg.csv"
         shutil.copyfile(graph_csv, sc["dispatch_graph_csv"])
     if sc.get("replay_safety"):
-        graph_csv = (_REPO_ROOT / "target/sw/host/apps/offload_bingo_hw/single_chip/workloads"
-                     / sc["workload"] / "final_dfg.csv")
         try:
             sc["replay_safety_task_ids"] = replay_safety_task_ids(
                 graph_csv, branch_aware=sc.get("inplace_branch_check", False))
@@ -2980,8 +2987,6 @@ def run_scenario(name: str, args: argparse.Namespace) -> bool:
         except (OSError, ValueError, KeyError) as error:
             print(f"[{name}] cannot load generated replay safety graph: {error}")
     if sc.get("host_fallback"):
-        graph_csv = (_REPO_ROOT / "target/sw/host/apps/offload_bingo_hw/single_chip/workloads"
-                     / sc["workload"] / "final_dfg.csv")
         try:
             sc["host_fallback_task_ids"] = host_fallback_task_ids(
                 graph_csv, add=sc.get("add_host_fallback", False))
@@ -2990,53 +2995,48 @@ def run_scenario(name: str, args: argparse.Namespace) -> bool:
                 raise ValueError("fault_gid differs from the generated copy task ID")
         except (OSError, ValueError, KeyError) as error:
             print(f"[{name}] cannot load generated host fallback graph: {error}")
-    problems = evaluate(name, sc, log_text, uart_text)
-    # (a B2 run has two offloads: evaluate_b2 applied the per-run checks to each)
-    single = not sc.get("b2_offloads")
-    if single and (sc.get("c2") or sc.get("c4_control")):
-        problems += healthy_problems(log_text, uart_text, sc["dispatch_graph_csv"])
-    if sc.get("p9_healthy"):
-        problems += p9_healthy_problems(log_text)
-    if single and sc.get("evlog_enable"):
+    return log_path, uart_path, log_text, uart_text
+
+
+def evlog_problems(name: str, sc: dict, task: dict, args: argparse.Namespace,
+                   log_text: str, uart_text: str) -> List[str]:
+    """A6: the drained event log matches the run, and the same run with the log
+    disabled (the scene name without its 'e') is identical to the ps."""
+    if sc.get("evlog_enable"):
         slots = (len(sc["expect_core_types"]) if "expect_core_types" in sc
                  else dispatch_host_slot()[1] + 1)
-        problems += check_evlog(log_text, uart_text, slots,
-                                allow_empty=sc.get("evlog_allow_empty", False))
+        problems = check_evlog(log_text, uart_text, slots,
+                               allow_empty=sc.get("evlog_allow_empty", False))
         if sc.get("evlog_pair", True):
             reference = Path(args.out_root) / name.removesuffix("e") / task_dir_name(0, task["ci_name"]) / "bin"
             if (reference / "sim_run.log").exists():
                 problems += check_evlog_pair((reference / "sim_run.log").read_text(), log_text)
             else:
                 problems.append("missing disabled EVLOG pair reference")
-    elif single and "evlog_enable" in sc and "[EVLOG]" in uart_text:
-        problems.append("disabled EVLOG printed items")
-    problems += runner.core_type_problems
-    if sc.get("p8_recovery"):
-        problems += check_recovery_hold(log_text, uart_text, sc["recovery_hold"])
-    if sc.get("p8_access"):
-        level = test_cfg["pm_access_level"] or (6 if test_cfg["pm_access_wake_hold"] else 25)
-        problems += check_access_level(log_text, level, sc["dispatch_graph_csv"])
-    if sc.get("early_exit_conf_pair"):
-        reference = Path(args.out_root) / sc["early_exit_conf_pair"] / task_dir_name(0, task["ci_name"]) / "bin"
-        try:
-            first_log = (reference / "sim_run.log").read_text()
-            first_uart = (reference / "uart_chip_0_0.log").read_bytes()
-            problems += check_early_exit_conf_pair(first_log, first_uart, log_text, uart_path.read_bytes())
-        except OSError as error:
-            problems.append(f"cannot read confidence pair reference: {error}")
-    if single and sc["expect_eoc"] and log_text:
-        # The host prints the manager's status at the end; its fenced bitmap must
-        # match the last [BINGO_STATUS] of the RTL (register order; 0 without
-        # such a line)
-        host = re.search(r"\[Host\] Bingo status: replay_stuck=(\d+) remote_done_mismatch=(\d+) "
-                         r"link_error=(\d+) fenced=0x([0-9a-fA-F]+)", uart_text)
-        rtl = re.findall(r"\[BINGO_STATUS\] \d+ chip=\d+ .*fenced=0x([0-9a-fA-F]+)", log_text)
-        rtl_fenced = int(rtl[-1], 16) if rtl else 0
-        if not host:
-            problems.append("no '[Host] Bingo status' line in the UART log")
-        elif (int(host.group(4), 16) != rtl_fenced) or \
-                host.group(1) != str(int(sc.get("expect_host_stuck", False))) or host.group(3) != "0":
-            problems.append(f"host status {host.group(0)} (RTL fenced 0x{rtl_fenced:x})")
+        return problems
+    if "evlog_enable" in sc and "[EVLOG]" in uart_text:
+        return ["disabled EVLOG printed items"]
+    return []
+
+
+def host_status_problems(sc: dict, log_text: str, uart_text: str) -> List[str]:
+    """The host prints the manager's status at the end; its fenced bitmap must
+    match the last [BINGO_STATUS] of the RTL (register order; 0 without such a line)."""
+    host = re.search(r"\[Host\] Bingo status: replay_stuck=(\d+) remote_done_mismatch=(\d+) "
+                     r"link_error=(\d+) fenced=0x([0-9a-fA-F]+)", uart_text)
+    rtl = re.findall(r"\[BINGO_STATUS\] \d+ chip=\d+ .*fenced=0x([0-9a-fA-F]+)", log_text)
+    rtl_fenced = int(rtl[-1], 16) if rtl else 0
+    if not host:
+        return ["no '[Host] Bingo status' line in the UART log"]
+    if (int(host.group(4), 16) != rtl_fenced) or \
+            host.group(1) != str(int(sc.get("expect_host_stuck", False))) or host.group(3) != "0":
+        return [f"host status {host.group(0)} (RTL fenced 0x{rtl_fenced:x})"]
+    return []
+
+
+def boost_problems(name: str, sc: dict, log_text: str, uart_text: str) -> List[str]:
+    """P3b / P6b: which cluster domains reach the boost level, and not before the fence."""
+    problems: List[str] = []
     if sc.get("expect_boost_level"):
         # The victim's cluster domain (1) reaches the boost level after the fence
         fence_t = [int(m.group(1)) for m in WD_RE.finditer(log_text) if m.group(6) == "1"]
@@ -3057,12 +3057,51 @@ def run_scenario(name: str, args: argparse.Namespace) -> bool:
         host_pm = re.search(r"\[Host\] Bingo PM: .* boost_policy=0x([0-9a-fA-F]+)", uart_text)
         if not host_pm:
             problems.append("no boost_policy in the host PM line")
+    return problems
+
+
+def judge_scene(name: str, sc: dict, test_cfg: Optional[dict], runner: HeMAiASimRunner, task: dict,
+                args: argparse.Namespace, log_path: Path, uart_path: Path,
+                log_text: str, uart_text: str) -> List[str]:
+    """evaluate() plus the checks that need more than the two logs: paired
+    reference runs, the runner's own findings and the T1 configuration."""
+    problems = evaluate(name, sc, log_text, uart_text)
+    # (a B2 run has two offloads: evaluate_b2 applied the per-run checks to each)
+    single = not sc.get("b2_offloads")
+    if single and (sc.get("c2") or sc.get("c4_control")):
+        problems += healthy_problems(log_text, uart_text, sc["dispatch_graph_csv"])
+    if sc.get("p9_healthy"):
+        problems += p9_healthy_problems(log_text)
+    if single:
+        problems += evlog_problems(name, sc, task, args, log_text, uart_text)
+    problems += runner.core_type_problems
+    if sc.get("p8_recovery"):
+        problems += check_recovery_hold(log_text, uart_text, sc["recovery_hold"])
+    if sc.get("p8_access"):
+        level = test_cfg["pm_access_level"] or (6 if test_cfg["pm_access_wake_hold"] else 25)
+        problems += check_access_level(log_text, level, sc["dispatch_graph_csv"])
+    if sc.get("early_exit_conf_pair"):
+        reference = Path(args.out_root) / sc["early_exit_conf_pair"] / task_dir_name(0, task["ci_name"]) / "bin"
+        try:
+            first_log = (reference / "sim_run.log").read_text()
+            first_uart = (reference / "uart_chip_0_0.log").read_bytes()
+            problems += check_early_exit_conf_pair(first_log, first_uart, log_text, uart_path.read_bytes())
+        except OSError as error:
+            problems.append(f"cannot read confidence pair reference: {error}")
+    if single and sc["expect_eoc"] and log_text:
+        problems += host_status_problems(sc, log_text, uart_text)
+    problems += boost_problems(name, sc, log_text, uart_text)
     eoc = re.search(r"All chips finished successfully at (\d+)", log_text)
     if eoc:
         print(f"[{name}] EOC at {int(eoc.group(1)) / 1e9:.3f} ms")
     if not log_text:
         problems.append(f"missing {log_path}")
+    return problems
 
+
+def write_scene_result(name: str, sc: dict, cfg: str, task: dict, image_flags: str,
+                       runner: HeMAiASimRunner, log_path: Path, log_text: str,
+                       problems: List[str], out_dir: Path) -> None:
     status = "PASS" if not problems else "FAIL"
     lines = [f"# {name}: {status}", "", f"- {sc['desc']}", f"- cfg: `{cfg}`",
              f"- workload: `{sc['workload']}`", f"- extra flags: `{task.get('extra_user_flags', '')}`",
@@ -3080,6 +3119,27 @@ def run_scenario(name: str, args: argparse.Namespace) -> bool:
                   "- configuration: `" + json.dumps(runner.test_cfg_record["configuration"], sort_keys=True) + "`"]
     (out_dir / "result.md").write_text("\n".join(lines) + "\n")
     print(f"[{name}] {status}" + "".join(f"\n  - {p}" for p in problems))
+
+
+def run_scenario(name: str, args: argparse.Namespace) -> bool:
+    """Build, simulate and judge one scene; <out-root>/<name>/result.md."""
+    os.environ["PYTHONHASHSEED"] = "0"
+    sc = dict(SCENARIOS[name])
+    image_flags = t1_image_flags(SCENARIOS[name])
+    apply_run_options(sc, args)
+    test_cfg = scenario_test_cfg(sc, args.extra_flags) if sc.get("t1") else None
+    out_dir = Path(args.out_root) / name
+    print(f"\n===== {name}: {sc['desc']} =====")
+    cfg = make_cfg(sc["cfg"], sc["timeout_cycles"], sc.get("cluster_swap"),
+                   sc.get("confirm_timeout_cycles"), sc.get("extra_cfg"), sc.get("cfg_suffix", ""))
+    clean_app_builds(sc["workload"])
+    task = scene_task(sc, args, image_flags)
+    runner = scene_runner(sc, test_cfg, cfg, out_dir, args)
+    runner.run([task])
+    log_path, uart_path, log_text, uart_text = collect_run(name, sc, runner, out_dir, task)
+    problems = judge_scene(name, sc, test_cfg, runner, task, args, log_path, uart_path,
+                           log_text, uart_text)
+    write_scene_result(name, sc, cfg, task, image_flags, runner, log_path, log_text, problems, out_dir)
     return not problems
 
 

@@ -300,6 +300,11 @@
                     "minimum": 0,
                     "default": 0
                 },
+                "acc_reset": {
+                    "type": "boolean",
+                    "description": "Accelerator reset: one more channel at the end of the clock and reset controller's RESET_REGISTER resets the quadrant (bingo HW manager included) and all of its clusters together, without the host. The SoC-quadrant AXI ports are isolated around the reset. Single chip only. Default false: the quadrant shares the host reset.",
+                    "default": false
+                },
                 "bingo_substitute_level_mask": {
                     "type": "integer",
                     "description": "Bingo HW manager SubstituteLevelMask: where a fenced core's tasks may go. Bit 0: a core of the same cluster, bit 1: a core of another cluster, bit 2: another chiplet through bingo_hw_manager_remote_link (level 3). Default 1 (level 1 only).",

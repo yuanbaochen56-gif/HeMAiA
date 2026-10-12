@@ -43,3 +43,9 @@
 // each dep_*_info field, so SW must use the same width as the RTL: bingo_utils.h derives
 // DEP_TAG_WIDTH from this, and the mini-compiler passes it to BingoDFG(dep_tag_width=).
 #define BINGO_DEP_TAG_WIDTH            ${dep_tag_width}
+% if acc_reset_channel is not None:
+
+// Accelerator reset (s1_quadrant.acc_reset): RESET_REGISTER bit of the clock and
+// reset controller that resets the quadrant and all clusters, not the host.
+#define OCCAMY_ACC_RESET_CHANNEL       ${acc_reset_channel}
+% endif

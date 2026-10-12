@@ -1211,6 +1211,13 @@ def get_cheader_kwargs(occamy_cfg, cluster_generators, name):
     # appended right after this chiplet's harts, so its index == the hart count. Exposed
     # to SW so dvfs.h does not hardcode it (must match hw_manager_ipi_idx / occamy_soc.sv).
     hw_manager_dvfs_msip_bit = nr_harts_per_chiplet(occamy_cfg, cluster_generators)
+    # Accelerator reset: its RESET_REGISTER bit follows the host, cluster and
+    # D2D PHY channels (occamy_chip.sv.tpl)
+    acc_reset_channel = None
+    if occamy_cfg["s1_quadrant"].get("acc_reset", False):
+        if not multichip_cfg["single_chip"]:
+            raise ValueError("s1_quadrant.acc_reset supports single-chip configurations only")
+        acc_reset_channel = 1 + nr_clusters_per_chiplet
     cheader_kwargs = {
         "name": name,
         "nr_chiplets": nr_chiplets,
@@ -1236,6 +1243,7 @@ def get_cheader_kwargs(occamy_cfg, cluster_generators, name):
         # the host can program the CERF degradation table per type
         "bingo_core_type_ids": get_bingo_core_type_ids(cluster_generators),
         "bingo_nr_core_types": 1 << BINGO_CORE_TYPE_ID_WIDTH,
+        "acc_reset_channel": acc_reset_channel,
     }
     return cheader_kwargs
 

@@ -49,6 +49,10 @@ module ${name}_soc
   // Accelerator clock
   input  logic [${len(occamy_cfg["clusters"])}-1:0] clk_acc_i,
   input  logic [${len(occamy_cfg["clusters"])}-1:0] rst_acc_ni,
+% if occamy_cfg["s1_quadrant"].get("acc_reset", False):
+  // Accelerator reset request (quadrant and clusters, active low)
+  input  logic        acc_rst_req_ni,
+% endif
 
   input  logic        test_mode_i,
   input  chip_id_t    chip_id_i,
@@ -172,10 +176,20 @@ module ${name}_soc
   //////////
   // Quad //
   //////////
+% if occamy_cfg["s1_quadrant"].get("acc_reset", False):
+  // Accelerator reset: the quadrant and its clusters are reset together on a
+  // request, behind an isolation of the four SoC-quadrant AXI ports.
+  logic acc_isolate;
+  logic [3:0] acc_isolated;
+  logic rst_quad_n;
+  logic [${len(occamy_cfg["clusters"])}-1:0] rst_acc_quad_n;
+
+% endif
   <%
     #// Derived parameters
     nr_cores_per_quad = nr_cores_quadrant
     lower_core =  1
+    acc_reset = occamy_cfg["s1_quadrant"].get("acc_reset", False)
     #// narrow xbar -> quad & quad -> narrow xbar
     narrow_in = soc_narrow_xbar.out_quad.cut(context, cuts_narrow_to_quad, name="narrow_in")
     narrow_out = soc_narrow_xbar.in_quad.copy(name="narrow_out").declare(context)
@@ -184,13 +198,68 @@ module ${name}_soc
     wide_in = soc_wide_xbar.out_quad.cut(context, cuts_wide_to_quad, name="wide_in")
     wide_out = soc_wide_xbar.in_quad.copy(name="wide_out").declare(context)
     wide_out.cut(context, cuts_quad_to_wide, name="wide_out_cut", to=soc_wide_xbar.in_quad)
+    if acc_reset:
+      #// Isolation on the SoC side (host reset domain), wide enough not to throttle
+      narrow_in = narrow_in.isolate(context, "acc_isolate", "narrow_in_iso", num_pending=128, isolated="acc_isolated[0]")
+      wide_in = wide_in.isolate(context, "acc_isolate", "wide_in_iso", num_pending=128, isolated="acc_isolated[1]")
+      narrow_out_quad = soc_narrow_xbar.in_quad.copy(name="narrow_out_quad").declare(context)
+      narrow_out_quad.isolate(context, "acc_isolate", "narrow_out_iso", to=narrow_out, num_pending=128, isolated="acc_isolated[2]")
+      narrow_out = narrow_out_quad
+      wide_out_quad = soc_wide_xbar.in_quad.copy(name="wide_out_quad").declare(context)
+      wide_out_quad.isolate(context, "acc_isolate", "wide_out_iso", to=wide_out, num_pending=128, isolated="acc_isolated[3]")
+      wide_out = wide_out_quad
   %>\
 
+% if acc_reset:
+  hemaia_acc_reset #(
+    .NumClusters (${len(occamy_cfg["clusters"])}),
+    .NumPorts (4)
+  ) i_acc_reset (
+    .clk_i (clk_i),
+    .rst_ni (rst_ni),
+    .req_ni (acc_rst_req_ni),
+    .clk_acc_i (clk_acc_i),
+    .rst_acc_ni (rst_acc_ni),
+    .rst_quad_no (rst_quad_n),
+    .rst_acc_no (rst_acc_quad_n),
+    .isolate_o (acc_isolate),
+    .isolated_i (acc_isolated)
+  );
+
+`ifndef SYNTHESIS
+  // Every CDC that a reset may now cut: no pop without a push
+  bind cdc_fifo_gray hemaia_cdc_check #(.NumCh(1)) i_acc_reset_cdc_check (
+    .clk_a_i (src_clk_i), .rst_a_ni (src_rst_ni), .push_a_i (src_valid_i & src_ready_o),
+    .clk_b_i (dst_clk_i), .rst_b_ni (dst_rst_ni), .pop_b_i (dst_valid_o & dst_ready_i)
+  );
+  bind axi_cdc hemaia_cdc_check #(.NumCh(3)) i_acc_reset_cdc_check_req (
+    .clk_a_i (src_clk_i), .rst_a_ni (src_rst_ni),
+    .push_a_i ({src_req_i.aw_valid & src_resp_o.aw_ready, src_req_i.w_valid & src_resp_o.w_ready,
+                src_req_i.ar_valid & src_resp_o.ar_ready}),
+    .clk_b_i (dst_clk_i), .rst_b_ni (dst_rst_ni),
+    .pop_b_i ({dst_req_o.aw_valid & dst_resp_i.aw_ready, dst_req_o.w_valid & dst_resp_i.w_ready,
+               dst_req_o.ar_valid & dst_resp_i.ar_ready})
+  );
+  bind axi_cdc hemaia_cdc_check #(.NumCh(2)) i_acc_reset_cdc_check_rsp (
+    .clk_a_i (dst_clk_i), .rst_a_ni (dst_rst_ni),
+    .push_a_i ({dst_resp_i.b_valid & dst_req_o.b_ready, dst_resp_i.r_valid & dst_req_o.r_ready}),
+    .clk_b_i (src_clk_i), .rst_b_ni (src_rst_ni),
+    .pop_b_i ({src_resp_o.b_valid & src_req_i.b_ready, src_resp_o.r_valid & src_req_i.r_ready})
+  );
+`endif
+
+% endif
   ${name}_quad i_${name}_quad (
     .clk_i (clk_i),
+% if acc_reset:
+    .rst_ni (rst_quad_n),
+    .clk_acc_i (clk_acc_i),
+    .rst_acc_ni (rst_acc_quad_n),
+% else:
     .rst_ni (rst_ni),
     .clk_acc_i (clk_acc_i),
     .rst_acc_ni (rst_acc_ni),
+% endif
     .test_mode_i (test_mode_i),
     .boot_addr_i (boot_addr_i[31:0]),
     .chip_id_i (chip_id_i),

@@ -168,7 +168,7 @@ import ${name}_pkg::*;
     num_d2d_clk_domain = 4
   num_acc_clk_domain = len(occamy_cfg["clusters"])
   # Accelerator reset request: one more channel after all others (its clock is unused)
-  num_acc_rst_channel = 1 if occamy_cfg["s1_quadrant"].get("acc_reset", False) else 0
+  num_acc_rst_channel = 1 if acc_reset else 0
 %>
   // Control Clock / clk_periph_i: Peripheral Slow Speed Clock
   // Master Clock / clk_i: Oscillator Clock

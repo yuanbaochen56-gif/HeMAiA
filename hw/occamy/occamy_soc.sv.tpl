@@ -49,7 +49,7 @@ module ${name}_soc
   // Accelerator clock
   input  logic [${len(occamy_cfg["clusters"])}-1:0] clk_acc_i,
   input  logic [${len(occamy_cfg["clusters"])}-1:0] rst_acc_ni,
-% if occamy_cfg["s1_quadrant"].get("acc_reset", False):
+% if acc_reset:
   // Accelerator reset request (quadrant and clusters, active low)
   input  logic        acc_rst_req_ni,
 % endif
@@ -176,7 +176,7 @@ module ${name}_soc
   //////////
   // Quad //
   //////////
-% if occamy_cfg["s1_quadrant"].get("acc_reset", False):
+% if acc_reset:
   // Accelerator reset: the quadrant and its clusters are reset together on a
   // request, behind an isolation of the four SoC-quadrant AXI ports.
   logic acc_isolate;
@@ -189,7 +189,6 @@ module ${name}_soc
     #// Derived parameters
     nr_cores_per_quad = nr_cores_quadrant
     lower_core =  1
-    acc_reset = occamy_cfg["s1_quadrant"].get("acc_reset", False)
     #// narrow xbar -> quad & quad -> narrow xbar
     narrow_in = soc_narrow_xbar.out_quad.cut(context, cuts_narrow_to_quad, name="narrow_in")
     narrow_out = soc_narrow_xbar.in_quad.copy(name="narrow_out").declare(context)

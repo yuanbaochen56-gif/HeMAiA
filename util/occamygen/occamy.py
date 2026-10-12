@@ -823,6 +823,12 @@ def am_connect_quad_wide_and_narrow_xbar(am, am_quad_wide_xbar, am_quad_narrow_x
 #     return am_clusters
 
 
+def acc_reset_enabled(occamy_cfg):
+    """s1_quadrant.acc_reset: the host can reset the quadrant and all clusters
+    through one more RESET_REGISTER bit (off unless the configuration asks)."""
+    return bool(occamy_cfg["s1_quadrant"].get("acc_reset", False))
+
+
 def get_top_kwargs(occamy_cfg, cluster_generators, soc_axi_lite_narrow_periph_xbar, soc_wide_xbar, soc_narrow_xbar, soc2router_bus, router2soc_bus, util, name):
     nr_harts = nr_harts_per_chiplet(occamy_cfg, cluster_generators)
     chip_id_width = occamy_cfg["hemaia_multichip"]["chip_id_width"]
@@ -836,6 +842,7 @@ def get_top_kwargs(occamy_cfg, cluster_generators, soc_axi_lite_narrow_periph_xb
     top_kwargs = {
         "name": name,
         "occamy_cfg": occamy_cfg,
+        "acc_reset": acc_reset_enabled(occamy_cfg),
         "chip_id_width": chip_id_width,
         "soc_axi_lite_narrow_periph_xbar": soc_axi_lite_narrow_periph_xbar,
         "soc_wide_xbar": soc_wide_xbar,
@@ -864,6 +871,7 @@ def get_soc_kwargs(occamy_cfg, cluster_generators, soc_narrow_xbar, soc_wide_xba
         "name": name,
         "util": util,
         "occamy_cfg": occamy_cfg,
+        "acc_reset": acc_reset_enabled(occamy_cfg),
         "soc_narrow_xbar": soc_narrow_xbar,
         "soc_wide_xbar": soc_wide_xbar,
         "soc2router_bus": soc2router_bus,
@@ -1214,7 +1222,7 @@ def get_cheader_kwargs(occamy_cfg, cluster_generators, name):
     # Accelerator reset: its RESET_REGISTER bit follows the host, cluster and
     # D2D PHY channels (occamy_chip.sv.tpl)
     acc_reset_channel = None
-    if occamy_cfg["s1_quadrant"].get("acc_reset", False):
+    if acc_reset_enabled(occamy_cfg):
         if not multichip_cfg["single_chip"]:
             raise ValueError("s1_quadrant.acc_reset supports single-chip configurations only")
         acc_reset_channel = 1 + nr_clusters_per_chiplet
@@ -1347,6 +1355,7 @@ def get_chip_kwargs(soc_wide_xbar, soc_narrow_xbar, soc_axi_lite_narrow_periph_x
         "name": name,
         "util": util,
         "occamy_cfg": occamy_cfg,
+        "acc_reset": acc_reset_enabled(occamy_cfg),
         "cluster_address_space": cluster_generators[0].cfg["cluster_base_offset"],
         "soc_wide_xbar": soc_wide_xbar,
         "soc_narrow_xbar": soc_narrow_xbar,

@@ -30,6 +30,7 @@ except ImportError:
 from bingo_utils import DiGraphWrapper
 from bingo_node import BingoNode
 from bingo_sdc import DmrSupport
+from bingo_fence_fb import fence_fb_types
 from bingo_mem_handle import BingoMemAlloc, BingoMemAllocView, BingoMemSymbol, BingoMemFixedAddr
 from bingo_kernel_args import (
     BingoKernelArgs,
@@ -2452,6 +2453,8 @@ class BingoDFG(DmrSupport, DiGraphWrapper[BingoNode]):
         if self._sdc_pairs:
             f.write('#if !defined(BINGO_SDC) || !BINGO_TEST_CFG\n#error "DMR requires BINGO_SDC and BINGO_TEST_CFG"\n#endif\n')
             f.write('#include "bingo_test_cfg.h"\n')
+        if any(fence_fb_types(self, chip) for chip in self.chiplet_ids):
+            f.write('#if defined(BINGO_FENCE_FB) && BINGO_TEST_CFG\n#include "bingo_test_cfg.h"\n#endif\n')
         if 64 - self._wd_class_shift() >= 3:
             f.write("#ifdef BINGO_WD_ADAPT\n")
             f.write(f"#define BINGO_WD_CLASS_BITS(c) ((uint64_t)(c) << {self._wd_class_shift()})\n")
@@ -2666,6 +2669,23 @@ class BingoDFG(DmrSupport, DiGraphWrapper[BingoNode]):
                 f.write(f"        bingo_cerf_fb_set({type_expr}, {clear}, {set_group});\n")
                 masks.append(f"(1u << {type_expr})")
             f.write(f"        bingo_cerf_fb_enable({' | '.join(masks)});\n\n")
+
+        fence_types = fence_fb_types(self, chiplet_id)
+        if fence_types:
+            # Only for images built with BINGO_FENCE_FB; a test image may narrow the choice
+            masks = []
+            f.write("#ifdef BINGO_FENCE_FB\n")
+            f.write("        // Fence fallback: a fenced core of these types leaves its tasks to their cheaper host backups\n")
+            for type_id in fence_types:
+                cluster, core = self._cerf_fallback_table[(chiplet_id, type_id)][:2]
+                type_expr = f"BINGO_CORE_TYPE_ID({cluster}, {core})"
+                f.write(f'        _Static_assert({type_expr} == {type_id}, "Fence fallback core type mismatch");\n')
+                masks.append(f"(1u << {type_expr})")
+            f.write("#if BINGO_TEST_CFG\n")
+            f.write(f"        bingo_fence_fb_set(({' | '.join(masks)}) & bingo_test_cfg.fence_fb);\n")
+            f.write("#else\n")
+            f.write(f"        bingo_fence_fb_set({' | '.join(masks)});\n")
+            f.write("#endif\n#endif\n\n")
 
         f.write(f"        bingo_hw_scheduler_init((uint64_t)(uintptr_t)device_arg_list_chip_{chiplet_id:02x},\n")
         f.write(f"                                (uint64_t)(uintptr_t)device_kernel_list_chip_{chiplet_id:02x},\n")

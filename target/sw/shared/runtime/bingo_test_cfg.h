@@ -7,8 +7,11 @@
 
 // Test-only, little-endian image data. Each row spans sixteen 64-bit banks.
 #define BINGO_TEST_CFG_MAGIC 0x42475431u
-#if (defined(BINGO_WD_LATE) || defined(BINGO_SDC)) && !defined(BINGO_WD_ADAPT)
+#if (defined(BINGO_WD_LATE) || defined(BINGO_SDC) || defined(BINGO_FENCE_FB)) && !defined(BINGO_WD_ADAPT)
 #define BINGO_WD_ADAPT
+#endif
+#if defined(BINGO_FENCE_FB) && (defined(BINGO_SDC) || defined(BINGO_WD_LATE))
+#error BINGO_FENCE_FB is not combined with BINGO_SDC or BINGO_WD_LATE
 #endif
 #ifdef BINGO_WD_ADAPT
 #define BINGO_TEST_CFG_VERSION 3u
@@ -54,7 +57,13 @@ typedef struct __attribute__((aligned(128))) {
     uint32_t wd_type_c[16];
 #ifdef BINGO_WD_ADAPT
     uint32_t wd_adapt;
-#ifdef BINGO_SDC
+#ifdef BINGO_FENCE_FB
+    // Same tail index as the first reserved word of every other v3 layout
+    // (byte 292): late occupies 2 words, SDC occupies 6, then this word.
+    uint32_t fence_fb_pad[8];
+    uint32_t fence_fb;
+    uint32_t wd_adapt_reserved[22];
+#elif defined(BINGO_SDC)
 #ifdef BINGO_WD_LATE
     uint32_t wd_late;
     uint32_t fault_pre_stall_from;

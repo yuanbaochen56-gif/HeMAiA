@@ -1147,6 +1147,10 @@ void bingo_wd_late_set(uint32_t ctrl) {
     writew(ctrl & 0xfffff00fu, (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_bingo_wd_late_addr()));
     asm volatile("fence" ::: "memory");
 }
+void bingo_fence_fb_set(uint32_t type_mask) {
+    writew(type_mask, (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_bingo_fence_fb_addr()));
+    asm volatile("fence" ::: "memory");
+}
 void bingo_cerf_fb_set(uint32_t core_type, uint32_t clear_group, uint32_t set_group) {
     writew((clear_group & 0x1f) | ((set_group & 0x1f) << 8),
            (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_bingo_cerf_fb_map_addr(core_type)));

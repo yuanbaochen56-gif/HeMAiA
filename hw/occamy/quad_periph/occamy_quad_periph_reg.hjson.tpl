@@ -677,5 +677,16 @@
         { bits: "31:12", name: "LFLOOR", resval: "0", desc: "Late threshold floor in watchdog ticks." }
       ]
     },
+    // Kept after the existing registers so their offsets do not move.
+    { name: "BINGO_FENCE_FB",
+      desc: "Bingo fence fallback (bit t = core type t, see BINGO_CORE_TYPE_ID in occamy_memory_map.h); 0 = off. A fenced or parked slot of a set type takes no substitute at any level: a fenced one becomes stuck, so BINGO_CERF_FB_* degrades the type instead of a replay. Write before the first task.",
+      swaccess: "rw",
+      hwaccess: "hro",
+      fields: [
+        { bits: "${bingo_nr_core_types-1}:0", resval: "0", name: "BINGO_FENCE_FB",
+          desc: '''Bit t: core type t takes no substitute at a fence or a park.'''
+        }
+      ]
+    },
   ]
 }

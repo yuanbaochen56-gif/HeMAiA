@@ -12,7 +12,10 @@
 // With the accelerator reset in the platform (OCCAMY_ACC_RESET_CHANNEL) the
 // host also resets the quadrant and all clusters before the second offload and
 // restores the device image, whose .data holds the device's global barrier
-// state: every core then starts the second offload from the boot ROM.
+// state: every core then starts the second offload from the boot ROM. The
+// cluster clocks are outside that reset and keep the divider bingo last wrote
+// (idle); T1 user word 2, if not 0, is the divider the host writes to every
+// cluster clock before the second wake.
 #include "offload_bingo_hw.h"
 #if BINGO_TEST_CFG
 #include "bingo_test_cfg.h"
@@ -56,23 +59,58 @@ static uint64_t b2_image_size() {
     return chiplet_addr_transform((uint64_t)(uintptr_t)&__l3_heap_start) - b2_image_start();
 }
 
-// Copy of the image in the first L3 heap block, which the allocator hands out
-// again after every heap init
-static uint64_t b2_image_copy(uint8_t chip_id) {
-    return bingo_l3_alloc(chip_id, b2_image_size());
+// The copy of the image: the first L3 heap block
+static uint64_t b2_image_copy;
+
+// Host cycles of the boundary: start, quadrant out of reset, image restored
+typedef struct {
+    uint64_t start, reset, restored;
+} b2_boundary_t;
+
+// After the heap init and before the first wake: save the device image
+static int b2_acc_snapshot(uint8_t chip_id) {
+    b2_image_copy = bingo_l3_alloc(chip_id, b2_image_size());
+    if (b2_image_copy == 0) return -1;
+    sys_dma_blk_memcpy(chip_id, b2_image_copy, b2_image_start(), b2_image_size());
+    return 0;
 }
 
-// Reset the quadrant and all clusters. A host-init flag of the quadrant reads
-// 0 again once the quadrant is out of reset; until then the read waits at the
-// isolation of the quadrant ports.
-static void b2_acc_reset() {
+// Reset the quadrant and all clusters, clear the two soc_ctrl words the device
+// writes once per run, re-initialise the heaps and restore the device image.
+// Returns 0, or which step failed.
+static int b2_acc_reset_restore(uint8_t chip_id, b2_boundary_t *t) {
+    // A host-init flag of the quadrant reads 0 again once the quadrant is out
+    // of reset; until then the read waits at the isolation of the quadrant
+    // ports. It must read 1 before the request, or reading 0 proves nothing.
     uintptr_t flag = (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_host_init_done_addr());
+    t->start = mcycle();
     writew(1, flag);
     asm volatile("fence" ::: "memory");
+    if (readw(flag) != 1) return -1;
     reset_clk_domain(OCCAMY_ACC_RESET_CHANNEL);
     asm volatile("fence" ::: "memory");
     while (readw(flag) != 0) {
     }
+    t->reset = mcycle();
+    // Reset first: a core still running could write the two words again
+    writew(0, b2_kernel_tab_ready());
+    writew(0, b2_soc_scratch(B2_EXIT_CODE));
+    asm volatile("fence" ::: "memory");
+    if (bingo_hemaia_system_mmap_init() < 0) return -2;
+    // The copy survives only if the allocator hands out the same first block
+    if (bingo_l3_alloc(chip_id, b2_image_size()) != b2_image_copy) return -3;
+    sys_dma_blk_memcpy(chip_id, b2_image_start(), b2_image_copy, b2_image_size());
+    asm volatile("fence" ::: "memory");
+    t->restored = mcycle();
+    return 0;
+}
+
+// Every cluster clock to one divider (channels 1 .. N of the clock controller)
+static void b2_cluster_clocks(uint8_t division) {
+    for (uint8_t cluster = 0; cluster < N_CLUSTERS_PER_CHIPLET; cluster++) {
+        enable_clk_domain(1 + cluster, division);
+    }
+    asm volatile("fence" ::: "memory");
 }
 #endif
 
@@ -100,8 +138,10 @@ int main() {
         (comm_buffer_t *)bingo_get_l2_comm_buffer(current_chip_id);
     enable_sw_interrupts();
 #ifdef OCCAMY_ACC_RESET_CHANNEL
-    sys_dma_blk_memcpy(current_chip_id, b2_image_copy(current_chip_id), b2_image_start(),
-                       b2_image_size());
+    if (b2_acc_snapshot(current_chip_id) != 0) {
+        printf_safe("[B2] no heap block for the device image\r\n");
+        return -1;
+    }
 #endif
 
     // Offload 1
@@ -126,11 +166,16 @@ int main() {
     }
 #endif
 #ifdef OCCAMY_ACC_RESET_CHANNEL
-    // Reset first: a core still running could write the two words again
-    uint64_t reset_start = mcycle();
-    b2_acc_reset();
-    uint64_t reset_end = mcycle();
+    b2_boundary_t boundary;
+    int failed = b2_acc_reset_restore(current_chip_id, &boundary);
+    if (failed) {
+        printf_safe("[B2] accelerator reset failed in step %d\r\n", -failed);
+        return -1;
+    }
+#if BINGO_TEST_CFG
+    if (bingo_test_cfg.user[2] != 0) b2_cluster_clocks(bingo_test_cfg.user[2]);
 #endif
+#else
     writew(0, b2_kernel_tab_ready());
     writew(0, b2_soc_scratch(B2_EXIT_CODE));
     asm volatile("fence" ::: "memory");
@@ -138,11 +183,6 @@ int main() {
         printf_safe("[B2] allocator init failed before offload 2\r\n");
         return -1;
     }
-#ifdef OCCAMY_ACC_RESET_CHANNEL
-    sys_dma_blk_memcpy(current_chip_id, b2_image_start(), b2_image_copy(current_chip_id),
-                       b2_image_size());
-    asm volatile("fence" ::: "memory");
-    uint64_t restored = mcycle();
 #endif
 
     // Offload 2
@@ -164,7 +204,7 @@ int main() {
                 ret2, wake2, ready2, end2, readw(b2_soc_scratch(B2_EXIT_CODE)));
 #ifdef OCCAMY_ACC_RESET_CHANNEL
     printf_safe("[B2] accelerator reset start=%lu end=%lu restored=%lu image=%lu\r\n",
-                reset_start, reset_end, restored, b2_image_size());
+                boundary.start, boundary.reset, boundary.restored, b2_image_size());
 #endif
     return ret1 | ret2;
 }

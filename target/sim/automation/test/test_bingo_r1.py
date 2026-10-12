@@ -16,7 +16,6 @@ def fence_cerf_fixture():
         "[BINGO_REPLAY_STUCK] 63 chip=0 core=1 cluster=0: no live core may run task 0 (logical core 1)",
         "[BINGO_DISPATCH] 70 chip=0 task=2 core=2 cluster=0",
         "[BINGO_DISPATCH] 140 chip=0 task=1 core=2 cluster=0",
-        "[BINGO_DISPATCH] 160 chip=0 task=7 core=1 cluster=1",
         "[BINGO_STATUS] 180 chip=0 replay_stuck=1 remote_done_mismatch=0 "
         "link_error=0 fenced=0x2 dead_suspect=0x2 remote_timeout=0",
         f"{driver.SIM_OK_MARKER} at 200",
@@ -78,6 +77,8 @@ class R1aScenarioTests(unittest.TestCase):
             "check before backup": (log.replace("140 chip=0 task=1", "65 chip=0 task=1"), uart),
             "absorbed exit": (log + "\n[BINGO_EXIT_ABSORB] 150 chip=0 task=5 logical_core=1 "
                               "logical_cluster=0 core=1 cluster=1", uart),
+            "substitute exit dispatched": (log + "\n[BINGO_DISPATCH] 160 chip=0 task=7 "
+                                           "core=1 cluster=1", uart),
             "event bit missing": (log, uart.replace("cerf_fb_evt=0x4", "cerf_fb_evt=0x0")),
             "replay branch marker": (log, uart.replace("host fallback 1", "host fallback 0")),
             "bad golden": (log, uart.replace("PASS", "FAIL")),

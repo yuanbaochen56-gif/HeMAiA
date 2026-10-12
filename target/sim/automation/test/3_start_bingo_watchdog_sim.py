@@ -2106,8 +2106,9 @@ def evaluate_host_fallback(sc: dict, log_text: str, uart_text: str) -> List[str]
     problems = []
     faulty = sc["fault_stall_cycles"] is not None
     double = sc.get("fault_any_core", False)
-    # R1: a single fault whose type has no substitute at the fence degrades to
-    # the host backup at once: no replay, the stuck victim keeps its exit
+    # R1a: a single fault with no substitute degrades at the fence. The
+    # victim exit and the possible substitute's exit are in the cleared group,
+    # so neither is dispatched (the substitute exit would block the exit chain).
     fence_cerf = faulty and not double and sc.get("host_fallback_fence_cerf", False)
     cerf = double or fence_cerf
     fb = [tuple(map(int, m.groups())) for m in CERF_FB_RE.finditer(log_text)]
@@ -2122,9 +2123,11 @@ def evaluate_host_fallback(sc: dict, log_text: str, uart_text: str) -> List[str]
         "copy": [(0, 1, 0), (0, 1, 1)] if faulty and not fence_cerf else [(0, 1, 0)],
         "backup": [(0, 2, 0)] if cerf else [],
         "check": [(0, 2, 0)],
-        # A single fault routes the victim's exit away: the manager absorbs it.
+        # A replayed single fault absorbs the victim exit and runs the
+        # substitute's own exit. Degradation skips both: they sit in the group
+        # the CERF clears.
         "primary_exit": [] if faulty else [(0, 1, 0)],
-        "substitute_exit": [] if double else [(0, 1, 1)],
+        "substitute_exit": [] if cerf else [(0, 1, 1)],
     }
     for name, want in expected.items():
         actual = [item[:3] for item in seen.get(ids[name], [])]

@@ -81,15 +81,13 @@ class TestConfigurationTests(unittest.TestCase):
                                       "wd_type_h 128", "wd_type_c 192"])
 
     def test_layout_table_matches_every_native_variant(self):
-        """TEST_CFG_LAYOUT gives the offset and size the C header has under each flag set."""
-        variants = {
-            (): (), ("BINGO_WD_ADAPT",): ("wd_adapt",),
-            ("BINGO_WD_LATE",): ("wd_adapt", "wd_late", "fault_pre_stall_from"),
-            ("BINGO_SDC",): ("wd_adapt", *watchdog.SDC_CFG_FIELDS),
-            ("BINGO_SDC", "BINGO_WD_LATE"): ("wd_adapt", "wd_late", "fault_pre_stall_from",
-                                             *watchdog.SDC_CFG_FIELDS),
-            ("BINGO_FENCE_FB",): ("wd_adapt", "fence_fb"),
-        }
+        """TEST_CFG_LAYOUT gives the offset and size the C header has under each flag set:
+        every v3 image has every v3 field, whatever its flags."""
+        v3_fields = tuple(name for name, _, first in watchdog.TEST_CFG_LAYOUT
+                          if first == 3 and name != "wd_adapt_reserved")
+        variants = {(): ()} | {flags: v3_fields for flags in (
+            ("BINGO_WD_ADAPT",), ("BINGO_WD_LATE",), ("BINGO_SDC",), ("BINGO_SDC", "BINGO_WD_LATE"),
+            ("BINGO_FENCE_FB",))}
         v2 = [name for name, _, first in watchdog.TEST_CFG_LAYOUT if first <= 2]
         for flags, v3 in variants.items():
             with self.subTest(flags=flags), tempfile.TemporaryDirectory() as directory:

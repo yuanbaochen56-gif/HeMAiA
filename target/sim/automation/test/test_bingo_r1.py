@@ -185,13 +185,20 @@ class R1bScenarioTests(unittest.TestCase):
             driver.test_cfg_bytes(dict(driver.test_cfg_defaults(2), fence_fb=4))
 
     def test_native_layouts(self):
-        """The word sits at byte 292; the older v3 layouts keep their fields and size."""
+        """The word sits at byte 292; the older v3 layouts keep their fields and size.
+        Every v3 layout declares every v3 field, so the reserved words start at
+        byte 296 in each of them (they started at 260 .. 296, depending on the flags)."""
+        fixed = ("offsetof(bingo_test_cfg_t, wd_adapt)==256 && offsetof(bingo_test_cfg_t, wd_late)==260"
+                 " && offsetof(bingo_test_cfg_t, sdc_enable)==268"
+                 " && offsetof(bingo_test_cfg_t, wd_adapt_reserved)==296 && ")
         cases = (
-            (["-DBINGO_FENCE_FB"], "offsetof(bingo_test_cfg_t, fence_fb)==292"),
-            (["-DBINGO_WD_ADAPT"], "offsetof(bingo_test_cfg_t, wd_adapt_reserved)==260"),
-            (["-DBINGO_WD_LATE"], "offsetof(bingo_test_cfg_t, fault_pre_stall_from)==264"),
-            (["-DBINGO_SDC"], "offsetof(bingo_test_cfg_t, fault_sdc_mask)==288"),
-            (["-DBINGO_SDC", "-DBINGO_WD_LATE"], "offsetof(bingo_test_cfg_t, wd_adapt_reserved)==292"),
+            (["-DBINGO_FENCE_FB"], fixed + "offsetof(bingo_test_cfg_t, fence_fb)==292"),
+            (["-DBINGO_WD_ADAPT"], fixed + "offsetof(bingo_test_cfg_t, fence_fb)==292"),
+            (["-DBINGO_WD_LATE"], fixed + "offsetof(bingo_test_cfg_t, fault_pre_stall_from)==264"),
+            (["-DBINGO_SDC"], fixed + "offsetof(bingo_test_cfg_t, fault_sdc_mask)==288"),
+            (["-DBINGO_SDC", "-DBINGO_WD_LATE"],
+             fixed + "offsetof(bingo_test_cfg_t, fault_pre_stall_from)==264"
+                     " && offsetof(bingo_test_cfg_t, fault_sdc_mask)==288"),
         )
         with tempfile.TemporaryDirectory() as directory:
             for index, (flags, layout) in enumerate(cases):

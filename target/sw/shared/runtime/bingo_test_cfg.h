@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #pragma once
 
+#include <stddef.h>
 #include <stdint.h>
 
 // Test-only, little-endian image data. Each row spans sixteen 64-bit banks.
@@ -56,34 +57,20 @@ typedef struct __attribute__((aligned(128))) {
     uint32_t wd_type_h[16];
     uint32_t wd_type_c[16];
 #ifdef BINGO_WD_ADAPT
+    // Version 3 row (byte 256). Every v3 image has every field at the same
+    // offset; the flag in each comment is the one that reads it, other images
+    // leave it zero.
     uint32_t wd_adapt;
-#ifdef BINGO_FENCE_FB
-    // Same tail index as the first reserved word of every other v3 layout
-    // (byte 292): late occupies 2 words, SDC occupies 6, then this word.
-    uint32_t fence_fb_pad[8];
-    uint32_t fence_fb;
+    uint32_t wd_late;               // BINGO_WD_LATE
+    uint32_t fault_pre_stall_from;  // BINGO_WD_LATE
+    uint32_t sdc_enable;            // BINGO_SDC
+    uint32_t fault_sdc_gid;         // BINGO_SDC
+    uint32_t fault_sdc_cluster;     // BINGO_SDC
+    uint32_t fault_sdc_core;        // BINGO_SDC
+    uint32_t fault_sdc_offset;      // BINGO_SDC
+    uint32_t fault_sdc_mask;        // BINGO_SDC
+    uint32_t fence_fb;              // BINGO_FENCE_FB
     uint32_t wd_adapt_reserved[22];
-#elif defined(BINGO_SDC)
-#ifdef BINGO_WD_LATE
-    uint32_t wd_late;
-    uint32_t fault_pre_stall_from;
-#else
-    uint32_t sdc_p9_reserved[2];
-#endif
-    uint32_t sdc_enable;
-    uint32_t fault_sdc_gid;
-    uint32_t fault_sdc_cluster;
-    uint32_t fault_sdc_core;
-    uint32_t fault_sdc_offset;
-    uint32_t fault_sdc_mask;
-    uint32_t wd_adapt_reserved[23];
-#elif defined(BINGO_WD_LATE)
-    uint32_t wd_late;
-    uint32_t fault_pre_stall_from;
-    uint32_t wd_adapt_reserved[29];
-#else
-    uint32_t wd_adapt_reserved[31];
-#endif
 #endif
 } bingo_test_cfg_t;
 
@@ -102,6 +89,9 @@ typedef struct __attribute__((aligned(128))) {
 
 #ifdef BINGO_WD_ADAPT
 _Static_assert(sizeof(bingo_test_cfg_t) == 384, "v3 test configuration must fit three rows");
+_Static_assert(offsetof(bingo_test_cfg_t, wd_adapt) == 256 && offsetof(bingo_test_cfg_t, wd_late) == 260 &&
+               offsetof(bingo_test_cfg_t, sdc_enable) == 268 && offsetof(bingo_test_cfg_t, fence_fb) == 292,
+               "v3 offsets are fixed: the driver packs one layout for every v3 image");
 #else
 _Static_assert(sizeof(bingo_test_cfg_t) == 256, "v2 test configuration must fit two rows");
 #endif

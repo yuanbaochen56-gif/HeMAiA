@@ -3,18 +3,15 @@ from pathlib import Path
 import re
 
 from bingo_c2 import TASK_EVENT
+from bingo_log import CHECK_ANY_RE as CHECK, WD_FULL_RE as WD
 from hemaia_sim_runner import SIM_ERR_MARKER, SIM_OK_MARKER
 
 CLASSES = ("recovered", "degraded", "detected-stuck", "hang", "wrong", "unclassified")
 REASONS = ("U1", "U2", "U3", "U4", "U5")
-CHECK = re.compile(r"Check \[([^\]]*)\]:\s*(\S+)")
 ABNORMAL = re.compile(
     r"\[BINGO_ASSERT\]|\[ASSERT FAILED\]|Assertion[^\n]*failed")
 EXIT_STATUS = re.compile(r"Simulation of chip_\d+_\d+ finished with status (\d+)")
 KILL_ARTIFACT = re.compile(r"\s*(?:#\s*)?\*\* Fatal: Read failure in vlm process \(\d+,\d+\)\s*")
-WD = re.compile(
-    r"\[BINGO_WD\] (\d+) chip=(\d+) core=(\d+) cluster=(\d+) "
-    r"dead_suspect=(\d+) fenced=(\d+)")
 
 
 def outcome_candidates(signals, prechecks):

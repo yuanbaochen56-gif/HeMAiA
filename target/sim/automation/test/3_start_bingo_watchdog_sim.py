@@ -155,6 +155,13 @@ from bingo_p9_scenarios import healthy_scenarios as p9_healthy_scenarios  # noqa
 from bingo_r1_scenarios import r1a_scenarios, r1b_scenarios  # noqa: E402
 from bingo_b2_scenarios import b2_0_scenarios, b2_v3_scenarios  # noqa: E402
 from bingo_b2_check import evaluate_b2  # noqa: E402
+from bingo_log import (  # noqa: E402
+    ASSERT_RE, C6_LINE_RE, CERF_FB_RE, CHECK_RE, CSR_RE, DISPATCH_RE, DONE_RE, EOC_RE,
+    EXIT_ABSORB_RE, EXPORT_RE, FENCE_DROP_RE, HOST_STATUS_RE, IMPORT_RE, LATE_RE, PARK_RE,
+    PM_DOMAIN1_RE, PM_RE, RDONE_IN_RE, RDONE_OUT_RE, REJECT_IN_RE, REJECT_OUT_RE, REMAP_FIELDS_RE,
+    REMAP_RE, REPLAY_FIELDS_RE, REPLAY_RE, RETIRED_RE, RISK_RE, RLINK_RE, STATUS_FENCED_RE,
+    STATUS_RE, STUCK_RE, STUCK_TIME_RE, TYPE_CONFIRM_RE, WD_RE,
+)
 
 HEMAIA_CI_CFG = "target/rtl/cfg/hemaia_ci.hjson"
 # The 1-cluster GEMM workloads need exactly one cluster, and they generate their
@@ -1343,17 +1350,6 @@ def check_t1_family(records: List[dict]) -> None:
         if not set(record["changed_rows"]) <= set(range(first, first + count)):
             raise ValueError("T1 family patch escaped its configuration rows")
 
-# fenced= only exists since the replay support; older RTL prints dead_suspect only.
-WD_RE = re.compile(r"\[BINGO_WD\] (\d+) chip=(\d+) core=(\d+) cluster=(\d+) dead_suspect=(\d)(?: fenced=(\d))?")
-REMAP_RE = re.compile(r"\[BINGO_REMAP\].*")
-REPLAY_RE = re.compile(r"\[BINGO_REPLAY\].*")
-# Parsed forms of the remap / replay / retire / fence-drop lines
-REMAP_FIELDS_RE = re.compile(r"\[BINGO_REMAP\] \d+ chip=(\d+) task=(\d+) logical_core=(\d+) -> physical_core=(\d+) cluster=(\d+)")
-REPLAY_FIELDS_RE = re.compile(r"\[BINGO_REPLAY\] \d+ chip=(\d+) task=(\d+) type=\d+ logical_core=(\d+) from=(\d+) to=(\d+) cluster=(\d+) to_cluster=(\d+)")
-RETIRED_RE = re.compile(r"\[BINGO_RETIRED\] \d+ chip=(\d+) core=(\d+) cluster=(\d+)")
-EXIT_ABSORB_RE = re.compile(r"\[BINGO_EXIT_ABSORB\] \d+ chip=(\d+) task=(\d+) logical_core=(\d+) "
-                            r"logical_cluster=(\d+) core=(\d+) cluster=(\d+)")
-
 
 def absorbed_exit_slots(log_text: str) -> List[Tuple[int, int, int]]:
     """Logical (chip, core, cluster) of every exit the manager retired in place of a run."""
@@ -1371,27 +1367,6 @@ def exit_absorb_problems(log_text: str, uart_text: str, slot: Tuple[int, int, in
     if "taken over" in uart_text:
         problems.append("an exit task was taken over by another core")
     return problems
-FENCE_DROP_RE = re.compile(r"\[BINGO_FENCE\] \d+ chip=(\d+) core=(\d+) cluster=(\d+) dropped done task=(\d+)")
-STUCK_RE = re.compile(r"\[BINGO_REPLAY_STUCK\].*")
-PARK_RE = re.compile(r"\[BINGO_PARK\] \d+ chip=(\d+) core=(\d+) cluster=(\d+) (HOLD|FAIL|dropped, fenced|PARKED -> core=(\d+) cluster=(\d+)|UNPARKED|UNPARK \(\d+ tasks left elsewhere\))")
-ASSERT_RE = re.compile(r"\[BINGO_ASSERT\].*")
-CSR_RE = re.compile(r"\[BINGO_CSR\].*")
-CHECK_RE = re.compile(r"Check \[([^\]]*)\]: (PASS|FAIL)")
-# Level 3 (bingo_hw_manager_top / occamy_quad_ctrl remote link logs)
-EXPORT_RE = re.compile(r"\[BINGO_EXPORT\] \d+ chip=(\d+) task=(\d+) type_id=(\d+) proxy_slot=(\d+)")
-IMPORT_RE = re.compile(r"\[BINGO_IMPORT\] \d+ chip=(\d+) task=(\d+) from chip=(\d+) proxy_slot=(\d+) -> core=(\d+) cluster=(\d+)")
-RDONE_OUT_RE = re.compile(r"\[BINGO_REMOTE_DONE_OUT\] \d+ chip=(\d+) task=(\d+) -> chip=(\d+) proxy_slot=(\d+)")
-RDONE_IN_RE = re.compile(r"\[BINGO_REMOTE_DONE_IN\] \d+ chip=(\d+) task=(\d+) proxy_slot=(\d+)")
-REJECT_OUT_RE = re.compile(r"\[BINGO_REMOTE_REJECT_OUT\] \d+ chip=(\d+) task=(\d+) -> chip=(\d+) proxy_slot=(\d+)")
-REJECT_IN_RE = re.compile(r"\[BINGO_REMOTE_REJECT_IN\] \d+ chip=(\d+) task=(\d+) proxy_slot=(\d+)")
-RLINK_RE = re.compile(r"\[BINGO_RLINK_(TX|RX)_(AW|W|B)\] \d+ chip=(\d+) (addr|data|resp)=(0x[0-9a-fA-F]+|\d+)")
-LATE_RE = re.compile(r"\[BINGO_LATE\] \d+ core=(\d+) cluster=(\d+)")
-RISK_RE = re.compile(r"\[BINGO_RISK\] \d+ core=(\d+) cluster=(\d+) at risk")
-CERF_FB_RE = re.compile(r"\[BINGO_CERF_FB\] (\d+) type (\d+) clear g(\d+) set g(\d+)")
-DISPATCH_RE = re.compile(r"\[BINGO_DISPATCH\] (\d+) chip=(\d+) task=(\d+) core=(\d+) cluster=(\d+)")
-DONE_RE = re.compile(r"\[BINGO_DONE\] (\d+) chip=(\d+) task=(\d+) core=(\d+) cluster=(\d+)")
-TYPE_CONFIRM_RE = re.compile(
-    r"\[BINGO_TYPE_CONFIRM\] (\d+) core=(\d+) cluster=(\d+) type=(\d+) threshold=(\d+)")
 
 
 def dispatch_host_slot() -> Tuple[int, int, int]:
@@ -1452,7 +1427,7 @@ def dispatch_done_pairs(log_text: str, allowed_pending=(), *, graph_csv=None,
         # A subsequent dispatch on this slot already fails the alternating
         # transition check above, so this pending dispatch is necessarily last.
         start = pending[host_slot][0]
-        eocs = re.findall(r"All chips finished successfully at (\d+)", log_text)
+        eocs = EOC_RE.findall(log_text)
         if (not checker_passed or len(eocs) != 1 or int(eocs[0]) <= start or
                 SIM_ERR_MARKER in log_text):
             raise ValueError("unpaired host exit requires EOC and a passing checker")
@@ -1620,8 +1595,7 @@ def evaluate_risk_controls(sc: dict, log_text: str, uart_text: str) -> List[str]
             problems.append(f"expected HOLD then FAIL without PARKED, got {park}")
         fail = [int(t) for t in re.findall(
             rf"\[BINGO_PARK\] (\d+) chip={chip} core={core} cluster={cluster} FAIL", log_text)]
-        pm = [(int(t), int(level)) for t, level in re.findall(
-            r"\[BINGO_PM\] (\d+) domain=1 level=(\d+)", log_text)]
+        pm = [(int(t), int(level)) for t, level in PM_DOMAIN1_RE.findall(log_text)]
         level = sc["expect_derate_level"]
         derated = [t for t, lvl in pm if lvl == level]
         if len(fail) != 1 or not derated or derated[0] <= fail[0] or \
@@ -1666,7 +1640,7 @@ def evaluate_cerf_fallback(sc: dict, log_text: str, uart_text: str) -> List[str]
     if software and fault and backup:
         if any(d[0] >= min(b[0] for b in backup) for d in primary):
             problems.append("g0 task dispatched after the first backup task")
-        stuck = [int(t) for t in re.findall(r"\[BINGO_REPLAY_STUCK\] (\d+) ", log_text)]
+        stuck = [int(t) for t in STUCK_TIME_RE.findall(log_text)]
         if not stuck or min(b[0] for b in backup) <= stuck[0]:
             problems.append("backup task dispatched before the replay-stuck report")
     if fault and len(fb) == 1:
@@ -1695,8 +1669,6 @@ def evaluate_cerf_fallback(sc: dict, log_text: str, uart_text: str) -> List[str]
     return problems
 
 
-C6_LINE_RE = re.compile(r"\[Host\] C6 cerf_fb_mode=(\d+) poll_cycles=(\d+) "
-                        r"sw_writes=(\d+) sw_evt=0x([0-9a-fA-F]+)")
 C6_FB_TYPE = 1  # core 0 of cluster 0: the faulted accelerator type of both C6 workloads
 
 
@@ -1980,8 +1952,8 @@ def check_early_exit_conf_pair(first_log: str, first_uart: str,
     """The skipped deep fault must leave every event, UART byte and EOC unchanged."""
     def events(log):
         return [line[line.index("[BINGO_"):] for line in log.splitlines() if "[BINGO_" in line]
-    first_eoc = re.findall(r"All chips finished successfully at (\d+)", first_log)
-    second_eoc = re.findall(r"All chips finished successfully at (\d+)", second_log)
+    first_eoc = EOC_RE.findall(first_log)
+    second_eoc = EOC_RE.findall(second_log)
     if (events(first_log) != events(second_log) or first_uart != second_uart
             or len(first_eoc) != 1 or first_eoc != second_eoc):
         return ["t48 and t45 must have identical timed BINGO events, UART and EOC"]
@@ -2395,7 +2367,7 @@ def evaluate_remote_loopback(sc: dict, log_text: str) -> List[str]:
         seqs = [decode_packet(d)["seq"] for a, d in tx if a == page]
         if seqs != [i % 256 for i in range(len(seqs))]:
             problems.append(f"{what} sequence numbers {seqs}")
-    status = re.findall(r"\[BINGO_STATUS\] \d+ chip=\d+ (.*)", log_text)
+    status = STATUS_RE.findall(log_text)
     if not status:
         problems.append("no [BINGO_STATUS] line (the fence must change it)")
     print(f"[remote_loopback] exports={exports} imports={imports} tx_packets="
@@ -2442,7 +2414,7 @@ def evaluate_remote_reject(sc: dict, log_text: str) -> List[str]:
         problems.append(f"link packets {[(hex(a), hex(d)) for a, d in tx]}, expected dispatch + reject of task {task}")
     if rx != tx or any(ev[("TX", "B")] + ev[("RX", "B")]):
         problems.append(f"RX {rx} / TX {tx} / B {ev[('TX', 'B')]}")
-    status = re.findall(r"\[BINGO_STATUS\] \d+ chip=\d+ (.*)", log_text)
+    status = STATUS_RE.findall(log_text)
     if not status or "replay_stuck=1 " not in status[-1]:
         problems.append(f"final [BINGO_STATUS] {status[-1:]}: expected replay_stuck=1")
     print(f"[remote_reject] exports={exports} rejects={rej_out}/{rej_in} packets={[(hex(a), hex(d)) for a, d in tx]}")
@@ -2593,7 +2565,7 @@ def level3_problems(sc: dict, log_text: str) -> List[str]:
 
 def sticky_flag_problems(log_text: str) -> List[str]:
     """The sticky link / remote-done / proxy-timeout flags stay clear in every scenario."""
-    status = re.findall(r"\[BINGO_STATUS\] \d+ chip=\d+ (.*)", log_text)
+    status = STATUS_RE.findall(log_text)
     if status and not ("remote_done_mismatch=0 " in status[-1] and "link_error=0 " in status[-1] + " " and
                        "remote_timeout=0" in status[-1]):
         return [f"final [BINGO_STATUS] {status[-1]}"]
@@ -3022,9 +2994,8 @@ def evlog_problems(name: str, sc: dict, task: dict, args: argparse.Namespace,
 def host_status_problems(sc: dict, log_text: str, uart_text: str) -> List[str]:
     """The host prints the manager's status at the end; its fenced bitmap must
     match the last [BINGO_STATUS] of the RTL (register order; 0 without such a line)."""
-    host = re.search(r"\[Host\] Bingo status: replay_stuck=(\d+) remote_done_mismatch=(\d+) "
-                     r"link_error=(\d+) fenced=0x([0-9a-fA-F]+)", uart_text)
-    rtl = re.findall(r"\[BINGO_STATUS\] \d+ chip=\d+ .*fenced=0x([0-9a-fA-F]+)", log_text)
+    host = HOST_STATUS_RE.search(uart_text)
+    rtl = STATUS_FENCED_RE.findall(log_text)
     rtl_fenced = int(rtl[-1], 16) if rtl else 0
     if not host:
         return ["no '[Host] Bingo status' line in the UART log"]
@@ -3040,14 +3011,14 @@ def boost_problems(name: str, sc: dict, log_text: str, uart_text: str) -> List[s
     if sc.get("expect_boost_level"):
         # The victim's cluster domain (1) reaches the boost level after the fence
         fence_t = [int(m.group(1)) for m in WD_RE.finditer(log_text) if m.group(6) == "1"]
-        boosts = [int(t) for t, lvl in re.findall(r"\[BINGO_PM\] (\d+) domain=1 level=(\d+)", log_text)
+        boosts = [int(t) for t, lvl in PM_DOMAIN1_RE.findall(log_text)
                   if int(lvl) == sc["expect_boost_level"]]
         if not fence_t or not any(t >= fence_t[0] for t in boosts):
             problems.append(f"no [BINGO_PM] domain=1 level={sc['expect_boost_level']} after the fence")
     if "expect_boost_domains" in sc:
         # Exactly these domains reach the boost level, and only after the fence
         fence_t = [int(m.group(1)) for m in WD_RE.finditer(log_text) if m.group(6) == "1"]
-        boosted = [(int(t), int(d)) for t, d, lvl in re.findall(r"\[BINGO_PM\] (\d+) domain=(\d+) level=(\d+)", log_text)
+        boosted = [(int(t), int(d)) for t, d, lvl in PM_RE.findall(log_text)
                    if int(lvl) == 3]
         if {d for _, d in boosted} != set(sc["expect_boost_domains"]):
             problems.append(f"boosted domains {sorted({d for _, d in boosted})}, expected {sorted(sc['expect_boost_domains'])}")
@@ -3091,7 +3062,7 @@ def judge_scene(name: str, sc: dict, test_cfg: Optional[dict], runner: HeMAiASim
     if single and sc["expect_eoc"] and log_text:
         problems += host_status_problems(sc, log_text, uart_text)
     problems += boost_problems(name, sc, log_text, uart_text)
-    eoc = re.search(r"All chips finished successfully at (\d+)", log_text)
+    eoc = EOC_RE.search(log_text)
     if eoc:
         print(f"[{name}] EOC at {int(eoc.group(1)) / 1e9:.3f} ms")
     if not log_text:

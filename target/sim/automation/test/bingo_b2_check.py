@@ -12,10 +12,10 @@ from typing import Callable, Dict, List, Tuple
 
 from bingo_c2 import healthy_problems
 from bingo_evlog import check_evlog
+from bingo_log import DISPATCH_RE, HOST_STATUS_RE, STATUS_FENCED_RE
 
 RESET_RE = re.compile(r"\[ACC_RESET\] (\d+) (request|reset|release|done)")
 EVENT_RE = re.compile(r"\[(?:BINGO_\w+|EVLOG_\w+)\] (\d+)")
-DISPATCH_RE = re.compile(r"\[BINGO_DISPATCH\] (\d+) chip=(\d+) task=(\d+) core=(\d+) cluster=(\d+)")
 DROP_RE = re.compile(r"\[BINGO_FENCE\] (\d+) chip=(\d+) core=(\d+) cluster=(\d+) dropped done task=(\d+)")
 OFFLOAD_RE = re.compile(r"\[B2\] offload (\d) ret=(-?\d+) wake=(\d+) ready=(\d+) end=(\d+) "
                         r"exit=0x([0-9a-f]+)")
@@ -56,9 +56,8 @@ def split_offloads(log_text: str, uart_text: str) -> Tuple[List[str], List[str],
 def host_status_problems(spec: dict, log_text: str, uart_text: str) -> List[str]:
     """The host's status line against the last [BINGO_STATUS] of the offload
     (the driver's check for a single-offload run)."""
-    host = re.search(r"\[Host\] Bingo status: replay_stuck=(\d+) remote_done_mismatch=(\d+) "
-                     r"link_error=(\d+) fenced=0x([0-9a-fA-F]+)", uart_text)
-    rtl = re.findall(r"\[BINGO_STATUS\] \d+ chip=\d+ .*fenced=0x([0-9a-fA-F]+)", log_text)
+    host = HOST_STATUS_RE.search(uart_text)
+    rtl = STATUS_FENCED_RE.findall(log_text)
     rtl_fenced = int(rtl[-1], 16) if rtl else 0
     if not host:
         return ["no '[Host] Bingo status' line in the UART log"]

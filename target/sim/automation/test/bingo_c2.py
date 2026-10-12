@@ -11,11 +11,11 @@ from pathlib import Path
 import re
 
 from bingo_evlog import ITEM
+from bingo_log import CHECK_ANY_RE, EOC_RE, EVLOG_BEGIN_RE, PM_RE as PM_EVENT
 
 TASK_EVENT = re.compile(
     r"\[BINGO_(DISPATCH|DONE)\] (\d+) chip=(\d+) task=(\d+) core=(\d+) cluster=(\d+)")
 RETIRED = re.compile(r"\[BINGO_RETIRED\] (\d+) chip=(\d+) core=(\d+) cluster=(\d+)")
-PM_EVENT = re.compile(r"\[BINGO_PM\] (\d+) domain=(\d+) level=(\d+)")
 UNHEALTHY = re.compile(
     r"\[BINGO_(?:WD|FENCE|REPLAY[^]]*|REMAP|CERF_FB|LATE|RISK[^]]*|"
     r"TYPE_CONFIRM|PARK|RECOVERY_HOLD|EXPORT|IMPORT|REMOTE_[^]]*|ASSERT)\]")
@@ -87,7 +87,7 @@ def healthy_problems(log, uart, graph_csv):
             values = re.findall(rf"\b{field}=(0x[0-9a-fA-F]+|\d+)\b", line)
             if len(values) != 1 or int(values[0], 0) != 0:
                 problems.append(f"healthy status {field} must be 0: {line}")
-    checks = re.findall(r"Check \[([^\]]*)\]:\s*(\S+)", uart)
+    checks = CHECK_ANY_RE.findall(uart)
     for name, status in checks:
         if status != "PASS":
             problems.append(f"Check [{name}]: {status}")
@@ -129,10 +129,10 @@ def run_metrics(log, uart, graph_csv, pm_config):
     if len(host_exits) != 1:
         raise ValueError("expected one dispatched host exit")
     boundaries = [(int(match[1]), line) for line in log.splitlines()
-                  for match in [re.search(r"\[EVLOG_BEGIN\] (\d+)", line)] if match]
+                  for match in [EVLOG_BEGIN_RE.search(line)] if match]
     if len(boundaries) != 1:
         raise ValueError("expected one EVLOG_BEGIN")
-    eocs = re.findall(r"All chips finished successfully at (\d+)", log)
+    eocs = EOC_RE.findall(log)
     if len(eocs) != 1:
         raise ValueError("expected one successful EOC")
     streams["global:T_exit"] = [host_exits[0]]

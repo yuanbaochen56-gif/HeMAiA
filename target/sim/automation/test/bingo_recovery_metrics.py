@@ -37,11 +37,11 @@ import sys
 from pathlib import Path
 from typing import Dict, List, Optional
 
-EOC_RE = re.compile(r"All chips finished successfully at (\d+)")
+from bingo_log import EOC_RE, PM_DOMAIN1_RE
+
 WD_RE = re.compile(r"\[BINGO_WD\] (\d+) chip=\d+ core=\d+ cluster=\d+ dead_suspect=(\d)(?: fenced=(\d))?")
 MOVE_RE = re.compile(r"\[BINGO_(?:REPLAY|EXPORT)\] (\d+) ")
 RETIRED_RE = re.compile(r"\[BINGO_RETIRED\] (\d+) ")
-PM_RE = re.compile(r"\[BINGO_PM\] (\d+) domain=1 level=(\d+)")
 PM_CFG_RE = re.compile(r"\[Host\] Bingo PM: idle_level=(\d+) normal_level=(\d+) boost_level=(\d+) idle_entry_delay=(\d+)"
                        r"(?: access_wake_hold=(\d+))?")
 PS_PER_MS = 1e9  # sim times are in ps
@@ -79,7 +79,7 @@ def metrics(log: Path, normal_level: int) -> Dict[str, object]:
     m["recovery_ms"] = (m["eoc_ms"] - m["fence_ms"]) if (m["eoc_ms"] is not None and fence is not None) else None
 
     # Power level of domain 1 over the window
-    pm = [(int(t), int(l)) for t, l in PM_RE.findall(text)]
+    pm = [(int(t), int(l)) for t, l in PM_DOMAIN1_RE.findall(text)]
     end = int(eoc.group(1)) if eoc else None   # no EOC (stuck / hung run): no power window
     start = fence if fence is not None else (pm[0][0] if pm else None)
     shares: Dict[int, float] = {}

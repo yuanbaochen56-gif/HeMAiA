@@ -2,6 +2,8 @@
 from collections import defaultdict
 import re
 
+from bingo_log import CERF_FB_RE, EVLOG_BEGIN_RE, RECOVERY_HOLD_RE, WD_FULL_RE
+
 ITEM = re.compile(r"\[EVLOG\] ts=(\d+) code=0x([0-9a-fA-F]+) "
                   r"slot=(\d+):(\d+) arg=0x([0-9a-fA-F]+)")
 SUMMARY = re.compile(r"\[EVLOG\] count=(\d+) dropped=(\d+)")
@@ -18,8 +20,7 @@ def simulation_events(log, cores_per_cluster):
         if m:
             _, core, cluster = map(int, m.groups())
             reasons[(cluster, core)] = 1 if "[BINGO_RISK_CONFIRM]" in line else 2
-        m = re.search(r"\[BINGO_WD\] (\d+) chip=(\d+) core=(\d+) cluster=(\d+) "
-                      r"dead_suspect=(\d+) fenced=(\d+)", line)
+        m = WD_FULL_RE.search(line)
         if m:
             time, chip, core, cluster, suspect, fenced = map(int, m.groups())
             if chip: raise ValueError("A6 system checker requires one chip")
@@ -47,11 +48,11 @@ def simulation_events(log, cores_per_cluster):
                 if re.match(r" PARKED\b", tail): code = 8
                 elif re.match(r" FAIL\b", tail): code = 9
             if code: events.append((int(time), code, int(cluster), int(core), 0))
-        m = re.search(r"\[BINGO_CERF_FB\] (\d+) type (\d+) clear g(\d+) set g(\d+)", line)
+        m = CERF_FB_RE.search(line)
         if m:
             time, typ, clear, set_group = map(int, m.groups())
             events.append((time, 10, typ >> 4, typ & 15, clear | (set_group << 5)))
-        m = re.search(r"\[BINGO_RECOVERY_HOLD\] (\d+) core=(\d+) cluster=(\d+) active=([01])", line)
+        m = RECOVERY_HOLD_RE.search(line)
         if m:
             time, core, cluster, active = map(int, m.groups())
             events.append((time, 12, cluster, core, active))
@@ -102,7 +103,7 @@ def check_evlog(log, uart, cores_per_cluster, period_ps=28000, *, allow_empty=Fa
 
 
 def check_evlog_pair(disabled_log, enabled_log):
-    cutoffs = [re.findall(r"\[EVLOG_BEGIN\] (\d+)", text)
+    cutoffs = [EVLOG_BEGIN_RE.findall(text)
                for text in (disabled_log, enabled_log)]
     if any(len(x) != 1 for x in cutoffs): return ["expected one pre-print EVLOG_BEGIN boundary per run"]
     if cutoffs[0] != cutoffs[1]: return ["EVLOG pre-print boundary times differ"]

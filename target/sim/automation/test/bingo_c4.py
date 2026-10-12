@@ -4,6 +4,7 @@ import re
 
 from bingo_c2 import _parse, graph_tasks
 from bingo_evlog import ITEM, check_evlog, simulation_events
+from bingo_log import EOC_RE, EVLOG_BEGIN_RE
 from pm_ticks import integrate_ticks
 
 
@@ -13,8 +14,8 @@ def run_boundaries(log, uart, graph_csv):
     dispatches = [event for event in tasks if event["kind"] == "DISPATCH"]
     exits = [event for event in dispatches
              if graph[event["task"]]["kernel"] == "__host_bingo_kernel_exit"]
-    evlog = re.findall(r"\[EVLOG_BEGIN\] (\d+)", log)
-    eoc = re.findall(r"All chips finished successfully at (\d+)", log)
+    evlog = EVLOG_BEGIN_RE.findall(log)
+    eoc = EOC_RE.findall(log)
     if not dispatches or len(exits) != 1 or len(evlog) != 1 or len(eoc) != 1:
         raise ValueError("C4 requires dispatches and one host exit, EVLOG_BEGIN and successful EOC")
     start = dispatches[0]["time_ps"]

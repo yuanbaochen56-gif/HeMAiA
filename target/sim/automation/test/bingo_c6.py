@@ -12,13 +12,14 @@ import re
 
 from bingo_c2 import TASK_EVENT
 from bingo_c3 import classify, outcome_candidates
+from bingo_log import (
+    C6_LINE_RE as C6_LINE,
+    EOC_RE as EOC,
+    EVLOG_BEGIN_RE as EVLOG_BEGIN,
+    STUCK_TIME_RE as STUCK,
+)
 
-C6_LINE = re.compile(r"\[Host\] C6 cerf_fb_mode=(\d+) poll_cycles=(\d+) "
-                     r"sw_writes=(\d+) sw_evt=0x([0-9a-fA-F]+)")
-STUCK = re.compile(r"\[BINGO_REPLAY_STUCK\] (\d+) ")
 CERF_FB = re.compile(r"\[BINGO_CERF_FB\] (\d+) ")
-EVLOG_BEGIN = re.compile(r"\[EVLOG_BEGIN\] (\d+)")
-EOC = re.compile(r"All chips finished successfully at (\d+)")
 EXPECTED_CLASS = {"hw": "degraded", "sw": "degraded", "none": "detected-stuck"}
 SIGNALS = ("eoc", "checks_pass", "cerf", "stuck", "fence", "timeout")
 

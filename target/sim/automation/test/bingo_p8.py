@@ -5,13 +5,16 @@ import csv
 from pathlib import Path
 import re
 
+from bingo_log import (
+    DISPATCH_RE as DISPATCH,
+    DONE_RE as DONE,
+    PM_RE as PM,
+    RECOVERY_HOLD_RE as HOLD,
+)
+
 PERIOD_PS = 28000
 UPDATE_CYCLES = 5  # IDLE selection, frequency AW/W, clock-valid AW/W.
 ACTIVE_DOMAINS = 2  # hemaia_ci: cluster + 1; host/tied-off slots are unmapped.
-PM = re.compile(r"\[BINGO_PM\] (\d+) domain=(\d+) level=(\d+)")
-HOLD = re.compile(r"\[BINGO_RECOVERY_HOLD\] (\d+) core=(\d+) cluster=(\d+) active=([01])")
-DISPATCH = re.compile(r"\[BINGO_DISPATCH\] (\d+) chip=(\d+) task=(\d+) core=(\d+) cluster=(\d+)")
-DONE = re.compile(r"\[BINGO_DONE\] (\d+) chip=(\d+) task=(\d+) core=(\d+) cluster=(\d+)")
 FENCE = re.compile(r"\[BINGO_WD\] (\d+) chip=0 core=1 cluster=0 dead_suspect=1 fenced=1")
 
 

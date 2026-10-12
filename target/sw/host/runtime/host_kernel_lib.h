@@ -1806,3 +1806,7 @@ static inline uint64_t __host_bingo_kernel_rmsnorm(void *arg){
 #endif
     return BINGO_RET_FAIL;
 }
+
+#ifdef BINGO_SDC_RECOVER
+#include "host_sdc_recover.h"
+#endif

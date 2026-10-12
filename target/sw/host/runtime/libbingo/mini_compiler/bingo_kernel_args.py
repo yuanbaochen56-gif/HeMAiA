@@ -2705,3 +2705,53 @@ class SnaxBingoKernelMoeGatingArgs(BingoKernelArgs):
         if self.cerf_group_ids_addr is not None:
             self._process_addr(self.cerf_group_ids_addr, "cerf_group_ids_addr", assignments, handle_name_map, split_64bit=False)
         return assignments
+
+
+class HostBingoKernelSdcRecoverInitArgs(BingoKernelArgs):
+    """Initialize two recovery transactions before either private execution."""
+    KERNEL_NAME = "__host_bingo_kernel_sdc_recover_init"
+
+    def __init__(self, status0, status1, state):
+        self.status0_addr = status0
+        self.status1_addr = status1
+        self.state_addr = state
+
+    def get_struct_name(self):
+        return "__host_bingo_kernel_sdc_recover_init_args_t"
+
+    def get_c_field_assignments(self, handle_name_map):
+        fields = {}
+        for name in ("status0_addr", "status1_addr", "state_addr"):
+            self._process_addr(getattr(self, name), name, fields, handle_name_map,
+                               split_64bit=False, as_64bit=True)
+        fields.update(transactions="2u", enabled="bingo_test_cfg.sdc_enable")
+        return fields
+
+
+class HostBingoKernelSdcResolveCopyArgs(BingoKernelArgs):
+    """Resolve a private 64-byte copy and publish its canonical output."""
+    KERNEL_NAME = "__host_bingo_kernel_sdc_resolve_copy"
+
+    def __init__(self, src, primary, shadow, third, canonical, status, state,
+                 size=64, transaction=0):
+        self.src_addr = src
+        self.primary_addr = primary
+        self.shadow_addr = shadow
+        self.third_addr = third
+        self.canonical_addr = canonical
+        self.status_addr = status
+        self.state_addr = state
+        self.size = size
+        self.transaction = transaction
+
+    def get_struct_name(self):
+        return "__host_bingo_kernel_sdc_resolve_copy_args_t"
+
+    def get_c_field_assignments(self, handle_name_map):
+        fields = {}
+        for name in ("src_addr", "primary_addr", "shadow_addr", "third_addr",
+                     "canonical_addr", "status_addr", "state_addr"):
+            self._process_addr(getattr(self, name), name, fields, handle_name_map,
+                               split_64bit=False, as_64bit=True)
+        fields.update(size=str(self.size), transaction=str(self.transaction))
+        return fields

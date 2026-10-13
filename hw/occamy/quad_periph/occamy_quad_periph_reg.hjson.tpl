@@ -669,11 +669,13 @@
       ]
     },
     { name: "BINGO_WD_LATE",
-      desc: "Predict late progress from learned type/class bounds, independently of watchdog adaptive detection. Zero disables prediction and learning exclusion.",
+      desc: "Predict late progress from learned type/class bounds, independently of watchdog adaptive detection. LOCAL_ONLY and MOVED_SH act on learning and on every learned threshold, also with EN zero. Zero disables prediction, learning exclusion and both rules.",
       swaccess: "rw", hwaccess: "hro",
       fields: [
         { bits: "0", name: "EN", resval: "0", desc: "Enable learned late thresholds and exclusion of late executions." },
         { bits: "3:1", name: "SH_L", resval: "0", desc: "Shift of learned maximum for late threshold." },
+        { bits: "6", name: "LOCAL_ONLY", resval: "0", desc: "Learn only executions on their own logical slot that never ran at a level faster than normal." },
+        { bits: "8:7", name: "MOVED_SH", resval: "0", desc: "Extra shift of the learned maximum, for every learned threshold, while a slot runs a task away from its own logical slot." },
         { bits: "31:12", name: "LFLOOR", resval: "0", desc: "Late threshold floor in watchdog ticks." }
       ]
     },

@@ -72,6 +72,21 @@ class PredictiveConfigurationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             watchdog.test_cfg_bytes(dict(watchdog.test_cfg_defaults(3), wd_late=0x10))
 
+    def test_learning_rule_fields_are_accepted_and_the_rest_stays_reserved(self):
+        # [6] LOCAL_ONLY and [8:7] MOVED_SH may be set; [5:4] and [11:9] may not
+        for good in (0x40, 0x80, 0x100, 0x1c0, 0x3E81c3):
+            watchdog.test_cfg_bytes(dict(watchdog.test_cfg_defaults(3), wd_late=good))
+        for bad in (0x10, 0x20, 0x200, 0x400, 0x800):
+            with self.assertRaises(ValueError):
+                watchdog.test_cfg_bytes(dict(watchdog.test_cfg_defaults(3), wd_late=bad))
+        reg = (ROOT / "hw/occamy/quad_periph/occamy_quad_periph_reg.hjson.tpl").read_text()
+        body = reg[reg.index('name: "BINGO_WD_LATE"'):reg.index('name: "BINGO_FENCE_FB"')]
+        for field in ('bits: "6", name: "LOCAL_ONLY"', 'bits: "8:7", name: "MOVED_SH"'):
+            self.assertIn(field, body)
+        periph = (ROOT / "hw/occamy/quad_periph/occamy_quad_periph.sv").read_text()
+        self.assertIn("reg2hw.bingo_wd_late.lfloor.q, 3'b0,\n"
+                      "      reg2hw.bingo_wd_late.moved_sh.q, reg2hw.bingo_wd_late.local_only.q, 2'b0,", periph)
+
     def test_pre_stall_start_is_a_same_image_fault_field(self):
         first = dict(watchdog.test_cfg_defaults(3), fault_pre_stall_from=2)
         watchdog.check_same_ps_fault_cfg(first, dict(first, fault_gid=5))
@@ -87,7 +102,7 @@ class PredictiveConfigurationTests(unittest.TestCase):
             'static uint64_t chiplet_addr_transform(uint64_t a) { return a+0x10000000; }\n'
             'static uintptr_t quad_ctrl_bingo_wd_late_addr(void) { return 0x208; }\n'
             'static void writew(uint32_t v, uintptr_t a) { value=v; addr=a; }\n')
-        source += body + '\nint main(void) { bingo_wd_late_set(UINT32_MAX); assert(value==0xfffff00fu && addr==0x10000208); return 0; }\n'
+        source += body + '\nint main(void) { bingo_wd_late_set(UINT32_MAX); assert(value==0xfffff1cfu && addr==0x10000208); return 0; }\n'
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "api.c").write_text(source)

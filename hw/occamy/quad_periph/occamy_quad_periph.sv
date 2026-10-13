@@ -160,7 +160,8 @@ module occamy_quad_periph import occamy_quad_periph_reg_pkg::*; #(
       reg2hw.bingo_wd_adapt.load_guard.q, reg2hw.bingo_wd_adapt.en.q
   };
   assign bingo_hw_manager_wd_late_o = {
-      reg2hw.bingo_wd_late.lfloor.q, 8'b0,
+      reg2hw.bingo_wd_late.lfloor.q, 3'b0,
+      reg2hw.bingo_wd_late.moved_sh.q, reg2hw.bingo_wd_late.local_only.q, 2'b0,
       reg2hw.bingo_wd_late.sh_l.q, reg2hw.bingo_wd_late.en.q
   };
   assign bingo_hw_manager_fence_fb_o = reg2hw.bingo_fence_fb.q;

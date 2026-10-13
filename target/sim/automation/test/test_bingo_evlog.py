@@ -154,6 +154,26 @@ int main(void) {
         self.assertTrue(check_evlog_pair(log, log.replace("308000", "308001")))
         self.assertTrue(check_evlog_pair(log, log.replace("448000", "448001")))
 
+    def test_fence_reasons(self):
+        # The fence record carries the threshold that confirmed it: 3 learned
+        # ([BINGO_ADAPT_CONFIRM]), 1 at risk, 2 per type, 0 without a confirm line
+        base, uart = self.fixture()
+        for line, reason in [
+            ("[BINGO_ADAPT_CONFIRM] 364000 core=1 cluster=0 type=2 class=1 threshold=4000", 3),
+            ("[BINGO_RISK_CONFIRM] 364000 core=1 cluster=0 threshold=40000", 1),
+            ("[BINGO_TYPE_CONFIRM] 364000 core=1 cluster=0 type=2 threshold=40000", 2),
+            (None, 0),
+        ]:
+            with self.subTest(reason=reason):
+                log = base if line is None else base.replace(
+                    "[BINGO_WD] 364000", line + "\n[BINGO_WD] 364000")
+                self.assertIn((364000, 3, 0, 1, reason), simulation_events(log, 3))
+                good = uart.replace("code=0x03 slot=0:1 arg=0x0000", f"code=0x03 slot=0:1 arg=0x000{reason}")
+                self.assertEqual(check_evlog(log, good, 3), [])
+                bad = uart.replace("code=0x03 slot=0:1 arg=0x0000",
+                                   f"code=0x03 slot=0:1 arg=0x000{(reason + 1) % 4}")
+                self.assertTrue(check_evlog(log, bad, 3))
+
     def test_cerf_and_blocked_same_edge(self):
         log = "\n".join([
             "[BINGO_REPLAY_STUCK] 308000 chip=0 core=1 cluster=0: no live core",

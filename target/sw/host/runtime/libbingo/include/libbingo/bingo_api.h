@@ -573,8 +573,8 @@ uint32_t bingo_evlog_dropped(void);
 void bingo_evlog_print(void);
 void bingo_wd_type_set(uint32_t type, uint32_t h, uint32_t c);
 void bingo_wd_adapt_set(uint32_t ctrl);
-// Predictive late threshold and the learning rules ([6] LOCAL_ONLY, [8:7] MOVED_SH);
-// [11:9] and [5:4] reserved and always written as zero.
+// Predictive late threshold ([10:9] FRAC) and the learning rules ([6]
+// LOCAL_ONLY, [8:7] MOVED_SH); [11] and [5:4] reserved and always written as zero.
 void bingo_wd_late_set(uint32_t ctrl);
 // Fence fallback (bit t = core type t, 0 = off): a fenced or parked core of a
 // set type takes no substitute, so a fence leaves its tasks to the CERF

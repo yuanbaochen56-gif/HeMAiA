@@ -676,6 +676,7 @@
         { bits: "3:1", name: "SH_L", resval: "0", desc: "Shift of learned maximum for late threshold." },
         { bits: "6", name: "LOCAL_ONLY", resval: "0", desc: "Learn only executions on their own logical slot that never ran at a level faster than normal." },
         { bits: "8:7", name: "MOVED_SH", resval: "0", desc: "Extra shift of the learned maximum, for every learned threshold, while a slot runs a task away from its own logical slot." },
+        { bits: "10:9", name: "FRAC", resval: "0", desc: "Late threshold is (1 + FRAC/4) times the learned maximum before SH_L." },
         { bits: "31:12", name: "LFLOOR", resval: "0", desc: "Late threshold floor in watchdog ticks." }
       ]
     },

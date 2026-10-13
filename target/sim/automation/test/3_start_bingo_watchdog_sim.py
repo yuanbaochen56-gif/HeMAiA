@@ -385,8 +385,8 @@ def test_cfg_bytes(cfg: dict) -> bytes:
         late = [cfg.get(field, 0) for field in ("wd_late", "fault_pre_stall_from")]
         if any(type(value) is not int or not 0 <= value <= 0xFFFFFFFF for value in late):
             raise ValueError("wd_late and fault_pre_stall_from must be uint32 words")
-        if late[0] & 0xe30:
-            raise ValueError("wd_late reserved bits [11:9] and [5:4] must be zero")
+        if late[0] & 0x830:
+            raise ValueError("wd_late reserved bits [11] and [5:4] must be zero")
         sdc = [cfg.get(field, 0) for field in SDC_CFG_FIELDS]
         if any(type(value) is not int or not 0 <= value <= 0xFFFFFFFF for value in sdc):
             raise ValueError("SDC controls must be uint32 words")

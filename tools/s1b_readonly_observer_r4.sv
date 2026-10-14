@@ -71,10 +71,12 @@ bind bingo_hw_manager_top s1b_readonly_observer_r4 #(
   .clk_i(clk_i), .rst_ni(rst_ni), .start_i(bingo_hw_manager_start_i),
   .waiting_desc(waiting_dep_check_task_desc), .checkout_desc(checkout_queue_data_out),
   .ready_desc(ready_queue_data_out), .done_desc(done_q_data_in),
-  .waiting_pop(waiting_dep_check_queue_pop), .cond_skip(cond_exec_skip),
+  .waiting_pop(i_dep_unit.waiting_dep_check_queue_pop), .cond_skip(cond_exec_skip),
   .checkout_pop(checkout_queue_pop), .ready_pop(ready_queue_pop), .done_push(done_q_push),
-  .check_valid(dep_check_valid), .check_result(dep_check_result),
-  .set_valid(dep_set_valid), .check_code(dep_check_code), .set_code(dep_set_code),
-  .check_tag(dep_check_tag), .set_tag(dep_set_tag)
+  // The waiting queues and the dependency matrices sit in bingo_hw_manager_dep_unit
+  .check_valid(i_dep_unit.dep_check_valid), .check_result(i_dep_unit.dep_check_result),
+  .set_valid(i_dep_unit.dep_set_valid), .check_code(i_dep_unit.dep_check_code),
+  .set_code(i_dep_unit.dep_set_code), .check_tag(i_dep_unit.dep_check_tag),
+  .set_tag(i_dep_unit.dep_set_tag)
 );
 endmodule

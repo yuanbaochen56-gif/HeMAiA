@@ -898,3 +898,25 @@ SCENARIOS.update(r1a_scenarios(SCENARIOS))
 SCENARIOS.update(r1b_scenarios(SCENARIOS))
 SCENARIOS.update(b2_0_scenarios(SCENARIOS))
 SCENARIOS.update(b2_v3_scenarios(SCENARIOS))
+
+
+# Power-domain counters (BINGO_PM_COUNT): scenes of the s-series with the host
+# print of the counters (-DBINGO_PM_COUNT_LOG), checked against the level log
+# and the dispatch-to-done intervals (bingo_pm_count). pm_count: the clusters.
+def pm_count_scenarios() -> Dict[str, dict]:
+    scenes = {}
+    # (clusters, cores per cluster without the extra host / tied-off slot)
+    for name, base, clusters, cores, flags, what in (
+            ("pmc_s1", "s1", 2, 2, "", "healthy"),
+            ("pmc_s1_servo", "s1", 2, 2, "-DBINGO_PM_ACCESS_WAKE_HOLD=1000 -DBINGO_PM_ACCESS_LEVEL=12",
+             "healthy, access wake and servo level 12"),
+            ("pmc_s7", "s7", 1, 3, "", "fence, replay in the same cluster"),
+            ("pmc_s25", "s25", 2, 2, "", "fence, capacity boost of the survivor's domain")):
+        scene = dict(SCENARIOS[base], pm_count=clusters, pm_count_cores=cores)
+        scene["extra_flags"] = " ".join(f for f in (scene.get("extra_flags", ""), "-DBINGO_PM_COUNT_LOG", flags) if f)
+        scene["desc"] = f"{base} with the power-domain counters printed and checked: {what}"
+        scenes[name] = scene
+    return scenes
+
+
+SCENARIOS.update(pm_count_scenarios())

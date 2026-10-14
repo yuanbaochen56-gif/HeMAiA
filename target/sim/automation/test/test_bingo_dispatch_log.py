@@ -95,9 +95,11 @@ class DispatchLogTests(unittest.TestCase):
 
     def test_driver_opt_in_and_continuity_default(self):
         text = Path(watchdog.__file__).read_text()
-        self.assertIn('plusargs=["+bingo_dispatch_log"] if sc.get("dispatch_log", False) else []', text)
+        # opt in: the dispatch log scenes, and the power-domain counter scenes (bingo_pm_count)
+        self.assertIn('plusargs=["+bingo_dispatch_log"] if sc.get("dispatch_log", False) or sc.get("pm_count") else []', text)
         for name in ("t18", "t19", "t40", "t41", "t42", "t43", "t44"):
             self.assertFalse(watchdog.SCENARIOS[name].get("dispatch_log", False))
+            self.assertFalse(watchdog.SCENARIOS[name].get("pm_count"))
         self.assertIn('lines.append(f"- dispatch_log:', text)
 
 

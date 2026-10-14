@@ -152,6 +152,7 @@ from bingo_p8 import recovery_hold_config, check_recovery_hold, check_access_lev
 from bingo_c2 import healthy_problems  # noqa: E402
 from bingo_p9 import healthy_problems as p9_healthy_problems  # noqa: E402
 from bingo_b2_check import evaluate_b2  # noqa: E402
+from bingo_pm_count import pm_count_problems  # noqa: E402
 from bingo_log import (  # noqa: E402
     ASSERT_RE, C6_LINE_RE, CERF_FB_RE, CHECK_RE, CSR_RE, DISPATCH_RE, DONE_RE, EOC_RE,
     EXIT_ABSORB_RE, EXPORT_RE, FENCE_DROP_RE, HOST_STATUS_RE, IMPORT_RE, LATE_RE, PARK_RE,
@@ -2071,7 +2072,7 @@ def scene_runner(sc: dict, test_cfg: Optional[dict], cfg: str, out_dir: Path,
         fail_on_task_failure=False,
         timeout_seconds=sc["sim_timeout_s"],
         extra_mounts=[Path(args.bingo_repo)],
-        plusargs=["+bingo_dispatch_log"] if sc.get("dispatch_log", False) else [],
+        plusargs=["+bingo_dispatch_log"] if sc.get("dispatch_log", False) or sc.get("pm_count") else [],
     )
     if "evlog_enable" in sc:
         runner.plusargs.append("+evlog_check")
@@ -2210,6 +2211,12 @@ def judge_scene(name: str, sc: dict, test_cfg: Optional[dict], runner: HeMAiASim
     if single and sc["expect_eoc"] and log_text:
         problems += host_status_problems(sc, log_text, uart_text)
     problems += boost_problems(name, sc, log_text, uart_text)
+    if sc.get("pm_count"):
+        count_problems, count_results = pm_count_problems(log_text, uart_text, sc["pm_count"],
+                                                          sc["pm_count_cores"])
+        problems += count_problems
+        for domain, result in sorted(count_results.items()):
+            print(f"[{name}] PM count domain {domain}: {result}")
     eoc = EOC_RE.search(log_text)
     if eoc:
         print(f"[{name}] EOC at {int(eoc.group(1)) / 1e9:.3f} ms")

@@ -311,6 +311,12 @@ inline uintptr_t quad_ctrl_bingo_evlog_lo_addr(){
 inline uintptr_t quad_ctrl_bingo_evlog_hi_addr(){
     return QUAD_AXI_LITE_NARROW_PERIPHERALS_BASE_ADDR + OCCAMY_QUAD_PERIPH_BINGO_EVLOG_HI_REG_OFFSET;
 }
+// Power-domain counter `counter` (0 idle, 1 normal, 2 boost, 3 other level,
+// 4 active) of the domain of cluster `cluster` (BINGO_PM_COUNT, read only)
+inline uintptr_t quad_ctrl_bingo_pm_count_addr(uint32_t cluster, uint32_t counter){
+    return QUAD_AXI_LITE_NARROW_PERIPHERALS_BASE_ADDR + OCCAMY_QUAD_PERIPH_BINGO_PM_COUNT_0_REG_OFFSET +
+           4 * (5 * cluster + counter);
+}
 
 inline uintptr_t quad_ctrl_idle_entry_delay_addr(){
     return QUAD_AXI_LITE_NARROW_PERIPHERALS_BASE_ADDR + OCCAMY_QUAD_PERIPH_IDLE_ENTRY_DELAY_REG_OFFSET;

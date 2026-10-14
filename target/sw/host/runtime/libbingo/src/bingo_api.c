@@ -1110,8 +1110,35 @@ uint32_t bingo_hw_scheduler(uint64_t* host_arg_list, uint64_t* host_kernel_list,
     // Whatever ended the loop, report which cores the manager fenced on the way
     bingo_hw_scheduler_print_status();
     bingo_evlog_print();
+#ifdef BINGO_PM_COUNT_LOG
+    bingo_pm_count_print();
+#endif
     return err;
 }
+
+////////////////////////////////////
+// BINGO power-domain counters     //
+////////////////////////////////////
+uint32_t bingo_pm_count(uint32_t cluster, uint32_t counter) {
+    return readw((uintptr_t)chiplet_addr_transform(quad_ctrl_bingo_pm_count_addr(cluster, counter)));
+}
+
+#ifdef BINGO_PM_COUNT_LOG
+void bingo_pm_count_print(void) {
+    uint32_t idle   = readw((uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_idle_power_level_addr()));
+    uint32_t normal = readw((uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_norm_power_level_addr()));
+    uint32_t boost  = readw((uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_boost_power_level_addr()));
+    printf_safe("[BINGO_PM_COUNT] levels idle=%u normal=%u boost=%u\r\n", idle, normal, boost);
+    for (uint32_t cluster = 0; cluster < N_CLUSTERS_PER_CHIPLET; cluster++) {
+        uint32_t count[BINGO_PM_COUNTERS];
+        for (uint32_t k = 0; k < BINGO_PM_COUNTERS; k++) count[k] = bingo_pm_count(cluster, k);
+        printf_safe("[BINGO_PM_COUNT] cluster=%u idle=%u normal=%u boost=%u other=%u active=%u\r\n",
+                    cluster, count[BINGO_PM_COUNT_IDLE], count[BINGO_PM_COUNT_NORMAL],
+                    count[BINGO_PM_COUNT_BOOST], count[BINGO_PM_COUNT_OTHER],
+                    count[BINGO_PM_COUNT_ACTIVE]);
+    }
+}
+#endif
 
 /////////////////////////////
 // BINGO CERF Runtime API  //

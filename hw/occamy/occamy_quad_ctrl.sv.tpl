@@ -127,6 +127,8 @@ module ${name}_quad_ctrl
   logic [31:0]                           bingo_evlog_clear, bingo_evlog_pop, bingo_evlog_count;
   logic [63:0]                           bingo_evlog_head;
   logic [15:0]                           bingo_evlog_dropped;
+  // Power-domain counters of the cluster domains 1 .. NrClustersPerQuad
+  logic [NrClustersPerQuad-1:0][bingo_hw_manager_pkg::PmCounters-1:0][31:0] bingo_pm_count;
   logic [${2**bingo_core_type_id_width-1}:0][31:0] bingo_wd_type_h, bingo_wd_type_c;
   logic [31:0]                           bingo_wd_adapt;
   logic [31:0]                           bingo_wd_late;
@@ -280,7 +282,8 @@ module ${name}_quad_ctrl
     .bingo_hw_manager_core_dead_suspect_i     (bingo_core_dead_suspect             ),
     .bingo_hw_manager_core_fenced_i           (bingo_core_fenced                   ),
     .bingo_hw_manager_replay_blocked_i        (bingo_replay_blocked                ),
-    .bingo_hw_manager_host_ready_pending_i    (bingo_ready_queue_pending[BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER-1][0])
+    .bingo_hw_manager_host_ready_pending_i    (bingo_ready_queue_pending[BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER-1][0]),
+    .bingo_hw_manager_pm_count_i              (bingo_pm_count                      )
   );
 
 
@@ -351,6 +354,9 @@ module ${name}_quad_ctrl
   };
   bingo_hw_manager_top #(
     .EventLogDepth                     (32),
+    // Power-domain counters of the cluster domains (libbingo: cluster c is domain 1 + c)
+    .PmCountBase                       (1),
+    .PmCountDomains                    (NrClustersPerQuad),
     .READY_AND_DONE_QUEUE_INTERFACE_TYPE(1), // 1: CSR 0: AXI LITE
     .TASK_QUEUE_TYPE                    (1), // 1: AXI Lite Master 0: Default AXI Lite Slave 
     .NUM_CORES_PER_CLUSTER    (BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER    ),
@@ -480,6 +486,7 @@ module ${name}_quad_ctrl
     .evlog_dropped_o                           (bingo_evlog_dropped                 ),
     // DARTS: Load Monitor (not connected yet)
     .load_total_pending_o                      (/* unused */                         ),
+    .pm_count_o                                (bingo_pm_count                      ),
     // Watchdog / replay status (quad periph BINGO_* status registers)
     .core_fenced_o                             (bingo_core_fenced                    ),
     .core_dead_suspect_o                       (bingo_core_dead_suspect              ),

@@ -571,6 +571,22 @@ void bingo_evlog_clear(void);
 uint32_t bingo_evlog_read(uint64_t *buf, uint32_t max);
 uint32_t bingo_evlog_dropped(void);
 void bingo_evlog_print(void);
+// Power-domain counters of bingo (BINGO_PM_COUNT): for the domain of cluster
+// `cluster`, the manager cycles at the idle, normal and boost level, at any
+// other level (access servo, derate), and with an active core (neither waiting
+// for a task, nor exited, nor fenced). They wrap at 2^32: read before and
+// after a window and subtract. Relative energy of the window (fixed voltage):
+// dynamic ~ sum of cycles x normal / level, leakage ~ the cycles.
+enum {
+    BINGO_PM_COUNT_IDLE, BINGO_PM_COUNT_NORMAL, BINGO_PM_COUNT_BOOST,
+    BINGO_PM_COUNT_OTHER, BINGO_PM_COUNT_ACTIVE, BINGO_PM_COUNTERS
+};
+uint32_t bingo_pm_count(uint32_t cluster, uint32_t counter);
+#ifdef BINGO_PM_COUNT_LOG
+// Print the counters of every cluster domain and the configured levels
+// (test images built with -DBINGO_PM_COUNT_LOG, after the event log)
+void bingo_pm_count_print(void);
+#endif
 void bingo_wd_type_set(uint32_t type, uint32_t h, uint32_t c);
 void bingo_wd_adapt_set(uint32_t ctrl);
 // Predictive late threshold ([10:9] FRAC) and the learning rules ([6]

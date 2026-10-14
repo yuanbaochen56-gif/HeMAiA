@@ -19,6 +19,11 @@
       type: "int",
       default: "${bingo_nr_core_types}"
     },
+    { name: "NumBingoPmCounts",
+      desc: "Number of bingo power-domain counters: five per cluster domain.",
+      type: "int",
+      default: "${nr_clusters * 5}"
+    },
   ], 
   name: "occamy_quad_periph",
   clock_primary: "clk_i",
@@ -691,5 +696,20 @@
         }
       ]
     },
+    // Read from the counters themselves (no copy in this register file).
+    { multireg: {
+      name: "BINGO_PM_COUNT",
+      desc: "Bingo power-domain counters (bingo_hw_manager_pm_counters), in manager clock cycles, wrapping at 2^32. Register 5 c + k is counter k of the power domain of cluster c (domain 1 + c): k = 0 cycles at the idle level, 1 at the normal level, 2 at the boost level, 3 at any other level (access servo, derate), 4 cycles in which a core of the domain is neither waiting for a task, nor exited, nor fenced.",
+      swaccess: "ro",
+      hwaccess: "hwo",
+      hwext: "true",
+      count: "NumBingoPmCounts",
+      cname: "bingo_pm_count",
+      fields: [
+        { bits: "31:0", resval: "0", name: "CYCLES",
+          desc: "Manager clock cycles."
+        }
+      ]
+    }},
   ]
 }

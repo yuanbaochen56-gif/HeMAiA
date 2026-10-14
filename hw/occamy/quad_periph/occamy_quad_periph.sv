@@ -82,7 +82,9 @@ module occamy_quad_periph import occamy_quad_periph_reg_pkg::*; #(
   input  logic [BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER-1:0][BINGO_HW_MANAGER_NR_CLUSTER-1:0] bingo_hw_manager_core_fenced_i,
   input  logic [BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER-1:0][BINGO_HW_MANAGER_NR_CLUSTER-1:0] bingo_hw_manager_replay_blocked_i,
   // A ready task waits for the host (non-blocking poll of the ready/done queue)
-  input  logic        bingo_hw_manager_host_ready_pending_i
+  input  logic        bingo_hw_manager_host_ready_pending_i,
+  // Bingo power-domain counters, five per cluster domain (BINGO_PM_COUNT)
+  input  logic [NumBingoPmCounts-1:0][31:0] bingo_hw_manager_pm_count_i
 );
 
   occamy_quad_periph_hw2reg_t hw2reg;
@@ -219,6 +221,9 @@ module occamy_quad_periph import occamy_quad_periph_reg_pkg::*; #(
   assign hw2reg.bingo_replay_blocked.de    = 1'b1;
   assign hw2reg.bingo_host_ready_pending.d  = bingo_hw_manager_host_ready_pending_i;
   assign hw2reg.bingo_host_ready_pending.de = 1'b1;
+  for (genvar i = 0; i < NumBingoPmCounts; i++) begin : gen_bingo_pm_count
+    assign hw2reg.bingo_pm_count[i].d = bingo_hw_manager_pm_count_i[i];
+  end
   occamy_quad_periph_reg_top #(
     .reg_req_t ( reg_req_t ),
     .reg_rsp_t ( reg_rsp_t  )

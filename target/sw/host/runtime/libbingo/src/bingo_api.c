@@ -1202,3 +1202,7 @@ uint32_t bingo_cerf_fb_evt(void) {
 uint32_t bingo_replay_blocked(void) {
     return readw((uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_bingo_replay_blocked_addr()));
 }
+
+uint32_t bingo_bus_error(void) {
+    return (readw((uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_bingo_status_addr())) >> 9) & 0x7;
+}

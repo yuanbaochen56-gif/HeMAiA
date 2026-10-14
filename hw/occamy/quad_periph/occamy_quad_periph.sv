@@ -78,6 +78,7 @@ module occamy_quad_periph import occamy_quad_periph_reg_pkg::*; #(
   // Bingo boost choice (policy, credit per lost core, minimum load)
   output reg_data_t   bingo_hw_manager_boost_policy_o,
   input  logic [5:0]  bingo_hw_manager_remote_link_error_i,
+  input  logic [2:0]  bingo_hw_manager_bus_error_i,
   input  logic [BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER-1:0][BINGO_HW_MANAGER_NR_CLUSTER-1:0] bingo_hw_manager_core_dead_suspect_i,
   input  logic [BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER-1:0][BINGO_HW_MANAGER_NR_CLUSTER-1:0] bingo_hw_manager_core_fenced_i,
   input  logic [BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER-1:0][BINGO_HW_MANAGER_NR_CLUSTER-1:0] bingo_hw_manager_replay_blocked_i,
@@ -199,6 +200,8 @@ module occamy_quad_periph import occamy_quad_periph_reg_pkg::*; #(
   assign hw2reg.bingo_status.remote_done_mismatch.de = 1'b1;
   assign hw2reg.bingo_status.remote_link_error.d     = bingo_hw_manager_remote_link_error_i;
   assign hw2reg.bingo_status.remote_link_error.de    = 1'b1;
+  assign hw2reg.bingo_status.bus_error.d             = bingo_hw_manager_bus_error_i;
+  assign hw2reg.bingo_status.bus_error.de            = 1'b1;
   always_comb begin
     hw2reg.bingo_core_dead_suspect.d = '0;
     hw2reg.bingo_core_fenced.d       = '0;

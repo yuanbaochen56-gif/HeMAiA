@@ -627,6 +627,10 @@ uint32_t bingo_cerf_fb_evt(void);
 
 // Sticky slots blocked by replay protection, in BINGO_CORE_FENCED bit order.
 uint32_t bingo_replay_blocked(void);
+// Sticky bus errors of the manager's AXI-Lite masters (BINGO_STATUS[11:9]):
+// [0] a task descriptor read failed (that descriptor was dropped and the fetch
+// stopped), [1] a power-manager write failed, [2] its DVFS read of the CLINT word.
+uint32_t bingo_bus_error(void);
 
 // 1 if a ready task waits for the host: reading the ready queue will not stall.
 // Inline, so images that never poll keep their exact code layout.

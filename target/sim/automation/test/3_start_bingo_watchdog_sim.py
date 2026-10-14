@@ -154,7 +154,7 @@ from bingo_p9 import healthy_problems as p9_healthy_problems  # noqa: E402
 from bingo_b2_check import evaluate_b2  # noqa: E402
 from bingo_pm_count import pm_count_problems  # noqa: E402
 from bingo_log import (  # noqa: E402
-    ASSERT_RE, C6_LINE_RE, CERF_FB_RE, CHECK_RE, CSR_RE, DISPATCH_RE, DONE_RE, EOC_RE,
+    ASSERT_RE, BUS_ERROR_RE, C6_LINE_RE, CERF_FB_RE, CHECK_RE, CSR_RE, DISPATCH_RE, DONE_RE, EOC_RE,
     EXIT_ABSORB_RE, EXPORT_RE, FENCE_DROP_RE, HOST_STATUS_RE, IMPORT_RE, LATE_RE, PARK_RE,
     PM_DOMAIN1_RE, PM_RE, RDONE_IN_RE, RDONE_OUT_RE, REJECT_IN_RE, REJECT_OUT_RE, REMAP_FIELDS_RE,
     REMAP_RE, REPLAY_FIELDS_RE, REPLAY_RE, RETIRED_RE, RISK_RE, RLINK_RE, STATUS_FENCED_RE,
@@ -1624,6 +1624,7 @@ class RunLog(NamedTuple):
     other_asserts: List[str]        # (includes the host reading X, which derails it before EOC)
     csr: List[str]
     checks: List[Tuple[str, str]]   # host 'Check [...]: PASS|FAIL' lines
+    bus_errors: List[str]           # [BINGO_BUS_ERROR]: a manager master got SLVERR / DECERR
 
     @classmethod
     def parse(cls, log_text: str, uart_text: str) -> "RunLog":
@@ -1639,6 +1640,7 @@ class RunLog(NamedTuple):
                                      log_text, flags=re.M),
             csr=CSR_RE.findall(log_text),
             checks=CHECK_RE.findall(uart_text),
+            bus_errors=BUS_ERROR_RE.findall(log_text),
         )
 
 
@@ -1785,6 +1787,8 @@ def error_problems(sc: dict, run: RunLog) -> List[str]:
         problems.append(f"[BINGO_REPLAY_STUCK] expected {expect_stuck}, got {run.stuck[:1]}")
     if run.csr:
         problems.append(f"{len(run.csr)} [BINGO_CSR] unknown-address event(s): {run.csr[:3]}")
+    if run.bus_errors:
+        problems.append(f"{len(run.bus_errors)} [BINGO_BUS_ERROR] event(s): {run.bus_errors[:3]}")
     failed_checks = [c for c in run.checks if c[1] == "FAIL"]
     if failed_checks:
         problems.append(f"host check(s) failed: {failed_checks}")

@@ -381,6 +381,9 @@
         },
         { bits: "8", resval: "0", name: "REMOTE_TIMEOUT",
           desc: '''Sticky: a proxy slot gave up waiting for the remote done of an exported task (REMOTE_PROXY_TIMEOUT) and stopped as on a reject (remote_timeout_o).'''
+        },
+        { bits: "11:9", resval: "0", name: "BUS_ERROR",
+          desc: '''Sticky bingo_hw_manager_top bus_error_o (SLVERR or DECERR on an AXI-Lite master of the manager): [0] a task descriptor read (the descriptor is dropped and the fetch stops), [1] a write of the power manager to the clock controller or the CLINT, [2] the DVFS read of the CLINT word.'''
         }
       ]
     },

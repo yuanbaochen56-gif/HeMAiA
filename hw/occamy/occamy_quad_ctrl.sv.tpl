@@ -118,6 +118,7 @@ module ${name}_quad_ctrl
   logic [5:0]                            bingo_remote_link_error;
   logic                                  bingo_remote_done_mismatch;
   logic                                  bingo_remote_timeout;
+  logic [2:0]                            bingo_bus_error;
   cfg_t                                  bingo_park_req, bingo_park_fail;
   // Fault precursors: late threshold, policy, epoch, clear, and at-risk slots
   cfg_t                                  bingo_risk_late, bingo_risk_policy, bingo_risk_epoch;
@@ -279,6 +280,7 @@ module ${name}_quad_ctrl
     .bingo_evlog_dropped_i                    (bingo_evlog_dropped                 ),
     .bingo_hw_manager_boost_policy_o          (bingo_boost_policy                  ),
     .bingo_hw_manager_remote_link_error_i     (bingo_remote_link_error             ),
+    .bingo_hw_manager_bus_error_i             (bingo_bus_error                     ),
     .bingo_hw_manager_core_dead_suspect_i     (bingo_core_dead_suspect             ),
     .bingo_hw_manager_core_fenced_i           (bingo_core_fenced                   ),
     .bingo_hw_manager_replay_blocked_i        (bingo_replay_blocked                ),
@@ -522,7 +524,8 @@ module ${name}_quad_ctrl
     .remote_export_peer_ready_i                (bingo_rd_export_peer_ready           ),
     .remote_proxy_timeout_i                    (bingo_remote_proxy_timeout           ),
     .remote_timeout_o                          (bingo_remote_timeout                 ),
-    .remote_done_mismatch_o                    (bingo_remote_done_mismatch           )
+    .remote_done_mismatch_o                    (bingo_remote_done_mismatch           ),
+    .bus_error_o                               (bingo_bus_error                      )
   );
 
   //////////////////////////////////////////////////////////////////
@@ -641,8 +644,9 @@ module ${name}_quad_ctrl
         $display("[BINGO_RLINK_RX_W] %0t chip=%0d data=0x%016h", $time, chip_id_i, ${quad_ctrl_axi_lite_xbar.out_bingo_remote_link.req_name()}.w.data);
     end
   end
-  // The status that the quad periph BINGO_* registers show, on every change
-  logic [8:0] bingo_status_log_q;
+  // The status that the quad periph BINGO_* registers show, on every change;
+  // bus_error (BINGO_STATUS[11:9]) is listed only when one is set
+  logic [11:0] bingo_status_log_q;
   logic [BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER-1:0][NrClustersPerQuad-1:0] bingo_fenced_log_q, bingo_suspect_log_q;
   always @(posedge ${quad_ctrl_axi_lite_xbar.clk} or negedge ${quad_ctrl_axi_lite_xbar.rst}) begin : bingo_status_log
     if (!${quad_ctrl_axi_lite_xbar.rst}) begin
@@ -650,10 +654,10 @@ module ${name}_quad_ctrl
       bingo_fenced_log_q  <= '0;
       bingo_suspect_log_q <= '0;
     end else begin
-      bingo_status_log_q  <= {bingo_remote_timeout, bingo_remote_link_error, bingo_remote_done_mismatch, bingo_replay_stuck};
+      bingo_status_log_q  <= {bingo_bus_error, bingo_remote_timeout, bingo_remote_link_error, bingo_remote_done_mismatch, bingo_replay_stuck};
       bingo_fenced_log_q  <= bingo_core_fenced;
       bingo_suspect_log_q <= bingo_core_dead_suspect;
-      if (({bingo_remote_timeout, bingo_remote_link_error, bingo_remote_done_mismatch, bingo_replay_stuck} != bingo_status_log_q) ||
+      if (({bingo_bus_error, bingo_remote_timeout, bingo_remote_link_error, bingo_remote_done_mismatch, bingo_replay_stuck} != bingo_status_log_q) ||
           (bingo_core_fenced != bingo_fenced_log_q) || (bingo_core_dead_suspect != bingo_suspect_log_q)) begin
         // fenced / dead_suspect in the order of the status registers: bit
         // core + cluster * BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER
@@ -664,9 +668,10 @@ module ${name}_quad_ctrl
             suspect_reg[core + cluster*BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER] = bingo_core_dead_suspect[core][cluster];
           end
         end
-        $display("[BINGO_STATUS] %0t chip=%0d replay_stuck=%0b remote_done_mismatch=%0b link_error=%0d fenced=0x%0h dead_suspect=0x%0h remote_timeout=%0b",
+        $display("[BINGO_STATUS] %0t chip=%0d replay_stuck=%0b remote_done_mismatch=%0b link_error=%0d fenced=0x%0h dead_suspect=0x%0h remote_timeout=%0b%s",
                  $time, chip_id_i, bingo_replay_stuck, bingo_remote_done_mismatch, bingo_remote_link_error,
-                 fenced_reg, suspect_reg, bingo_remote_timeout);
+                 fenced_reg, suspect_reg, bingo_remote_timeout,
+                 (bingo_bus_error != '0) ? $sformatf(" bus_error=0x%0h", bingo_bus_error) : "");
       end
     end
   end

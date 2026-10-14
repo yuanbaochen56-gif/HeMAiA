@@ -25,6 +25,8 @@ STUCK_TIME_RE = re.compile(r"\[BINGO_REPLAY_STUCK\] (\d+) ")
 PARK_RE = re.compile(r"\[BINGO_PARK\] \d+ chip=(\d+) core=(\d+) cluster=(\d+) (HOLD|FAIL|dropped, fenced|PARKED -> core=(\d+) cluster=(\d+)|UNPARKED|UNPARK \(\d+ tasks left elsewhere\))")
 ASSERT_RE = re.compile(r"\[BINGO_ASSERT\].*")
 CSR_RE = re.compile(r"\[BINGO_CSR\].*")
+# A bus error of a manager master (descriptor fetch, PM): bingo_hw_manager_top bus_error_o
+BUS_ERROR_RE = re.compile(r"\[BINGO_BUS_ERROR\].*")
 STATUS_RE = re.compile(r"\[BINGO_STATUS\] \d+ chip=\d+ (.*)")
 STATUS_FENCED_RE = re.compile(r"\[BINGO_STATUS\] \d+ chip=\d+ .*fenced=0x([0-9a-fA-F]+)")
 # Level 3 (bingo_hw_manager_top / occamy_quad_ctrl remote link logs)

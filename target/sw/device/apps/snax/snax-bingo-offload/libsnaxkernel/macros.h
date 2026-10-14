@@ -92,7 +92,7 @@ inline uint64_t make_u64(uint32_t hi, uint32_t lo) {
 // Conditionality is enforced in two cooperating tiers:
 //
 //  Tier 1 — HW gating (CERF), implemented in bingo_hw_manager:
-//    src/bingo_hw_manager_cond_exec_controller.sv defines a per-chiplet
+//    src/frontend/bingo_hw_manager_cond_exec_controller.sv defines a per-chiplet
 //    Conditional Execution Register File (CERF) — a small bitmask
 //    (16 groups by default) consulted combinationally by the scheduler
 //    on every conditional task. The user marks DFG edges as `cond=True`

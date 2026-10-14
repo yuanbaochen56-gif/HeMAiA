@@ -148,6 +148,8 @@ class ReplaySafetyTests(unittest.TestCase):
         ]:
             n = task(core=core, kernel=kernel)
             n.node_type = kind
+            if kind == "dummy":
+                n.dep_check_enable = True   # a dummy either checks or sets
             with self.subTest(kind=kind, core=core, kernel=kernel):
                 for override in (None, False):
                     n.non_idempotent = override

@@ -1763,7 +1763,32 @@ class BingoDFG(DmrSupport, DiGraphWrapper[BingoNode]):
         
         cluster_id_width = get_idx_width(num_clusters)
         core_id_width = get_idx_width(num_cores)
-        
+
+        # Every value must fit its field: a larger one spills into the next field
+        # of the descriptor, and the hardware does not check them. A dummy either
+        # checks or sets: the hardware drops one that does both after its check
+        # (its set is lost) and runs one that does neither on a core.
+        def check(what, value, limit):
+            if not 0 <= value < limit:
+                raise ValueError(f"Node {node.node_id}: {what} {value} out of range 0 .. {limit - 1}")
+        check("task id", node.node_id, 1 << task_id_width)
+        check("chiplet id", node.assigned_chiplet_id, 1 << chip_id_width)
+        check("cluster id", node.assigned_cluster_id, num_clusters)
+        check("core id", node.assigned_core_id, num_cores)
+        check("dep set chiplet id", node.dep_set_chiplet_id, 1 << chip_id_width)
+        check("dep set cluster id", node.dep_set_cluster_id,
+              num_clusters if node.dep_set_enable else 1 << cluster_id_width)
+        for core_id in node.dep_check_list:
+            check("dep check core", core_id, num_cores)
+        for core_id in node.dep_set_list:
+            check("dep set core", core_id, num_cores)
+        check("dep check tag", node.dep_check_tag or 0, 1 << self.dep_tag_width)
+        check("dep set tag", node.dep_set_tag or 0, 1 << self.dep_tag_width)
+        check("CERF group", node.cond_exec_group_id, 32)
+        if node.node_type == "dummy" and bool(node.dep_check_enable) == bool(node.dep_set_enable):
+            raise ValueError(f"Node {node.node_id}: a dummy must either check or set its dependencies "
+                             f"(check {node.dep_check_enable}, set {node.dep_set_enable})")
+
         # Initialize the packed value
         packed_val = 0
         current_shift = 0

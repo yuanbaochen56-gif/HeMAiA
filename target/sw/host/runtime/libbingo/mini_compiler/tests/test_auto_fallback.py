@@ -383,6 +383,7 @@ class GroupFallbackTests(unittest.TestCase):
         host = node(graph, "host_member", 0, 2, 7)
         dummy_node = BingoNode(0, 0, 1)
         dummy_node.node_type = "dummy"
+        dummy_node.dep_check_enable = True   # a dummy either checks or sets
         dummy_node.cond_exec_en, dummy_node.cond_exec_group_id = True, 7
         graph.bingo_add_node(dummy_node)
         output = self.compile(graph)

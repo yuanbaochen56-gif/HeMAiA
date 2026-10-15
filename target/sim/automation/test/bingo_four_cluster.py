@@ -111,12 +111,15 @@ def moe4_tasks(expert: int) -> List[int]:
 
 
 def evaluate_moe4_cerf(sc: dict, log_text: str, uart_text: str) -> List[str]:
-    """moe4: without a fault the router's experts 1 and 3 run and the others are
-    skipped; with expert 1's GEMM core stuck, one CERF fallback of type 1 moves
-    expert 1's group to expert 0's, whose branch then runs (after the switch),
-    and the host checks experts 0 and 3."""
+    """moe4: the router's experts 1 and 3 run and the others are skipped; with
+    expert 1's GEMM core stuck (the victim is a GEMM core, core 0), one CERF
+    fallback of type 1 moves expert 1's group to expert 0's, whose branch then
+    runs (after the switch), and the host checks experts 0 and 3. A DM fault
+    (core 1) does not touch the CERF: its tasks move to a substitute DM core
+    (takeover checks), the experts stay 1 and 3. The GEMMs never leave their
+    cluster (the GEMM type is bound to it)."""
     problems: List[str] = []
-    fault = sc["fault_stall_cycles"] is not None
+    fault = sc["fault_stall_cycles"] is not None and tuple(sc.get("victim", (0, 1, 0)))[1] == 0
     fb = [tuple(map(int, m.groups())) for m in CERF_FB_RE.finditer(log_text)]
     if len(fb) != int(fault) or any(e[1] != 1 for e in fb):
         problems.append(f"CERF fallback events {fb}, expected {'one of type 1' if fault else 'none'}")
@@ -134,9 +137,9 @@ def evaluate_moe4_cerf(sc: dict, log_text: str, uart_text: str) -> List[str]:
         problems.append(f"experts run {sorted(ran)} / started {sorted(started)}, expected "
                         f"{sorted(want_ran)} / {sorted(want_started)}")
     for e in started:
-        for t in moe4_tasks(e):
-            if any(cl != e for _, _, cl in dispatch.get(t, [])):
-                problems.append(f"expert {e} task {t} ran outside cluster {e}: {dispatch[t]}")
+        gemm = moe4_tasks(e)[2]
+        if any(cl != e for _, _, cl in dispatch.get(gemm, [])):
+            problems.append(f"expert {e} GEMM task {gemm} ran outside cluster {e}: {dispatch[gemm]}")
     if fault and len(fb) == 1:
         switched = fb[0][0]
         if any(time <= switched for t in moe4_tasks(MOE4_BACKUP) for time, _, _ in dispatch.get(t, [])):

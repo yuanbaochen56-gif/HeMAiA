@@ -1794,7 +1794,7 @@ def error_problems(sc: dict, run: RunLog) -> List[str]:
         problems.append(f"{len(run.other_asserts)} RTL assertion failure(s): {run.other_asserts[:3]}")
     # (s13: stuck through the remote reject, not a local [BINGO_REPLAY_STUCK])
     expect_stuck = (sc.get("expect_fence", False) and sc.get("substitute") is None
-                    and not sc.get("remote_reject", False))
+                    and not sc.get("remote_reject", False) and not sc.get("takeover_victims"))
     # (s28: the substitute dies too and has no live core of its type left)
     expect_stuck = sc.get("expect_replay_stuck", expect_stuck)
     if expect_stuck != bool(run.stuck):

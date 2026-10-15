@@ -115,12 +115,23 @@ class FourClusterTests(unittest.TestCase):
 
     def test_moe4_gemm_fallback(self):
         uart = "[Host] Check [expert_0_D]: PASS\n[Host] Check [expert_3_D]: PASS\n[Host] Check [softmax]: PASS\n"
-        sc = dict(fault_stall_cycles=0)
+        sc = dict(fault_stall_cycles=0, victim=(0, 0, 1))
         log = self.moe4_log([0, 3]) + "".join(
             f"# [BINGO_DISPATCH] {1000 + t} chip=0 task={t} core=1 cluster=1\n" for t in (5, 6))
         self.assertEqual(fc.evaluate_moe4_cerf(sc, log + "# [BINGO_CERF_FB] 900 type 1 clear g1 set g0\n", uart), [])
         self.assertTrue(fc.evaluate_moe4_cerf(sc, log, uart))   # no fallback event
         self.assertTrue(fc.evaluate_moe4_cerf(sc, log + "# [BINGO_CERF_FB] 2000 type 1 clear g1 set g0\n", uart))
+
+    def test_moe4_dm_fault_keeps_the_experts(self):
+        uart = "[Host] Check [expert_1_D]: PASS\n[Host] Check [expert_3_D]: PASS\n[Host] Check [softmax]: PASS\n"
+        sc = dict(fault_stall_cycles=0, victim=(0, 1, 1))
+        # expert 1's copies moved to the cluster-0 DM core; its GEMM stays in cluster 1
+        log = self.moe4_log([3]) + "".join(
+            f"# [BINGO_DISPATCH] {1000 + t} chip=0 task={t} core={0 if t == 7 else 1} cluster={1 if t == 7 else 0}\n"
+            for t in fc.moe4_tasks(1))
+        self.assertEqual(fc.evaluate_moe4_cerf(sc, log, uart), [])
+        moved_gemm = log.replace("task=7 core=0 cluster=1", "task=7 core=0 cluster=0")
+        self.assertTrue(fc.evaluate_moe4_cerf(sc, moved_gemm, uart))
 
 
 if __name__ == "__main__":

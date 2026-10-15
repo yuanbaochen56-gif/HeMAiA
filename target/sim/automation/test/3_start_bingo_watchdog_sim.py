@@ -158,7 +158,7 @@ from bingo_log import (  # noqa: E402
     EXIT_ABSORB_RE, EXPORT_RE, FENCE_DROP_RE, HOST_STATUS_RE, IMPORT_RE, LATE_RE, PARK_RE,
     PM_DOMAIN1_RE, PM_RE, RDONE_IN_RE, RDONE_OUT_RE, REJECT_IN_RE, REJECT_OUT_RE, REMAP_FIELDS_RE,
     REMAP_RE, REPLAY_FIELDS_RE, REPLAY_RE, RETIRED_RE, RISK_RE, RLINK_RE, STATUS_FENCED_RE,
-    STATUS_RE, STUCK_RE, STUCK_TIME_RE, TYPE_CONFIRM_RE, WD_RE,
+    STATUS_RE, STUCK_RE, STUCK_TIME_RE, TYPE_CONFIRM_RE, WD_RE, pm_domain_re,
 )
 # (also read through the driver by its tests and the evidence tools)
 from bingo_scenarios import (  # noqa: E402
@@ -328,6 +328,11 @@ def t1_image_flags(sc: dict) -> str:
     if not isinstance(value, str):
         raise ValueError("T1 image_flags must be a flag string")
     flags = shlex.split(value)
+    # A second, compile-time fault (four-cluster runs): -DBINGO_WD_FAULT2_<GID|CLUSTER|CORE>=<n>
+    fault2 = [f for f in flags if re.fullmatch(r"-DBINGO_WD_FAULT2_(GID|CLUSTER|CORE)=\d+", f)]
+    if fault2 and len({f.split("=")[0] for f in fault2}) != 3:
+        raise ValueError("BINGO_WD_FAULT2 needs GID, CLUSTER and CORE")
+    flags = [f for f in flags if f not in fault2]
     if set(flags) - {"-DBINGO_WD_NO_HEARTBEAT", "-DBINGO_WD_NOP_HEARTBEAT", "-DBINGO_C6_SW_CERF", "-DBINGO_WD_ADAPT", "-DBINGO_WD_LATE", "-DBINGO_SDC", "-DBINGO_SDC_QUIET", "-DBINGO_SDC_RECOVER", "-DBINGO_FENCE_FB"}:
         raise ValueError("unsupported T1 image_flags")
     if "-DBINGO_SDC_QUIET" in flags and "-DBINGO_SDC" not in flags:
@@ -344,7 +349,7 @@ def t1_image_flags(sc: dict) -> str:
         raise ValueError("BINGO_FENCE_FB is not combined with BINGO_SDC or BINGO_WD_LATE")
     if ("-DBINGO_WD_LATE" in flags or "-DBINGO_SDC" in flags or "-DBINGO_FENCE_FB" in flags) and "-DBINGO_WD_ADAPT" not in flags:
         flags.append("-DBINGO_WD_ADAPT")
-    return " ".join(flags)
+    return " ".join(flags + fault2)
 
 
 def test_cfg_bytes(cfg: dict) -> bytes:
@@ -744,12 +749,13 @@ def evaluate_risk_controls(sc: dict, log_text: str, uart_text: str) -> List[str]
             problems.append(f"expected HOLD then FAIL without PARKED, got {park}")
         fail = [int(t) for t in re.findall(
             rf"\[BINGO_PARK\] (\d+) chip={chip} core={core} cluster={cluster} FAIL", log_text)]
-        pm = [(int(t), int(level)) for t, level in PM_DOMAIN1_RE.findall(log_text)]
+        # the victim's cluster domain (libbingo: 1 + cluster)
+        pm = [(int(t), int(level)) for t, level in pm_domain_re(1 + cluster).findall(log_text)]
         level = sc["expect_derate_level"]
         derated = [t for t, lvl in pm if lvl == level]
         if len(fail) != 1 or not derated or derated[0] <= fail[0] or \
                 any(t > derated[0] and lvl < level for t, lvl in pm):
-            problems.append(f"expected domain 1 to derate after FAIL and stay capped: {pm}")
+            problems.append(f"expected domain {1 + cluster} to derate after FAIL and stay capped: {pm}")
         host = re.search(r"\[Host\] Bingo status: .* park_fail=0x([0-9a-fA-F]+)", uart_text)
         mask = 1 << (core + HEMAIA_CI_SLOTS * cluster)
         if not host or int(host.group(1), 16) != mask:
@@ -1663,6 +1669,9 @@ def feature_problems(name: str, sc: dict, log_text: str, uart_text: str) -> List
         problems += evaluate_dma_cerf(sc, log_text, uart_text)
     elif sc.get("host_fallback"):
         problems += evaluate_host_fallback(sc, log_text, uart_text)
+    elif sc.get("moe4_cerf"):
+        from bingo_four_cluster import evaluate_moe4_cerf
+        problems += evaluate_moe4_cerf(sc, log_text, uart_text)
     elif "[BINGO_CERF_FB]" in log_text:
         problems.append("unexpected CERF fallback in a continuity scenario")
     if sc.get("c6") and sc["expect_eoc"]:
@@ -1732,6 +1741,11 @@ def takeover_problems(sc: dict, log_text: str, uart_text: str, run: RunLog) -> L
         pass
     elif sc.get("park", False):
         problems += evaluate_park(sc, log_text, uart_text)
+    elif sc.get("takeover_victims"):
+        # Several victims one after the other (four clusters): every move follows
+        # the substitute rule of the hardware (bingo_four_cluster)
+        from bingo_four_cluster import takeover_chain_problems
+        problems += takeover_chain_problems(sc, log_text, sc.get("dispatch_graph_csv"))
     elif substitute is None:
         # No core may take over the victim's tasks: nothing moves
         if run.remaps:
@@ -1830,6 +1844,8 @@ def dispatch_problems(sc: dict, log_text: str, checker_passed: bool) -> List[str
     """Every dispatch has its done; only the injected permanently hung task stays
     pending on its fenced slot (and, with fault_any_core, on each slot that ends fenced)."""
     pending = [(*sc["victim"], sc["fault_gid"])] if sc.get("expect_fence") else []
+    # (four clusters: a second victim's hung task, [[chip, core, cluster], task])
+    pending += [(*slot, task) for slot, task in sc.get("expect_pending_extra", [])]
     if sc.get("fault_any_core"):
         for slot, seq in sc.get("expect_wd_other", {}).items():
             if seq and tuple(seq[-1]) == (1, 1):      # declared to end fenced
@@ -2162,12 +2178,13 @@ def boost_problems(name: str, sc: dict, log_text: str, uart_text: str) -> List[s
     """P3b / P6b: which cluster domains reach the boost level, and not before the fence."""
     problems: List[str] = []
     if sc.get("expect_boost_level"):
-        # The victim's cluster domain (1) reaches the boost level after the fence
+        # The victim's cluster domain (libbingo: 1 + cluster) reaches the boost level after the fence
+        domain = 1 + sc.get("victim", VICTIM)[2]
         fence_t = [int(m.group(1)) for m in WD_RE.finditer(log_text) if m.group(6) == "1"]
-        boosts = [int(t) for t, lvl in PM_DOMAIN1_RE.findall(log_text)
+        boosts = [int(t) for t, lvl in pm_domain_re(domain).findall(log_text)
                   if int(lvl) == sc["expect_boost_level"]]
         if not fence_t or not any(t >= fence_t[0] for t in boosts):
-            problems.append(f"no [BINGO_PM] domain=1 level={sc['expect_boost_level']} after the fence")
+            problems.append(f"no [BINGO_PM] domain={domain} level={sc['expect_boost_level']} after the fence")
     if "expect_boost_domains" in sc:
         # Exactly these domains reach the boost level, and only after the fence
         fence_t = [int(m.group(1)) for m in WD_RE.finditer(log_text) if m.group(6) == "1"]
@@ -2190,6 +2207,9 @@ def judge_scene(name: str, sc: dict, test_cfg: Optional[dict], runner: HeMAiASim
     """evaluate() plus the checks that need more than the two logs: paired
     reference runs, the runner's own findings and the T1 configuration."""
     problems = evaluate(name, sc, log_text, uart_text)
+    if sc.get("four_cluster"):
+        from bingo_four_cluster import fault_slot_problems
+        problems += fault_slot_problems(sc, sc.get("dispatch_graph_csv"))
     # (a B2 run has two offloads: evaluate_b2 applied the per-run checks to each)
     single = not sc.get("b2_offloads")
     if single and (sc.get("c2") or sc.get("c4_control")):

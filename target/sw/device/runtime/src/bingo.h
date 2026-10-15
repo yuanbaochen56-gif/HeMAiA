@@ -423,6 +423,18 @@ inline int32_t bingo_hw_offload_manager(){
                 bingo_wd_fault_stall(fault_pre_stall_cycles);
             }
         }
+#ifdef BINGO_WD_FAULT2_GID
+        // Test-only second fault, fixed at compile time (the test configuration
+        // holds one): global task BINGO_WD_FAULT2_GID hangs when it runs on core
+        // BINGO_WD_FAULT2_CORE of cluster BINGO_WD_FAULT2_CLUSTER, e.g. on the
+        // substitute that took over the first victim's tasks. Elsewhere the task
+        // runs normally, so the same image serves the one-fault and the healthy runs.
+        if (snrt_cluster_idx() == (uint32_t)BINGO_WD_FAULT2_CLUSTER &&
+            snrt_cluster_core_idx() == (uint32_t)BINGO_WD_FAULT2_CORE &&
+            cur_global_task_id == (uint32_t)BINGO_WD_FAULT2_GID) {
+            bingo_wd_fault_stall(0);
+        }
+#endif
 #else
 #ifdef BINGO_WD_FAULT_GID
         if (((BINGO_WD_FAULT_CLUSTER < 0) || (snrt_cluster_idx() == (uint32_t)BINGO_WD_FAULT_CLUSTER)) &&

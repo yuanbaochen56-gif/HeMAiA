@@ -30,6 +30,23 @@ SNAX_LIB_DEFINE void __snax_kernel_dummy(void *arg)
     BINGO_TRACE_MARKER(BINGO_TRACE_DUMMY_KERNEL_END);
 }
 
+#ifdef BINGO_SW_CORE_CALL
+// Run a core-level kernel (offload_hw_kernels) from the software runtime.
+// The software runtime calls a kernel on every core of the cluster and does
+// not read its return value; a core-level kernel must run on one core only.
+// Arg0: core_idx, the cluster-local core that calls fn
+// Arg1: fn, the core-level kernel
+// Arg2: inner_args, its arguments
+SNAX_LIB_DEFINE void __snax_kernel_core_call(void *arg)
+{
+    __snax_kernel_core_call_args_t *args = (__snax_kernel_core_call_args_t *)arg;
+    if (snrt_cluster_core_idx() == args->core_idx)
+    {
+        ((uint32_t(*)(void *))(uintptr_t)args->fn)((void *)(uintptr_t)args->inner_args);
+    }
+}
+#endif
+
 SNAX_LIB_DEFINE void __snax_kernel_csr(void *arg)
 {
     // Arg0: csr_addr

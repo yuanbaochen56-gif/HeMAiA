@@ -94,6 +94,16 @@ __SNAX_KERNEL_ARGS_DEFINE __snax_kernel_csr_args {
   uint32_t csr_value;            
 } __snax_kernel_csr_args_t;
 
+#ifdef BINGO_SW_CORE_CALL
+// Core call kernel args: the core of the cluster that calls fn(inner_args)
+// (a core-level kernel); the other cores return at once.
+__SNAX_KERNEL_ARGS_DEFINE __snax_kernel_core_call_args {
+  uint32_t core_idx;      // cluster-local core index
+  uint32_t fn;            // device address of the core-level kernel
+  uint32_t inner_args;    // its arguments (with the BINGO_KERNEL_ARGS_TRAILER)
+} __snax_kernel_core_call_args_t;
+#endif
+
 // Check Results kernel args
 __SNAX_KERNEL_ARGS_DEFINE __snax_kernel_check_results_args {
   uint32_t golden_data_addr;            

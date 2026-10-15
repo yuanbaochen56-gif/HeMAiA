@@ -3,6 +3,13 @@
 
 The user only specifies cond_dic on edges. The compiler auto-inserts the
 gating node, assigns CERF groups, and populates all kernel args.
+
+As moe2_2cluster: the A input is padded with zeros (the A reader of array shape
+1 reads past a 16 B tile), C is not read, the compiler gets the platform's core
+types, and expert 1's GEMM (selected by the router) has a CERF fallback to
+expert 0 (not selected): when the GEMM core of cluster 1 is stuck, expert 0's
+branch runs instead. The host checks every expert that ran ("Check [..]") and
+returns 1 on any mismatch.
 """
 
 # BEGIN WORKLOAD DESCRIPTION AND TASK GRAPH
@@ -21,6 +28,9 @@ gating node, assigns CERF groups, and populates all kernel args.
 #   router --top_k(2)--> e_gemm
 #   router --top_k(2)--> e_stD
 #   e_ldA + e_ldB -> e_gemm -> e_stD
+#
+# CERF fallback: e1_gemm -> e0_gemm (the compiler orders expert 0's branch
+# after expert 1's).
 # END WORKLOAD DESCRIPTION AND TASK GRAPH
 
 import os
@@ -28,6 +38,7 @@ import sys
 import argparse
 import pathlib
 import hjson
+import numpy as np
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 WORKLOADS_DIR = os.path.dirname(current_dir)
@@ -40,7 +51,7 @@ sys.path.append(current_dir)
 
 from moe_datagen import generate_moe_data, emit_header_file
 from bingo_dfg import BingoDFG
-from bingo_platform import guard_cluster_count, parse_platform_cfg  # noqa E402
+from bingo_platform import guard_cluster_count, parse_bingo_core_type_ids, parse_platform_cfg  # noqa E402
 from bingo_node import BingoNode
 from bingo_mem_handle import BingoMemAlloc, BingoMemSymbol
 from bingo_kernel_args import (
@@ -54,6 +65,8 @@ GEMM_CORE = 0
 DMA_CORE = 1
 HOST_CORE = 2
 NUM_CLUSTERS = 4
+# The router selects experts 1 and 3 (moe_datagen logits); expert 1 falls back to 0
+FALLBACK_PRIMARY, FALLBACK_BACKUP = 1, 0
 
 
 def get_args():
@@ -107,15 +120,23 @@ def main():
 
     print(f"MoE4: {num_experts} experts, top-{top_k}")
 
+    # The A reader fetches at least 8 banks (64 B) per K step, but an A tile of
+    # this shape is 16 B: the last step reads up to 64 B past it. Pad A with
+    # zeros (moe2_2cluster); the golden is computed before the padding.
+    A_alloc = -(-(A_size + 64) // 64) * 64
+
     # Data header
     params = {**hw, 'A_size': A_size, 'B_size': B_size, 'D_size': D_size}
     if args.data_h:
         data = generate_moe_data(params)
+        data["input_A"] = np.concatenate([data["input_A"].flatten(),
+                                          np.zeros(A_alloc - A_size, dtype=np.int8)])
         emit_header_file(str(args.data_h), params, data)
 
     # DFG
     dfg = BingoDFG(num_chiplets=1, num_clusters_per_chiplet=NUM_CLUSTERS,
-                   num_cores_per_cluster=2, is_host_as_acc=True, chiplet_ids=[CHIPLET_ID])
+                   num_cores_per_cluster=2, is_host_as_acc=True, chiplet_ids=[CHIPLET_ID],
+                   core_type_ids=parse_bingo_core_type_ids(args.platformcfg))
 
     logits = BingoMemAlloc("logits", num_experts * 4, "L3")
     router = BingoNode(CHIPLET_ID, 0, HOST_CORE, node_name="router",
@@ -125,9 +146,10 @@ def main():
                            output_addr=logits, num_rows=1, row_length=num_experts))
     dfg.bingo_add_node(router)
 
+    gemms = []
     for i in range(num_experts):
         cl = i % NUM_CLUSTERS
-        l1_A = BingoMemAlloc(f"l1_A_{i}", A_size, "L1", chip_id=0, cluster_id=cl)
+        l1_A = BingoMemAlloc(f"l1_A_{i}", A_alloc, "L1", chip_id=0, cluster_id=cl)
         l1_B = BingoMemAlloc(f"l1_B_{i}", B_size, "L1", chip_id=0, cluster_id=cl)
         l1_D = BingoMemAlloc(f"l1_D_{i}", D_size, "L1", chip_id=0, cluster_id=cl)
         D_L3 = BingoMemAlloc(f"D_L3_{i}", D_size, "L3")
@@ -135,7 +157,7 @@ def main():
         ldA = BingoNode(CHIPLET_ID, cl, DMA_CORE, node_name=f"e{i}_ldA",
                         kernel_name="__snax_bingo_kernel_idma_1d_copy",
                         kernel_args=SnaxBingoKernelIdma1dCopyArgs(
-                            src_addr=BingoMemSymbol("input_A", offset=0), dst_addr=l1_A, size=A_size))
+                            src_addr=BingoMemSymbol("input_A", offset=0), dst_addr=l1_A, size=A_alloc))
         ldB = BingoNode(CHIPLET_ID, cl, DMA_CORE, node_name=f"e{i}_ldB",
                         kernel_name="__snax_bingo_kernel_idma_1d_copy",
                         kernel_args=SnaxBingoKernelIdma1dCopyArgs(
@@ -143,7 +165,7 @@ def main():
         gemm = BingoNode(CHIPLET_ID, cl, GEMM_CORE, node_name=f"e{i}_gemm",
                          kernel_name="__snax_bingo_kernel_gemm_full",
                          kernel_args=SnaxBingoKernelGemmFullArgs(
-                             input_A_addr=l1_A, input_B_addr=l1_B, input_C_addr=l1_D, output_D_addr=l1_D,
+                             input_A_addr=l1_A, input_B_addr=l1_B, input_C_addr=0, output_D_addr=l1_D,
                              M=hw['M'], K=hw['K'], N=hw['N'], array_shape_idx=hw['arrayShapeIdx'],
                              transpose_A=hw['transposeA'], transpose_B=hw['transposeB'],
                              accumPrevC=hw['accumPrevC']))
@@ -152,6 +174,7 @@ def main():
                         kernel_args=SnaxBingoKernelIdma1dCopyArgs(src_addr=l1_D, dst_addr=D_L3, size=D_size))
         for n in [ldA, ldB, gemm, stD]:
             dfg.bingo_add_node(n)
+        gemms.append(gemm)
 
         dfg.bingo_add_edge(router, ldA, cond_dic={'mode': 'top_k', 'k': top_k})
         dfg.bingo_add_edge(router, ldB, cond_dic={'mode': 'top_k', 'k': top_k})
@@ -160,6 +183,8 @@ def main():
         dfg.bingo_add_edge(ldA, gemm)
         dfg.bingo_add_edge(ldB, gemm)
         dfg.bingo_add_edge(gemm, stD)
+
+    dfg.bingo_add_cerf_fallback(gemms[FALLBACK_PRIMARY], gemms[FALLBACK_BACKUP])
 
     # Post-execution check: runs after scheduler completes, reads cond_activation
     # to determine which experts were selected, then verifies their D_L3 buffers.
@@ -187,11 +212,21 @@ def main():
         f"    for (int __i = 0; __i < {num_experts}; __i++)",
         f'        if (__cond_act[__i]) printf_safe(" %d", __i);',
         f'    printf_safe("\\r\\n");',
+        f"    // The experts that ran: the router's two, expert {FALLBACK_BACKUP} in place of",
+        f"    // expert {FALLBACK_PRIMARY} after a CERF fallback of the GEMM type",
+        "    uint32_t __evt = bingo_cerf_fb_evt();",
+        "    uint32_t __fb = (__evt & (1u << BINGO_CORE_TYPE_ID(0, 0))) ? 1 : 0;",
+        f"    uint32_t __ran[{num_experts}];",
+        f"    for (int __i = 0; __i < {num_experts}; __i++) __ran[__i] = __cond_act[__i] ? 1 : 0;",
+        f"    if (__fb) {{ __ran[{FALLBACK_PRIMARY}] = 0; __ran[{FALLBACK_BACKUP}] = 1; }}",
+        f'    printf_safe("[MoE4] GEMM fallback %d\\r\\n", __fb);',
+        f"    uint32_t __total = __sm_err;",
+        f"    if (!__cond_act[1] || !__cond_act[3] || __cond_act[0] || __cond_act[2]) __total++;",
         f"    // Check expert D buffers",
         f"    uint8_t* __golden[] = {{{golden_arr}}};",
         f"    uint8_t* __output[] = {{{output_arr}}};",
         f"    for (int __i = 0; __i < {num_experts}; __i++) {{",
-        f"        if (!__cond_act[__i]) {{",
+        f"        if (!__ran[__i]) {{",
         f'            printf_safe("[expert_%d_D] SKIPPED\\r\\n", __i);',
         f"            continue;",
         f"        }}",
@@ -199,9 +234,11 @@ def main():
         f"        for (uint32_t __j = 0; __j < {D_size}; __j++) {{",
         f"            if (__golden[__i][__j] != __output[__i][__j]) __err++;",
         f"        }}",
-        f'        if (__err) printf_safe("[expert_%d_D] FAIL: %d mismatches\\r\\n", __i, __err);',
-        f'        else printf_safe("[expert_%d_D] PASS\\r\\n", __i);',
+        f'        printf_safe("[Host] Check [expert_%d_D]: %s (%d mismatches)\\r\\n", __i, __err ? "FAIL" : "PASS", __err);',
+        f"        __total += __err;",
         f"    }}",
+        f'    printf_safe("[Host] Check [softmax]: %s\\r\\n", __sm_err ? "FAIL" : "PASS");',
+        "    if (__total) return 1;",
         "}",
     ]
 

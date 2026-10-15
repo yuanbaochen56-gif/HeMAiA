@@ -22,7 +22,9 @@ BENDER     = bender
 SNITCH_ROOT = $(shell $(BENDER) path snitch_cluster)
 PLATFORM_H = $(MK_DIR)/../../../../../../../../target/sw/shared/platform/generated/occamy.h
 
-MODE ?= debug
+# Run mode (only the final output is checked): the per-stage checks of debug
+# mode need more dependency tags than one cell of the manager has (24 > 16).
+MODE ?= run
 
 $(DATA_H) $(OFFLOAD_H): $(MK_DIR)/main_bingo.py $(DATA_CFG) $(PLATFORM_H)
 	python3 $(MK_DIR)/main_bingo.py \

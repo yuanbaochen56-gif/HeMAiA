@@ -319,7 +319,8 @@ def emit_quantize_pattern(dfg: BingoDFG, mem: dict, hw: HwParams, *,
 def emit_ksplit_gemm_pattern(dfg: BingoDFG, mem: dict, hw: HwParams,
                              spec: KSplitGemmSpec, *,
                              debug: bool = True,
-                             input_dep=None):
+                             input_dep=None,
+                             final_check: bool = False):
     """Emit a full K-split GEMM stage. The produced DFG sub-graph is:
 
         For each cluster cid in spec.chunks_per_cluster:
@@ -568,7 +569,7 @@ def emit_ksplit_gemm_pattern(dfg: BingoDFG, mem: dict, hw: HwParams,
     dfg.bingo_add_node(reshape)
     dfg.bingo_add_edge(dequant, reshape)
 
-    if not debug:
+    if not debug and not final_check:
         return reshape
 
     check_fp32 = BingoNode(
@@ -818,8 +819,9 @@ def main():
                                        input_dep=[tail_sm, tail_proj_v])
 
     # Output projection
+    # In run mode only the output projection is checked (Check_proj_o_fp32)
     tail_o = emit_ksplit_gemm_pattern(dfg, mem, hw, specs['proj_o'],
-                                      debug=debug, input_dep=tail_av)
+                                      debug=debug, input_dep=tail_av, final_check=True)
 
     # Summary
     n_nodes = len(dfg._graph.nodes) if hasattr(dfg, "_graph") else "?"

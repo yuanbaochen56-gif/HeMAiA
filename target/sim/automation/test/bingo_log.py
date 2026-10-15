@@ -48,6 +48,11 @@ TYPE_CONFIRM_RE = re.compile(
 PM_RE = re.compile(r"\[BINGO_PM\] (\d+) domain=(\d+) level=(\d+)")
 # (cluster domain 1: the victim's cluster in the hemaia_ci scenes)
 PM_DOMAIN1_RE = re.compile(r"\[BINGO_PM\] (\d+) domain=1 level=(\d+)")
+
+
+def pm_domain_re(domain: int) -> "re.Pattern":
+    """[BINGO_PM] lines of one power domain (libbingo: cluster c is domain 1 + c)."""
+    return re.compile(rf"\[BINGO_PM\] (\d+) domain={domain} level=(\d+)")
 RECOVERY_HOLD_RE = re.compile(r"\[BINGO_RECOVERY_HOLD\] (\d+) core=(\d+) cluster=(\d+) active=([01])")
 EVLOG_BEGIN_RE = re.compile(r"\[EVLOG_BEGIN\] (\d+)")
 EOC_RE = re.compile(r"All chips finished successfully at (\d+)")

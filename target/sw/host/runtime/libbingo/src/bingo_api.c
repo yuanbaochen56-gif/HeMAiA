@@ -802,7 +802,7 @@ void bingo_hw_scheduler_init_pm(){
         }
     }
     // 6. quad_ctrl_enable_idle_pm_addr: set to 1 to enable idle power management
-    writew(1,                             (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_enable_idle_pm_addr()));
+    writew(BINGO_PM_IDLE_ENABLE,          (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_enable_idle_pm_addr()));
     asm volatile("fence" ::: "memory");
 }
 

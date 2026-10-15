@@ -497,6 +497,12 @@ void bingo_close_all_clusters(bingo_task_t **task_list, uint32_t num_tasks);
 #ifndef BINGO_BOOST_POLICY
 #define BINGO_BOOST_POLICY          0
 #endif
+// Idle power management: 1 = the manager drops idle cluster domains to the idle
+// level (the default); 0 = the domains stay at their boot level (an evaluation
+// control that separates the scheduling from the clock changes)
+#ifndef BINGO_PM_IDLE_ENABLE
+#define BINGO_PM_IDLE_ENABLE        1
+#endif
 // Idle entry delay: quad_ctrl cycles a core must be idle before its power
 // domain may drop to the idle level; 0 = at once
 #ifndef BINGO_PM_IDLE_ENTRY_DELAY

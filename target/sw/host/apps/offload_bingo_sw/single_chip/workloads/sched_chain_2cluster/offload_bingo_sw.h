@@ -74,11 +74,21 @@ uint32_t __workload_sched_chain(bingo_task_t **task_list) {
     bingo_task_t *prev = NULL;
     for (uint32_t i = 0; i < BINGO_SCHED_N; i++) {
         bingo_task_t *t = sched_copy(fn, sched_cluster(i), i, sched_slot(i));
-        if (!BINGO_SCHED_PAR && prev) bingo_task_add_depend(t, prev);
+        if (!BINGO_SCHED_PAR && prev && t) bingo_task_add_depend(t, prev);
         prev = t;
         task_list[n++] = t;
     }
     if (!BINGO_SCHED_PAR) task_list[n++] = sched_copy(fn, 1, 0, 0);
+    // The runtime keeps its task records in the L2 heap; when it is full,
+    // bingo_task_create returns NULL. Stop here instead of scheduling a graph
+    // with holes (bingo_runtime_schedule would read through the NULL entries).
+    for (uint32_t i = 0; i < n; i++) {
+        if (!task_list[i]) {
+            printf_safe("Chip(%x, %x): [Host] Error: the runtime could not create task %d of %d\r\n",
+                        get_current_chip_loc_x(), get_current_chip_loc_y(), i, n);
+            return 0;
+        }
+    }
     asm volatile("fence" ::: "memory");
     return n;
 }

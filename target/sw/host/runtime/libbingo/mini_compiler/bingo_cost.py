@@ -97,8 +97,8 @@ CALIBRATION = {
             ('__snax_bingo_kernel_idma_1d_copy', 'size=256 L3>L1'): 105,
             ('__snax_bingo_kernel_idma_1d_copy', 'size=512 L3>L1'): 153,
             ('__snax_bingo_kernel_idma_1d_copy', 'size=8192 L1>L3'): 672,
-            ('__snax_bingo_kernel_xdma_d_to_row_major', 'M_T=2 N_T=1'): 4201,
-            ('__snax_bingo_kernel_xdma_d_to_row_major', 'M_T=2 N_T=2'): 4663,
+            ('__snax_bingo_kernel_xdma_d_to_row_major_e4_M32N32', 'M_T=2 N_T=1'): 4201,
+            ('__snax_bingo_kernel_xdma_d_to_row_major_e4_M32N32', 'M_T=2 N_T=2'): 4663,
         },
         cold={
             ('__snax_bingo_kernel_exit', ''): 8489,
@@ -106,12 +106,12 @@ CALIBRATION = {
             ('__snax_bingo_kernel_gemm_full', 'M=2 K=4 N=1'): 2584,
             ('__snax_bingo_kernel_idma_1d_copy', 'size=128 L3>L1'): 566,
             ('__snax_bingo_kernel_idma_1d_copy', 'size=512 L3>L1'): 470,
-            ('__snax_bingo_kernel_xdma_d_to_row_major', 'M_T=2 N_T=1'): 6873,
+            ('__snax_bingo_kernel_xdma_d_to_row_major_e4_M32N32', 'M_T=2 N_T=1'): 6873,
         },
         cold_term={
             '__snax_bingo_kernel_gemm_full': 1077,
             '__snax_bingo_kernel_idma_1d_copy': 317,
-            '__snax_bingo_kernel_xdma_d_to_row_major': 2672,
+            '__snax_bingo_kernel_xdma_d_to_row_major_e4_M32N32': 2672,
         },
         models={
             'copy L1>L3': (274.06, 0.0485, 16384),
@@ -158,7 +158,7 @@ def task_key(kernel: str, ints: dict, src_level: str | None = None, dst_level: s
         return "eltwise", f"n={ints.get('num_elements')}", ints.get("num_elements")
     if k == "sdc_compare":
         return "compare", f"size={ints.get('size')}", ints.get("size")
-    if k == "xdma_d_to_row_major":
+    if k.startswith("xdma_d_to_row_major"):          # one kernel per element size and tile shape
         m, n = ints.get("M_T"), ints.get("N_T")
         return "layout", f"M_T={m} N_T={n}", m * n if isinstance(m, int) and isinstance(n, int) else None
     if k == "exit":

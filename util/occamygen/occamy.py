@@ -1236,6 +1236,9 @@ def get_cheader_kwargs(occamy_cfg, cluster_generators, name):
         "nr_cores_per_cluster": nr_cores_per_cluster,
         "hw_manager_dvfs_msip_bit": hw_manager_dvfs_msip_bit,
         "dep_tag_width": occamy_cfg["s1_quadrant"]["dep_tag_width"],
+        # One watchdog tick of the bingo HW manager in ps, for compile-time task-time
+        # estimates (s1_quadrant.bingo_wd_tick_ps)
+        "bingo_wd_tick_ps": occamy_cfg["s1_quadrant"].get("bingo_wd_tick_ps", 28000),
         "clog2_nr_chiplets": clog2(nr_chiplets),
         "clog2_nr_clusters_per_chiplet": clog2(nr_clusters_per_chiplet),
         "clog2_nr_cores_per_cluster": clog2(nr_cores_per_cluster),

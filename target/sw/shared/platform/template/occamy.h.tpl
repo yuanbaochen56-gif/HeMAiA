@@ -43,6 +43,11 @@
 // each dep_*_info field, so SW must use the same width as the RTL: bingo_utils.h derives
 // DEP_TAG_WIDTH from this, and the mini-compiler passes it to BingoDFG(dep_tag_width=).
 #define BINGO_DEP_TAG_WIDTH            ${dep_tag_width}
+
+// One watchdog tick of the bingo HW manager in ps (s1_quadrant.bingo_wd_tick_ps): a
+// manager clock cycle, counted at the normal power level. The mini-compiler converts
+// its task-time estimates with it (bingo_cost.py, BINGO_TASK_TIME images only).
+#define BINGO_WD_TICK_PS               ${bingo_wd_tick_ps}
 % if acc_reset_channel is not None:
 
 // Accelerator reset (s1_quadrant.acc_reset): RESET_REGISTER bit of the clock and

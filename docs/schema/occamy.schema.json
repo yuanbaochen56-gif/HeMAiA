@@ -294,6 +294,12 @@
                     "minimum": 1,
                     "default": 10000000
                 },
+                "bingo_wd_tick_ps": {
+                    "type": "integer",
+                    "description": "One watchdog tick of the bingo HW manager in ps: a manager (quad) clock cycle, counted at the normal power level. Exported as BINGO_WD_TICK_PS in occamy.h for the compile-time task-time estimates of the mini-compiler (bingo_cost.py). Default 28000: the 500 MHz testharness reference clock divided by 14.",
+                    "minimum": 1,
+                    "default": 28000
+                },
                 "bingo_watchdog_confirm_timeout_cycles": {
                     "type": "integer",
                     "description": "Bingo HW manager confirm timeout (WatchdogConfirmTimeoutCycles): quad-clock cycles without heartbeat after which a busy core is fenced (sticky) and its outstanding tasks are replayed on an allowed live core. Must exceed bingo_watchdog_timeout_cycles; 0 disables fencing and replay (detection only).",

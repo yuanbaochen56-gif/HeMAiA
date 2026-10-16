@@ -68,6 +68,22 @@ class TypeThresholdTests(unittest.TestCase):
             self.assertTrue(watchdog.evaluate_type_threshold(watchdog.SCENARIOS[name], text))
             self.assertEqual(watchdog.evaluate_type_threshold(watchdog.SCENARIOS[name], ""), [])
 
+    def test_task_time_scene_names_the_compiler_bound(self):
+        # BINGO_TASK_TIME images: the bound comes from the compiler, not the configuration
+        sc = dict(watchdog.SCENARIOS["c4_moe2_fault"], image_flags="-DBINGO_TASK_TIME",
+                  expect_type_confirm=True, expect_type_confirm_bound=(1, 33892))
+        text = ("[BINGO_TYPE_CONFIRM] 99 core=0 cluster=0 type=1 threshold=33892\n"
+                "[BINGO_WD] 100 chip=0 core=0 cluster=0 dead_suspect=1 fenced=1\n")
+        self.assertEqual(watchdog.evaluate_type_threshold(sc, text), [])
+        for wrong in ("", text.replace("type=1", "type=2"), text.replace("33892", "33893"),
+                      text.replace("cluster=0 dead", "cluster=1 dead")):
+            self.assertTrue(watchdog.evaluate_type_threshold(sc, wrong))
+        cfg = watchdog.scenario_test_cfg(dict(sc, wd_type_h=[0] * 16, wd_type_c=[0] * 16))
+        self.assertEqual(cfg["version"], 3)
+        self.assertEqual(watchdog.t1_image_flags(dict(sc, t1=True)), "-DBINGO_TASK_TIME -DBINGO_WD_ADAPT")
+        with self.assertRaises(ValueError):
+            watchdog.t1_image_flags(dict(sc, t1=True, image_flags="-DBINGO_TASK_TIME -DBINGO_SDC"))
+
     def host_pairing(self, text, *, kernel="__host_bingo_kernel_exit", checker=True):
         with tempfile.TemporaryDirectory() as directory:
             graph = Path(directory) / "final_dfg.csv"

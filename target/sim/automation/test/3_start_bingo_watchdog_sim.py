@@ -604,8 +604,12 @@ def evaluate_type_threshold(sc: dict, log_text: str) -> List[str]:
     chip, core, cluster = sc["victim"]
     fences = [int(m.group(1)) for m in WD_RE.finditer(log_text)
               if tuple(map(int, m.groups()[1:4])) == (chip, core, cluster) and m.group(6) == "1"]
-    c = sc["wd_type_c"][2]
-    if len(fences) != 1 or len(causes) != 1 or causes[0][1:] != (core, cluster, 2, c):
+    # A5 scenes set type 2's bound in the configuration; task-time scenes
+    # (BINGO_TASK_TIME images) name the compiler's bound and the victim's type
+    core_type, c = sc.get("expect_type_confirm_bound", (2, None))
+    if c is None:
+        c = sc["wd_type_c"][2]
+    if len(fences) != 1 or len(causes) != 1 or causes[0][1:] != (core, cluster, core_type, c):
         return [f"wrong type-confirm cause: {causes}"]
     if causes[0][0] >= fences[0] or "[BINGO_RISK_CONFIRM]" in log_text:
         return ["type-confirm cause must precede fence status without an R cause"]

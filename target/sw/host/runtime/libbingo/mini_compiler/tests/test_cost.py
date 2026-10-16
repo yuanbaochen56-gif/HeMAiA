@@ -208,6 +208,7 @@ class GeneratedCodeTests(unittest.TestCase):
         self.assertIn("bingo_test_cfg.wd_type_c[1] = (bingo_test_cfg.wd_type_c[1] & keep) | "
                       "(BINGO_TASK_TIME_SCALE(10384u) & ~keep);", text)
         self.assertNotIn("if (", text)                     # branch-free: same host time
+        self.assertIn('__asm__ volatile("" : "+r"(keep));', text)  # GCC keeps the masks
         self.assertIn("bingo_wd_type_set(2, BINGO_TASK_TIME_SCALE(1020u), BINGO_TASK_TIME_SCALE(2040u));", text)
         # a copy without an estimate takes the bound of its type away
         self.copy(graph, 1 << 16)

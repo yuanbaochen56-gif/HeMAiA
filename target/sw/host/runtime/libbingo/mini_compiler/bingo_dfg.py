@@ -2634,6 +2634,8 @@ class BingoDFG(DmrSupport, DiGraphWrapper[BingoNode]):
             f.write("        {\n")
             f.write(f"            uint32_t keep = -(uint32_t)((bingo_test_cfg.wd_type_h[{type_id}] | "
                     f"bingo_test_cfg.wd_type_c[{type_id}]) != 0);\n")
+            # opaque to the optimizer, which would otherwise turn the masks into branches
+            f.write('            __asm__ volatile("" : "+r"(keep));\n')
             f.write(f"            bingo_test_cfg.wd_type_h[{type_id}] = (bingo_test_cfg.wd_type_h[{type_id}] & keep) | "
                     f"({h} & ~keep);\n")
             f.write(f"            bingo_test_cfg.wd_type_c[{type_id}] = (bingo_test_cfg.wd_type_c[{type_id}] & keep) | "

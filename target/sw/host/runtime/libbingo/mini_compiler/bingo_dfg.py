@@ -2614,7 +2614,9 @@ class BingoDFG(DmrSupport, DiGraphWrapper[BingoNode]):
     def _emit_task_time_launch(self, f, chiplet_id):
         """BINGO_TASK_TIME images: per core type H = 2E and C = 4E with E the longest
         estimated interval of its tasks. A test configuration's own per-type words
-        win (0 = take these): negative tests, or 0xFFFFFFFF for the parameters."""
+        win (0 = take these): negative tests, or 0xFFFFFFFF for the parameters. The
+        choice is branch-free, so the host takes the same time whichever words win
+        (a healthy run is then the same to the picosecond with and without them)."""
         if self._task_time_platform is None:
             return
         bounds = self._task_time_type_bounds(self._task_time_estimates())
@@ -2629,9 +2631,13 @@ class BingoDFG(DmrSupport, DiGraphWrapper[BingoNode]):
             f.write(f'        _Static_assert({type_expr} == {type_id}, "Task-time core type mismatch");\n')
             h, c = f"BINGO_TASK_TIME_SCALE({2 * value}u)", f"BINGO_TASK_TIME_SCALE({4 * value}u)"
             f.write("#if BINGO_TEST_CFG\n")
-            f.write(f"        if (!bingo_test_cfg.wd_type_h[{type_id}] && !bingo_test_cfg.wd_type_c[{type_id}]) {{\n")
-            f.write(f"            bingo_test_cfg.wd_type_h[{type_id}] = {h};\n")
-            f.write(f"            bingo_test_cfg.wd_type_c[{type_id}] = {c};\n")
+            f.write("        {\n")
+            f.write(f"            uint32_t keep = -(uint32_t)((bingo_test_cfg.wd_type_h[{type_id}] | "
+                    f"bingo_test_cfg.wd_type_c[{type_id}]) != 0);\n")
+            f.write(f"            bingo_test_cfg.wd_type_h[{type_id}] = (bingo_test_cfg.wd_type_h[{type_id}] & keep) | "
+                    f"({h} & ~keep);\n")
+            f.write(f"            bingo_test_cfg.wd_type_c[{type_id}] = (bingo_test_cfg.wd_type_c[{type_id}] & keep) | "
+                    f"({c} & ~keep);\n")
             f.write("        }\n")
             f.write("#else\n")
             f.write(f"        bingo_wd_type_set({type_id}, {h}, {c});\n")

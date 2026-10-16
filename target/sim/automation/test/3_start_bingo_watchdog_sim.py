@@ -264,7 +264,9 @@ def scenario_test_cfg(sc: dict, extra_flags: str = "", *, check_pair: bool = Tru
     late_image = "-DBINGO_WD_LATE" in flags
     sdc_image = "-DBINGO_SDC" in flags
     fence_image = "-DBINGO_FENCE_FB" in flags
-    adaptive_image = "-DBINGO_WD_ADAPT" in flags or late_image or sdc_image or fence_image
+    task_time_image = "-DBINGO_TASK_TIME" in flags
+    adaptive_image = ("-DBINGO_WD_ADAPT" in flags or late_image or sdc_image or fence_image
+                      or task_time_image)
     cfg = test_cfg_image_defaults(3 if adaptive_image else 2, sc.get("image_flags", ""))
     for field in SDC_CFG_FIELDS:
         if field in sc:
@@ -333,7 +335,7 @@ def t1_image_flags(sc: dict) -> str:
     if fault2 and len({f.split("=")[0] for f in fault2}) != 3:
         raise ValueError("BINGO_WD_FAULT2 needs GID, CLUSTER and CORE")
     flags = [f for f in flags if f not in fault2]
-    if set(flags) - {"-DBINGO_WD_NO_HEARTBEAT", "-DBINGO_WD_NOP_HEARTBEAT", "-DBINGO_C6_SW_CERF", "-DBINGO_WD_ADAPT", "-DBINGO_WD_LATE", "-DBINGO_SDC", "-DBINGO_SDC_QUIET", "-DBINGO_SDC_RECOVER", "-DBINGO_FENCE_FB"}:
+    if set(flags) - {"-DBINGO_WD_NO_HEARTBEAT", "-DBINGO_WD_NOP_HEARTBEAT", "-DBINGO_C6_SW_CERF", "-DBINGO_WD_ADAPT", "-DBINGO_WD_LATE", "-DBINGO_SDC", "-DBINGO_SDC_QUIET", "-DBINGO_SDC_RECOVER", "-DBINGO_FENCE_FB", "-DBINGO_TASK_TIME"}:
         raise ValueError("unsupported T1 image_flags")
     if "-DBINGO_SDC_QUIET" in flags and "-DBINGO_SDC" not in flags:
         raise ValueError("BINGO_SDC_QUIET requires BINGO_SDC")
@@ -347,7 +349,10 @@ def t1_image_flags(sc: dict) -> str:
         raise ValueError("image_flags must not belong to a same-image family")
     if "-DBINGO_FENCE_FB" in flags and ({"-DBINGO_SDC", "-DBINGO_WD_LATE"} & set(flags)):
         raise ValueError("BINGO_FENCE_FB is not combined with BINGO_SDC or BINGO_WD_LATE")
-    if ("-DBINGO_WD_LATE" in flags or "-DBINGO_SDC" in flags or "-DBINGO_FENCE_FB" in flags) and "-DBINGO_WD_ADAPT" not in flags:
+    if "-DBINGO_TASK_TIME" in flags and "-DBINGO_SDC" in flags:
+        raise ValueError("BINGO_TASK_TIME is calibrated for the standard device runtime, not BINGO_SDC")
+    if ("-DBINGO_WD_LATE" in flags or "-DBINGO_SDC" in flags or "-DBINGO_FENCE_FB" in flags or
+            "-DBINGO_TASK_TIME" in flags) and "-DBINGO_WD_ADAPT" not in flags:
         flags.append("-DBINGO_WD_ADAPT")
     return " ".join(flags + fault2)
 

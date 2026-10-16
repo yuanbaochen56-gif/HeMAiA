@@ -21,6 +21,20 @@
 # Replay and fallback still require explicit BingoDFG core_type_ids.
 export BINGO_PLATFORM_CFG = $(PLATFORM_H)
 
+# Images built with -DBINGO_TASK_TIME: the mini-compiler adds its task-time estimates
+# to the generated offload header (bingo_cost.py); without the flag it emits nothing new.
+# A stamp in the workload's build directory regenerates the header when the flag changes.
+export BINGO_TASK_TIME = $(if $(filter -DBINGO_TASK_TIME,$(USER_FLAGS)),1)
+ifneq ($(strip $(OFFLOAD_H)),)
+TASK_TIME_CONFIG = $(dir $(OFFLOAD_H))build/task_time_config
+$(OFFLOAD_H): $(TASK_TIME_CONFIG)
+$(TASK_TIME_CONFIG): FORCE_TASK_TIME_CONFIG
+	@mkdir -p $(dir $@)
+	@printf '%s\n' '$(BINGO_TASK_TIME)' | cmp -s - $@ || printf '%s\n' '$(BINGO_TASK_TIME)' > $@
+.PHONY: FORCE_TASK_TIME_CONFIG
+FORCE_TASK_TIME_CONFIG:
+endif
+
 # Root directory (absolute path to the host directory)
 ifndef HOST_DIR
 HOST_DIR = $(abspath $(dir $(lastword $(MAKEFILE_LIST)))/../..)

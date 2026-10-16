@@ -35,14 +35,51 @@ KERNEL_COST_US = {
 }
 
 
-def host_is_cheaper(node) -> str:
-    """Empty when the node has a measured cost with the host cheaper, else the reason."""
+# Task-time mode (BINGO_TASK_TIME, bingo_cost.py): a size without a row above may use
+# the estimates, with this margin: the host must take below MARGIN times the device
+MODEL_MARGIN = 0.8
+
+
+def model_is_cheaper(node, graph) -> str:
+    """Empty when the task-time estimates make the host backup cheaper, else the reason.
+    The home core's estimate (warm, the longer cold one for the first execution of
+    its kernel) stands for the device: a substitute is never faster than the home
+    core (1.14 .. 3.5x slower in the measurements), so the host must take below
+    MODEL_MARGIN times the home core's time."""
+    import bingo_cost
+    from bingo_dfg import _HOST_FALLBACK_KERNELS
+    backup = _HOST_FALLBACK_KERNELS.get((node.kernel_name, type(node.kernel_args)))
+    if backup is None:
+        return f"{node.kernel_name}: no host backup kernel"
+    family, key, work, ints = bingo_cost.node_key(node)
+    ticks, source = bingo_cost.estimate(node.kernel_name, family, key, work, False,
+                                        graph._task_time_platform)
+    if ticks is None:
+        return f"{node.kernel_name}: no device estimate ({source})"
+    host = bingo_cost.host_us(backup[0], ints)
+    if host is None:
+        return f"{node.kernel_name}: no host estimate for {backup[0]} at this size"
+    device = bingo_cost.ticks_to_us(ticks)
+    if not host < MODEL_MARGIN * device:
+        return (f"{node.kernel_name}: host {host} us is not below {MODEL_MARGIN} x "
+                f"the device estimate {device:.3f} us")
+    return ""
+
+
+def host_is_cheaper(node, graph=None) -> str:
+    """Empty when the node has a measured cost with the host cheaper, else the reason.
+    In task-time mode (GRAPH with task_time) a size without a measured row may use
+    the estimates (model_is_cheaper)."""
     row = KERNEL_COST_US.get(node.kernel_name)
     if row is None:
+        if graph is not None and getattr(graph, "task_time", False):
+            return model_is_cheaper(node, graph)
         return f"{node.kernel_name}: no measured cost"
     argument, size, home, substitute, host = row
     actual = getattr(node.kernel_args, argument, None)
     if actual != size:
+        if graph is not None and getattr(graph, "task_time", False):
+            return model_is_cheaper(node, graph)
         return f"{node.kernel_name}: measured at {argument} {size}, not {actual}"
     if not host < min(home, substitute):
         return (f"{node.kernel_name}: host {host} us is not cheaper than "
@@ -71,7 +108,7 @@ def fence_fb_report(graph, chip: int) -> list[dict]:
             if node not in graph._host_fallbacks:
                 reasons.append(f"{node.node_name}: no host backup")
             else:
-                reason = host_is_cheaper(node)
+                reason = host_is_cheaper(node, graph)
                 if reason:
                     reasons.append(reason)
         report.append(dict(chip=chip, core_type=type_id, enable=not reasons, reasons=reasons,

@@ -31,6 +31,7 @@ from bingo_utils import DiGraphWrapper
 from bingo_node import BingoNode
 from bingo_sdc import DmrSupport
 from bingo_fence_fb import fence_fb_types
+import bingo_cost
 from bingo_mem_handle import BingoMemAlloc, BingoMemAllocView, BingoMemSymbol, BingoMemFixedAddr
 from bingo_kernel_args import (
     BingoKernelArgs,
@@ -201,6 +202,16 @@ class BingoDFG(DmrSupport, DiGraphWrapper[BingoNode]):
         if core_type_ids is None and os.environ.get("BINGO_PLATFORM_CFG"):
             from bingo_platform import parse_bingo_core_type_ids
             self._wd_type_ids = parse_bingo_core_type_ids(os.environ["BINGO_PLATFORM_CFG"])
+        # Compile-time task-time estimates (bingo_cost.py), only with the environment
+        # variable BINGO_TASK_TIME=1 (common.mk sets it for images built with
+        # -DBINGO_TASK_TIME): without it the generated code does not change.
+        self.task_time = os.environ.get("BINGO_TASK_TIME") == "1"
+        self._task_time_platform = None
+        if self.task_time and os.environ.get("BINGO_PLATFORM_CFG"):
+            from bingo_platform import parse_task_time_platform
+            found = parse_task_time_platform(os.environ["BINGO_PLATFORM_CFG"])
+            self._task_time_platform = bingo_cost.platform_name(
+                found["num_clusters"], found["num_cores"], found["tick_ps"])
         self._cerf_fallbacks: list[tuple[BingoNode, BingoNode]] = []
         self._cerf_group_fallbacks: list[tuple[BingoNode, BingoNode]] = []
         self._cerf_fallback_table: dict = {}
@@ -1747,6 +1758,47 @@ class BingoDFG(DmrSupport, DiGraphWrapper[BingoNode]):
                         f"class 0 for {', '.join(overflow)}")
         return result
 
+    def _task_time_estimates(self) -> dict:
+        """Estimate of every device task (bingo_cost.estimate), in watchdog ticks:
+        node -> dict(cold, e_tot, s, e_int, source, key). A task is cold while no
+        unconditional task of its kernel ran before it on its core in the
+        descriptor order (each core runs its tasks in that order): the first task
+        of a kernel, and every conditional one up to the first unconditional one."""
+        seen, out = set(), {}
+        for node in self._bingo_topological_order():
+            if not node.kernel_name or node.node_type == "dummy":
+                continue
+            slot = (node.assigned_chiplet_id, node.assigned_cluster_id, node.assigned_core_id)
+            if self._wd_type_ids.get(slot[1:], 0) == 0:
+                continue
+            cold = (slot, node.kernel_name) not in seen
+            if not node.cond_exec_en:
+                seen.add((slot, node.kernel_name))
+            family, key, work, ints = bingo_cost.node_key(node)
+            e_tot, source = bingo_cost.estimate(node.kernel_name, family, key, work, cold,
+                                                self._task_time_platform)
+            s = bingo_cost.interval_shift(node.kernel_name, ints) if e_tot is not None else 0
+            out[node] = dict(cold=cold, e_tot=e_tot, s=s,
+                             e_int=None if e_tot is None else -(-e_tot // (1 << s)),
+                             source=source, key=key)
+        return out
+
+    def _task_time_type_bounds(self, estimates: dict) -> dict:
+        """Core type -> (E, reason): the longest estimated interval of the type's tasks
+        on every chiplet (a replay or an import runs on any core of the type), or None
+        with the reason when one of them has no estimate."""
+        out = {}
+        for node, est in estimates.items():
+            type_id = self._wd_type_ids.get((node.assigned_cluster_id, node.assigned_core_id), 0)
+            value, reason = out.get(type_id, (0, None))
+            if reason is not None:
+                continue
+            if est["e_int"] is None:
+                out[type_id] = (None, f"{node.node_name}: {est['source']}")
+            else:
+                out[type_id] = (max(value, est["e_int"]), None)
+        return out
+
     def bingo_pack_node(self, node: BingoNode, *, wd_adapt: bool = False) -> int:
         """Pack the normal node into a 64-bit integer."""
         import math
@@ -2519,6 +2571,8 @@ class BingoDFG(DmrSupport, DiGraphWrapper[BingoNode]):
             f.write(f'#error "A7 needs 3 reserved descriptor bits; this cfg has {64 - self._wd_class_shift()}"\n')
             f.write("#endif\n")
             f.write("#define BINGO_WD_CLASS_BITS(c) 0ULL\n\n")
+        if self.task_time:
+            self._emit_task_time_header(f)
         diagnostics = []
         self._wd_classes(diagnostics=diagnostics)
         if diagnostics:
@@ -2527,6 +2581,62 @@ class BingoDFG(DmrSupport, DiGraphWrapper[BingoNode]):
                 message = message.replace("\\", "\\\\").replace('"', '\\"').replace("\n", " ")
                 f.write(f'#warning "{message}"\n')
             f.write("#endif\n\n")
+
+    def _emit_task_time_header(self, f):
+        """BINGO_TASK_TIME images: the platform checks and the estimate of every
+        device task (comments)."""
+        f.write("#ifdef BINGO_TASK_TIME\n")
+        f.write('#include "bingo_test_cfg.h"\n')
+        if self._task_time_platform is None:
+            f.write('#warning "BINGO_TASK_TIME: no task-time calibration of this platform: no estimates"\n')
+            f.write("#endif\n\n")
+            return
+        f.write(f"// Task-time estimates (bingo_cost.py, calibration {self._task_time_platform}), watchdog ticks\n")
+        f.write("#if defined(BINGO_SDC)\n")
+        f.write('#error "BINGO_TASK_TIME: the estimates are calibrated for the standard device runtime"\n')
+        f.write("#endif\n")
+        f.write(f"#if BINGO_PM_NORMAL_POWER_LEVEL != {bingo_cost.CAL_NORMAL_LEVEL}\n")
+        f.write(f'#error "BINGO_TASK_TIME: calibrated at normal power level {bingo_cost.CAL_NORMAL_LEVEL}"\n')
+        f.write("#endif\n")
+        f.write(f'_Static_assert(BINGO_WD_TICK_PS == {bingo_cost.CAL_TICK_PS}, '
+                f'"BINGO_TASK_TIME: calibrated for a {bingo_cost.CAL_TICK_PS} ps watchdog tick");\n')
+        f.write("// Without idle PM the cores stay at the boot divider and the ticks are not scaled\n")
+        f.write("#if BINGO_PM_IDLE_ENABLE\n#define BINGO_TASK_TIME_SCALE(t) (t)\n#else\n"
+                f"#define BINGO_TASK_TIME_SCALE(t) ({bingo_cost.PM_OFF_FACTOR}u * (t))\n#endif\n")
+        f.write("//   node  chip/cluster/core  kernel  size  cold  E_tot  S  source\n")
+        for node, est in sorted(self._task_time_estimates().items(), key=lambda kv: kv[0].node_id):
+            f.write(f"//   {node.node_id:4d}  {node.assigned_chiplet_id:02x}/{node.assigned_cluster_id}/"
+                    f"{node.assigned_core_id}  {node.kernel_name.removeprefix('__snax_bingo_kernel_')}  "
+                    f"{est['key'] or '-'}  {int(est['cold'])}  {est['e_tot'] if est['e_tot'] is not None else '-'}  "
+                    f"{est['s']}  {est['source']}\n")
+        f.write("#endif\n\n")
+
+    def _emit_task_time_launch(self, f, chiplet_id):
+        """BINGO_TASK_TIME images: per core type H = 2E and C = 4E with E the longest
+        estimated interval of its tasks. A test configuration's own per-type words
+        win (0 = take these): negative tests, or 0xFFFFFFFF for the parameters."""
+        if self._task_time_platform is None:
+            return
+        bounds = self._task_time_type_bounds(self._task_time_estimates())
+        f.write("#ifdef BINGO_TASK_TIME\n")
+        f.write("        // Task-time estimates: per core type H = 2E, C = 4E (E: the longest estimated interval)\n")
+        for type_id, (value, reason) in sorted(bounds.items()):
+            if value is None:
+                f.write(f"        // core type {type_id}: no bound ({reason})\n")
+                continue
+            slot = next(s for s, t_id in sorted(self._wd_type_ids.items()) if t_id == type_id)
+            type_expr = f"BINGO_CORE_TYPE_ID({slot[0]}, {slot[1]})"
+            f.write(f'        _Static_assert({type_expr} == {type_id}, "Task-time core type mismatch");\n')
+            h, c = f"BINGO_TASK_TIME_SCALE({2 * value}u)", f"BINGO_TASK_TIME_SCALE({4 * value}u)"
+            f.write("#if BINGO_TEST_CFG\n")
+            f.write(f"        if (!bingo_test_cfg.wd_type_h[{type_id}] && !bingo_test_cfg.wd_type_c[{type_id}]) {{\n")
+            f.write(f"            bingo_test_cfg.wd_type_h[{type_id}] = {h};\n")
+            f.write(f"            bingo_test_cfg.wd_type_c[{type_id}] = {c};\n")
+            f.write("        }\n")
+            f.write("#else\n")
+            f.write(f"        bingo_wd_type_set({type_id}, {h}, {c});\n")
+            f.write("#endif\n")
+        f.write("#endif\n\n")
 
     def _emit_debug_kernel_list(self, f):
         """Emit commented-out kernel name list for debugging."""
@@ -2741,6 +2851,9 @@ class BingoDFG(DmrSupport, DiGraphWrapper[BingoNode]):
             f.write("#else\n")
             f.write(f"        bingo_fence_fb_set({' | '.join(masks)});\n")
             f.write("#endif\n#endif\n\n")
+
+        if self.task_time:
+            self._emit_task_time_launch(f, chiplet_id)
 
         f.write(f"        bingo_hw_scheduler_init((uint64_t)(uintptr_t)device_arg_list_chip_{chiplet_id:02x},\n")
         f.write(f"                                (uint64_t)(uintptr_t)device_kernel_list_chip_{chiplet_id:02x},\n")

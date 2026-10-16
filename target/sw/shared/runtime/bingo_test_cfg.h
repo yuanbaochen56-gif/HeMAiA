@@ -8,7 +8,8 @@
 
 // Test-only, little-endian image data. Each row spans sixteen 64-bit banks.
 #define BINGO_TEST_CFG_MAGIC 0x42475431u
-#if (defined(BINGO_WD_LATE) || defined(BINGO_SDC) || defined(BINGO_FENCE_FB)) && !defined(BINGO_WD_ADAPT)
+#if (defined(BINGO_WD_LATE) || defined(BINGO_SDC) || defined(BINGO_FENCE_FB) || defined(BINGO_TASK_TIME)) && \
+    !defined(BINGO_WD_ADAPT)
 #define BINGO_WD_ADAPT
 #endif
 #if defined(BINGO_FENCE_FB) && (defined(BINGO_SDC) || defined(BINGO_WD_LATE))

@@ -74,6 +74,17 @@ def parse_bingo_core_type_ids(occamy_h_path):
     return result
 
 
+def parse_task_time_platform(occamy_h_path):
+    """Clusters per chiplet, Snitch cores per cluster and the watchdog tick (ps,
+    BINGO_WD_TICK_PS; None in an occamy.h that has none) of generated occamy.h:
+    the platform of a task-time calibration (bingo_cost.platform_name)."""
+    occamy_h_path = Path(occamy_h_path)
+    defines = _parse_defines(occamy_h_path)
+    return dict(num_clusters=_require_define(defines, "N_CLUSTERS_PER_CHIPLET", occamy_h_path),
+                num_cores=_require_define(defines, "N_CORES_PER_CLUSTER", occamy_h_path),
+                tick_ps=defines.get("BINGO_WD_TICK_PS"))
+
+
 def guard_cluster_count(param, platform, output_dir, output_offload_file_name):
     expected = param.get("num_clusters")
     if expected is None:

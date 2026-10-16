@@ -714,5 +714,23 @@
         }
       ]
     }},
+    // Kept after the existing registers so their offsets do not move.
+    { name: "BINGO_WD_EST",
+      desc: "Bingo compile-time task-time estimate of one (core type, task class), see bingo_hw_manager_wd_est. Each write stores one entry (a write pulse); reads return 0. Until a class is learned, the learned watchdog bounds start from its estimate. Entries reset to 0 (no estimate).",
+      swaccess: "wo",
+      hwaccess: "hro",
+      hwqe: "true",
+      fields: [
+        { bits: "9:0", resval: "0", name: "ENTRY",
+          desc: '''[7:0] time from dispatch to done in watchdog ticks, (16 + m) << e with e = [7:4], m = [3:0], 0 = no estimate; [9:8] S: the longest interval without progress is that time >> S.'''
+        },
+        { bits: "14:12", resval: "0", name: "TASK_CLASS",
+          desc: '''Task class (the descriptor's class bits); 0 is ignored.'''
+        },
+        { bits: "19:16", resval: "0", name: "CORE_TYPE",
+          desc: '''Core type (BINGO_CORE_TYPE_ID in occamy.h).'''
+        }
+      ]
+    },
   ]
 }

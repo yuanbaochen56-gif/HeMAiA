@@ -1723,7 +1723,10 @@ class BingoDFG(DmrSupport, DiGraphWrapper[BingoNode]):
                 2 * self.num_cores_per_cluster + 2 * self.dep_tag_width)
 
     def _wd_classes(self, extra_node=None, *, diagnostics=None) -> dict:
-        """Number distinct kernels separately for each chiplet and core type."""
+        """Number distinct kernels separately for each chiplet and core type.
+        Task-time mode: program-wide cost buckets (_task_time_classes)."""
+        if self.task_time and self._task_time_platform is not None:
+            return self._task_time_classes(extra_node, diagnostics=diagnostics)
         nodes = list(self.node_list)
         if extra_node is not None and extra_node not in nodes:
             nodes.append(extra_node)
@@ -1782,6 +1785,75 @@ class BingoDFG(DmrSupport, DiGraphWrapper[BingoNode]):
                              e_int=None if e_tot is None else -(-e_tot // (1 << s)),
                              source=source, key=key)
         return out
+
+    def _task_time_classes(self, extra_node=None, *, diagnostics=None) -> dict:
+        """Task-time mode: classes are cost buckets, one numbering per core type for the
+        whole program (a replayed, remapped or imported task finds its bucket under
+        the same class on every chiplet). The tasks of a type with an estimate are
+        sorted by E_tot and cut into at most 7 - u buckets that make the largest
+        ratio bucket maximum / bucket minimum smallest (bingo_cost.buckets); the u
+        kernels with a task without estimate keep a class of their own first (no
+        table entry: they learn as before). The table entry of a bucket is its
+        largest E_tot and the largest S that still covers every task's E_int
+        (self._task_time_table: (type, class) -> (E_tot, S))."""
+        nodes = list(self.node_list)
+        if extra_node is not None and extra_node not in nodes:
+            nodes.append(extra_node)
+        available = 64 - self._wd_class_shift() >= 3
+        estimates = self._task_time_estimates()
+        result, per_type = {}, {}
+        for node in sorted(nodes, key=lambda n: n.node_id):
+            if node.wd_class is not None and (type(node.wd_class) is not int or not 0 <= node.wd_class <= 7):
+                raise ValueError("wd_class must be in 0..7")
+            slot = (node.assigned_cluster_id, node.assigned_core_id)
+            if not available:
+                result[node] = 0
+            elif node.wd_class is not None:
+                result[node] = node.wd_class
+            elif node.node_type == "dummy" or not node.kernel_name or slot not in self._wd_type_ids:
+                result[node] = 0
+            else:
+                per_type.setdefault(self._wd_type_ids[slot], []).append(node)
+        table = {}
+        for type_id, members in sorted(per_type.items()):
+            unknown = []
+            for node in members:
+                est = estimates.get(node)
+                if (est is None or est["e_tot"] is None) and node.kernel_name not in unknown:
+                    unknown.append(node.kernel_name)
+            known = [n for n in members if estimates.get(n) and estimates[n]["e_tot"] is not None]
+            if len(unknown) >= bingo_cost.CLASSES and known:
+                unknown_classes = {k: i + 1 for i, k in enumerate(unknown[:bingo_cost.CLASSES - 1])}
+            else:
+                unknown_classes = {k: i + 1 for i, k in enumerate(unknown[:bingo_cost.CLASSES])}
+            groups = bingo_cost.buckets([estimates[n]["e_tot"] for n in known],
+                                        bingo_cost.CLASSES - len(unknown_classes))
+            first = len(unknown_classes) + 1
+            for node in members:
+                est = estimates.get(node)
+                if est is None or est["e_tot"] is None:
+                    result[node] = unknown_classes.get(node.kernel_name, 0)
+                else:
+                    result[node] = first + bingo_cost.bucket_index(groups, est["e_tot"]) - 1
+            for index, group in enumerate(groups):
+                k = first + index
+                inside = [estimates[n] for n in known if result[n] == k]
+                code = bingo_cost.encode(group[-1])
+                if code == 0:
+                    continue
+                shift = bingo_cost.bucket_shift(code, [e["e_int"] for e in inside])
+                table[(type_id, k)] = (group[-1], shift)
+                if diagnostics is not None and group[-1] > 2 * group[0]:
+                    diagnostics.append(f"task time: core type {type_id} class {k} spans {group[0]} .. "
+                                       f"{group[-1]} ticks (more than 2x)")
+            if diagnostics is not None:
+                skipped = unknown[len(unknown_classes):]
+                if skipped:
+                    diagnostics.append(f"task time: core type {type_id} has more than "
+                                       f"{len(unknown_classes)} kernels without estimate; class 0 for "
+                                       f"{', '.join(skipped)}")
+        self._task_time_table = table
+        return result
 
     def _task_time_type_bounds(self, estimates: dict) -> dict:
         """Core type -> (E, reason): the longest estimated interval of the type's tasks
@@ -2603,6 +2675,18 @@ class BingoDFG(DmrSupport, DiGraphWrapper[BingoNode]):
         f.write("// Without idle PM the cores stay at the boot divider and the ticks are not scaled\n")
         f.write("#if BINGO_PM_IDLE_ENABLE\n#define BINGO_TASK_TIME_SCALE(t) (t)\n#else\n"
                 f"#define BINGO_TASK_TIME_SCALE(t) ({bingo_cost.PM_OFF_FACTOR}u * (t))\n#endif\n")
+        f.write("#if BINGO_TEST_CFG\n")
+        f.write("// Test images: task_time [3:0] divides every table estimate by 2^n (negative tests),\n"
+                "// [4] writes none. Branch-free: the host takes the same time whatever the word.\n")
+        f.write("static inline uint32_t bingo_task_time_entry(uint32_t entry) {\n"
+                "    uint32_t word = bingo_test_cfg.task_time;\n"
+                "    uint32_t shift = word & 15u, e = (entry >> 4) & 15u;\n"
+                "    uint32_t keep = -(uint32_t)(((word >> 4) & 1u) == 0u);\n"
+                "    uint32_t under = -(uint32_t)(shift > e);\n"
+                "    __asm__ volatile(\"\" : \"+r\"(keep), \"+r\"(under));\n"
+                "    e = (e - shift) & ~under;\n"
+                "    return ((entry & 0x30fu) | (e << 4)) & keep;\n"
+                "}\n#else\n#define bingo_task_time_entry(entry) (entry)\n#endif\n")
         f.write("//   node  chip/cluster/core  kernel  size  cold  E_tot  S  source\n")
         for node, est in sorted(self._task_time_estimates().items(), key=lambda kv: kv[0].node_id):
             f.write(f"//   {node.node_id:4d}  {node.assigned_chiplet_id:02x}/{node.assigned_cluster_id}/"
@@ -2643,6 +2727,19 @@ class BingoDFG(DmrSupport, DiGraphWrapper[BingoNode]):
             f.write("        }\n")
             f.write("#else\n")
             f.write(f"        bingo_wd_type_set({type_id}, {h}, {c});\n")
+            f.write("#endif\n")
+        self._wd_classes()
+        if self._task_time_table:
+            f.write("        // Task-time estimates per (core type, class): [7:0] E_tot (16 + m) << e ticks,\n"
+                    "        // [9:8] S (E_int = E_tot >> S); without idle PM twice the time\n")
+            f.write("#if BINGO_PM_IDLE_ENABLE\n")
+            for (type_id, k), (e_tot, shift) in sorted(self._task_time_table.items()):
+                f.write(f"        bingo_wd_est_set({type_id}, {k}, bingo_task_time_entry("
+                        f"0x{bingo_cost.entry(e_tot, shift):03x}u));  // E_tot {e_tot}\n")
+            f.write("#else\n")
+            for (type_id, k), (e_tot, shift) in sorted(self._task_time_table.items()):
+                f.write(f"        bingo_wd_est_set({type_id}, {k}, bingo_task_time_entry("
+                        f"0x{bingo_cost.entry(bingo_cost.PM_OFF_FACTOR * e_tot, shift):03x}u));\n")
             f.write("#endif\n")
         f.write("#endif\n\n")
 

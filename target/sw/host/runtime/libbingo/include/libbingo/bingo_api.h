@@ -602,6 +602,12 @@ void bingo_wd_late_set(uint32_t ctrl);
 // set type takes no substitute, so a fence leaves its tasks to the CERF
 // degradation of that type. Write it before the first task is dispatched.
 void bingo_fence_fb_set(uint32_t type_mask);
+// Compile-time task-time estimate of one (core type, task class) (BINGO_WD_EST):
+// entry [7:0] the time from dispatch to done in watchdog ticks, (16 + m) << e with
+// e = [7:4], m = [3:0], 0 = no estimate; [9:8] S, the longest interval without
+// progress being that time >> S. Until a class is learned, the learned watchdog
+// bounds start from its estimate. Write it before the first task is dispatched.
+void bingo_wd_est_set(uint32_t type, uint32_t task_class, uint32_t entry);
 
 void bingo_hw_scheduler_init(uint64_t dev_arg_base_addr, uint64_t dev_kernel_base_addr, uint32_t num_dev_tasks, uint64_t global_task_id_to_dev_task_id_base_addr, uint32_t num_total_tasks, uint64_t bingo_hw_scheduler_task_desc_list_base, uint32_t bingo_hw_scheduler_num_task_desc);
 

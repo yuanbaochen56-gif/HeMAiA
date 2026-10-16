@@ -135,6 +135,8 @@ module ${name}_quad_ctrl
   logic [31:0]                           bingo_wd_late;
   // Fence fallback: core types that take no substitute (index: core type)
   logic [${2**bingo_core_type_id_width-1}:0]       bingo_fence_fb;
+  logic                                  bingo_wd_est_we;
+  logic [31:0]                           bingo_wd_est_data;
   // Boost choice: policy, credit per lost core, minimum load
   cfg_t                                  bingo_boost_policy;
   // CERF degradation table (index: core type) and the types that fired
@@ -270,6 +272,8 @@ module ${name}_quad_ctrl
     .bingo_hw_manager_wd_adapt_o              (bingo_wd_adapt                      ),
     .bingo_hw_manager_wd_late_o               (bingo_wd_late                       ),
     .bingo_hw_manager_fence_fb_o              (bingo_fence_fb                      ),
+    .bingo_hw_manager_wd_est_we_o             (bingo_wd_est_we                     ),
+    .bingo_hw_manager_wd_est_data_o           (bingo_wd_est_data                   ),
     .bingo_hw_manager_risk_clear_o            (bingo_risk_clear                    ),
     .bingo_hw_manager_risk_i                  (bingo_risk                          ),
     .bingo_evlog_enable_o                     (bingo_evlog_enable                  ),
@@ -456,6 +460,8 @@ module ${name}_quad_ctrl
     .wd_adapt_i                               (bingo_wd_adapt                               ),
     .bingo_hw_manager_wd_late_i                (bingo_wd_late                                ),
     .bingo_hw_manager_fence_fb_i               (bingo_fence_fb                               ),
+    .wd_est_we_i                               (bingo_wd_est_we                              ),
+    .wd_est_data_i                             (bingo_wd_est_data                            ),
     .bingo_hw_manager_risk_clear_i             (bingo_risk_clear                             ),
     .bingo_hw_manager_risk_o                   (bingo_risk                                   ),
     .bingo_hw_manager_cluster_access_i         (bingo_cluster_access_i                       ),

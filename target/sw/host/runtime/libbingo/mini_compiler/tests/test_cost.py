@@ -239,6 +239,89 @@ class GeneratedCodeTests(unittest.TestCase):
         self.assertIn("no task-time calibration of this platform", stream.getvalue())
         self.assertNotIn("wd_type", stream.getvalue())
 
+    def test_cost_bucket_classes_and_table(self):
+        graph = self.graph()
+        first, warm = self.copy(graph, 256), self.copy(graph, 256)     # 510 cold, 100 warm
+        graph.bingo_add_edge(first, warm)
+        gemm = self.gemm(graph)                                          # 2596 cold
+        unknown = self.copy(graph, 1 << 16)                             # no estimate
+        graph.bingo_add_edge(warm, unknown)
+        classes = graph._wd_classes()
+        # type 2: the kernel without estimate first (class 1), then the buckets
+        self.assertEqual(classes[unknown], 1)
+        self.assertEqual(sorted({classes[first], classes[warm]}), [2, 3])
+        self.assertEqual(classes[gemm], 1)                               # type 1: one bucket
+        table = graph._task_time_table
+        self.assertEqual(table[(2, classes[warm])], (100, 0))
+        self.assertEqual(table[(2, classes[first])], (510, 0))
+        self.assertEqual(table[(1, 1)], (2596, 0))
+        self.assertNotIn((2, 1), table)                                  # learns as before
+        stream = io.StringIO()
+        graph._emit_task_time_launch(stream, 0)
+        text = stream.getvalue()
+        self.assertIn(f"bingo_wd_est_set(1, 1, bingo_task_time_entry(0x{cost.entry(2596, 0):03x}u));", text)
+        self.assertIn(f"bingo_wd_est_set(2, {classes[first]}, bingo_task_time_entry("
+                      f"0x{cost.entry(1020, 0):03x}u));", text)          # PM off: twice
+        self.assertEqual(text.count("bingo_wd_est_set("), 2 * len(table))
+
+    def test_buckets_cover_e_int_with_the_shift(self):
+        graph = self.graph()
+        add = BingoNode(0, 0, 1, kernel_name=ADD, kernel_args=SnaxBingoKernelInt32AddArgs(
+            BingoMemAlloc("a", 2048), BingoMemAlloc("b", 2048), BingoMemAlloc("c", 2048), 512))
+        graph.bingo_add_node(add)
+        graph._wd_classes()
+        e_tot, s = graph._task_time_table[(2, 1)]
+        self.assertEqual((e_tot, s), (64925, 1))
+        self.assertGreaterEqual(cost.decode(cost.encode(e_tot)) >> s, -(-64925 // 2))
+
+    def test_classes_unchanged_without_task_time(self):
+        graph = self.graph(task_time=False)
+        nodes = [self.copy(graph, 256), self.copy(graph, 1024), self.gemm(graph)]
+        self.assertEqual([graph._wd_classes()[n] for n in nodes], [1, 1, 1])
+
+    def test_test_image_entry_function(self):
+        graph = self.graph()
+        self.copy(graph, 256)
+        stream = io.StringIO()
+        graph._emit_headers(stream, [])
+        text = stream.getvalue()
+        self.assertIn("static inline uint32_t bingo_task_time_entry(uint32_t entry) {", text)
+        self.assertIn("#define bingo_task_time_entry(entry) (entry)", text)
+        body = text.split("static inline uint32_t bingo_task_time_entry", 1)[1].split("}", 1)[0]
+        self.assertNotIn("if", body.replace("shift", ""))               # branch-free
+
+    def test_test_image_entry_values(self):
+        """The generated C function: [3:0] divides by 2^n (the exponent saturates at 0),
+        [4] writes no estimate."""
+        import shutil, subprocess
+        cc = shutil.which("cc") or shutil.which("gcc")
+        if cc is None:
+            self.skipTest("no C compiler")
+        graph = self.graph()
+        self.copy(graph, 256)
+        stream = io.StringIO()
+        graph._emit_headers(stream, [])
+        body = "static inline uint32_t bingo_task_time_entry" + stream.getvalue().split(
+            "static inline uint32_t bingo_task_time_entry", 1)[1].split("}\n", 1)[0] + "}\n"
+        source = ("#include <stdint.h>\n#include <stdio.h>\nstruct { uint32_t task_time; } bingo_test_cfg;\n"
+                  + body + "int main(void) { uint32_t e[] = {0x0a3, 0x2ff, 0x011, 0x1b4};\n"
+                  "for (uint32_t w = 0; w < 32; w++) for (int i = 0; i < 4; i++) {\n"
+                  "bingo_test_cfg.task_time = w; printf(\"%u %u %u\\n\", w, e[i], bingo_task_time_entry(e[i])); }\n"
+                  "return 0; }\n")
+        with tempfile.TemporaryDirectory() as tmp:
+            Path(tmp, "t.c").write_text(source)
+            subprocess.run([cc, "-O2", "-o", str(Path(tmp, "t")), str(Path(tmp, "t.c"))], check=True)
+            rows = [tuple(map(int, line.split())) for line in
+                    subprocess.run([str(Path(tmp, "t"))], check=True, capture_output=True, text=True).stdout.split("\n")
+                    if line]
+        for word, entry, out in rows:
+            shift, off = word & 15, word >> 4 & 1
+            e = max(((entry >> 4) & 15) - shift, 0) if shift <= ((entry >> 4) & 15) else 0
+            expected = 0 if off else (entry & 0x30F) | (e << 4)
+            self.assertEqual(out, expected, (word, hex(entry)))
+            if not off and shift <= ((entry >> 4) & 15):
+                self.assertEqual(cost.decode(out & 0xFF), cost.decode(entry & 0xFF) >> shift)
+
     def test_fence_fallback_model_only_in_task_time_mode(self):
         graph = self.graph()
         node = BingoNode(0, 0, 1, kernel_name=ADD, kernel_args=SnaxBingoKernelInt32AddArgs(

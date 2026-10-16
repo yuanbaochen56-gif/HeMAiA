@@ -83,6 +83,16 @@ class TypeThresholdTests(unittest.TestCase):
         self.assertEqual(watchdog.t1_image_flags(dict(sc, t1=True)), "-DBINGO_TASK_TIME -DBINGO_WD_ADAPT")
         with self.assertRaises(ValueError):
             watchdog.t1_image_flags(dict(sc, t1=True, image_flags="-DBINGO_TASK_TIME -DBINGO_SDC"))
+        # the task_time word: last word of the v3 row; [3:0] shift, [4] no estimates
+        cfg = watchdog.scenario_test_cfg(dict(sc, task_time=0x13))
+        data = watchdog.test_cfg_bytes(cfg)
+        self.assertEqual((len(data), watchdog.test_cfg_offset("task_time")), (384, 380))
+        self.assertEqual(int.from_bytes(data[380:384], "little"), 0x13)
+        for bad in (0x20, -1, 1.0):
+            with self.assertRaises(ValueError):
+                watchdog.test_cfg_bytes(dict(cfg, task_time=bad))
+        with self.assertRaises(ValueError):
+            watchdog.scenario_test_cfg(dict(sc, image_flags="-DBINGO_WD_LATE", task_time=1))
 
     def host_pairing(self, text, *, kernel="__host_bingo_kernel_exit", checker=True):
         with tempfile.TemporaryDirectory() as directory:

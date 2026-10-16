@@ -977,6 +977,9 @@ void bingo_hw_scheduler_init(uint64_t dev_arg_base_addr, uint64_t dev_kernel_bas
 #ifdef BINGO_WD_LATE
     bingo_wd_late_set(bingo_test_cfg.wd_late);
 #endif
+#ifdef BINGO_TASK_TIME
+    bingo_wd_budget_set(bingo_test_cfg.wd_budget);
+#endif
     bingo_evlog_enable(bingo_test_cfg.evlog_enable);
     if (bingo_test_cfg.cerf_fb_enable) {
         uint32_t type = BINGO_CORE_TYPE_ID(bingo_test_cfg.cerf_fb_cluster, bingo_test_cfg.cerf_fb_core);
@@ -987,6 +990,10 @@ void bingo_hw_scheduler_init(uint64_t dev_arg_base_addr, uint64_t dev_kernel_bas
     bingo_c6_cerf_init();
 #endif
 #else
+#if defined(BINGO_TASK_TIME) && defined(BINGO_WD_BUDGET)
+    // Total-time budget against the compiler's estimates (off unless defined)
+    bingo_wd_budget_set(BINGO_WD_BUDGET);
+#endif
 #ifdef BINGO_CERF_FB_CLUSTER
     // CERF degradation for the core type of one slot (off unless defined)
     bingo_cerf_fb_set(BINGO_CORE_TYPE_ID(BINGO_CERF_FB_CLUSTER, BINGO_CERF_FB_CORE),
@@ -1183,6 +1190,10 @@ void bingo_wd_late_set(uint32_t ctrl) {
 }
 void bingo_fence_fb_set(uint32_t type_mask) {
     writew(type_mask, (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_bingo_fence_fb_addr()));
+    asm volatile("fence" ::: "memory");
+}
+void bingo_wd_budget_set(uint32_t ctrl) {
+    writew(ctrl & 0xfffff07fu, (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_bingo_wd_budget_addr()));
     asm volatile("fence" ::: "memory");
 }
 void bingo_wd_est_set(uint32_t type, uint32_t task_class, uint32_t entry) {

@@ -209,7 +209,8 @@ TEST_CFG_LAYOUT = (
        ("cerf_fb_mode", 1, 1), ("cerf_poll_cycles", 1, 1), ("wd_type_h", 16, 2), ("wd_type_c", 16, 2),
        ("wd_adapt", 1, 3), ("wd_late", 1, 3), ("fault_pre_stall_from", 1, 3))
     + tuple((field, 1, 3) for field in SDC_CFG_FIELDS)
-    + (("fence_fb", 1, 3), ("wd_adapt_reserved", 21, 3), ("task_time", 1, 3))
+    + (("fence_fb", 1, 3), ("wd_adapt_reserved", 19, 3), ("fault_beat_period", 1, 3), ("wd_budget", 1, 3),
+       ("task_time", 1, 3))
 )
 
 
@@ -284,10 +285,11 @@ def scenario_test_cfg(sc: dict, extra_flags: str = "", *, check_pair: bool = Tru
         if not fence_image:
             raise ValueError("fence_fb requires the BINGO_FENCE_FB image flag")
         cfg["fence_fb"] = sc["fence_fb"]
-    if "task_time" in sc:
-        if not task_time_image:
-            raise ValueError("task_time requires the BINGO_TASK_TIME image flag")
-        cfg["task_time"] = sc["task_time"]
+    for field in ("task_time", "wd_budget", "fault_beat_period"):
+        if field in sc:
+            if not task_time_image:
+                raise ValueError(f"{field} requires the BINGO_TASK_TIME image flag")
+            cfg[field] = sc[field]
     cfg["evlog_enable"] = sc.get("evlog_enable", 0)
     cfg["recovery_hold"] = sc.get("recovery_hold", 0)
     cfg["pm_access_level"] = sc.get("pm_access_level", 0)
@@ -365,11 +367,12 @@ def test_cfg_bytes(cfg: dict) -> bytes:
     version = cfg["version"]
     if (version not in (1, 2, 3) or set(cfg) - set(TEST_CFG_FIELDS) - set(SDC_CFG_FIELDS) - {
             "user", "evlog_enable", "recovery_hold", "pm_access_level", "cerf_fb_mode", "cerf_poll_cycles",
-            "wd_type_h", "wd_type_c", "wd_adapt", "wd_late", "fault_pre_stall_from", "fence_fb", "task_time"}
+            "wd_type_h", "wd_type_c", "wd_adapt", "wd_late", "fault_pre_stall_from", "fence_fb", "task_time",
+            "wd_budget", "fault_beat_period"}
             or version == 1 and any(field in cfg for field in ("wd_type_h", "wd_type_c"))
             or version != 3 and any(field in cfg for field in
-                                   ("wd_adapt", "wd_late", "fault_pre_stall_from", "fence_fb", "task_time")
-                                   + SDC_CFG_FIELDS)):
+                                   ("wd_adapt", "wd_late", "fault_pre_stall_from", "fence_fb", "task_time",
+                                    "wd_budget", "fault_beat_period") + SDC_CFG_FIELDS)):
         raise ValueError("unsupported test configuration layout")
     user = cfg.get("user", [0] * 4)
     if len(user) != 4 or any(not isinstance(v, int) or not 0 <= v <= 0xFFFFFFFF for v in user):
@@ -416,8 +419,14 @@ def test_cfg_bytes(cfg: dict) -> bytes:
         task_time = cfg.get("task_time", 0)
         if type(task_time) is not int or not 0 <= task_time <= 0x1F:
             raise ValueError("task_time holds a 4-bit shift and the off bit [4]")
+        budget = [cfg.get(field, 0) for field in ("wd_budget", "fault_beat_period")]
+        if any(type(value) is not int or not 0 <= value <= 0xFFFFFFFF for value in budget):
+            raise ValueError("wd_budget and fault_beat_period must be uint32 words")
+        if budget[0] & 0xF80:
+            raise ValueError("wd_budget reserved bits [11:7] must be zero")
         values.update(zip(("wd_adapt", "wd_late", "fault_pre_stall_from", *SDC_CFG_FIELDS, "fence_fb",
-                           "task_time"), [adapt, *late, *sdc, fence, task_time]))
+                           "task_time", "wd_budget", "fault_beat_period"),
+                          [adapt, *late, *sdc, fence, task_time, *budget]))
     words = []
     for field, count, first in TEST_CFG_LAYOUT:
         if first <= version:

@@ -93,6 +93,25 @@ class TypeThresholdTests(unittest.TestCase):
                 watchdog.test_cfg_bytes(dict(cfg, task_time=bad))
         with self.assertRaises(ValueError):
             watchdog.scenario_test_cfg(dict(sc, image_flags="-DBINGO_WD_LATE", task_time=1))
+        # the total-time budget and the beat period of an injected stall: the two words
+        # before task_time; budget bits [11:7] reserved
+        cfg = watchdog.scenario_test_cfg(dict(sc, wd_budget=0x7D004B, fault_beat_period=100))
+        data = watchdog.test_cfg_bytes(cfg)
+        self.assertEqual((watchdog.test_cfg_offset("fault_beat_period"), watchdog.test_cfg_offset("wd_budget")),
+                         (372, 376))
+        self.assertEqual(int.from_bytes(data[372:376], "little"), 100)
+        self.assertEqual(int.from_bytes(data[376:380], "little"), 0x7D004B)
+        with self.assertRaises(ValueError):
+            watchdog.test_cfg_bytes(dict(cfg, wd_budget=0x80))
+        for field in ("wd_budget", "fault_beat_period"):
+            with self.assertRaises(ValueError):
+                watchdog.scenario_test_cfg(dict(sc, image_flags="-DBINGO_WD_LATE", **{field: 1}))
+        # a fence of the budget is recorded with reason 4
+        from bingo_evlog import simulation_events
+        log = ("[BINGO_WD] 90 chip=0 core=0 cluster=0 dead_suspect=1 fenced=0\n"
+               "[BINGO_BUDGET_FENCE] 99 core=0 cluster=0 type=1 class=1\n"
+               "[BINGO_WD] 100 chip=0 core=0 cluster=0 dead_suspect=1 fenced=1\n")
+        self.assertIn((100, 3, 0, 0, 4), simulation_events(log, 3))
 
     def host_pairing(self, text, *, kernel="__host_bingo_kernel_exit", checker=True):
         with tempfile.TemporaryDirectory() as directory:

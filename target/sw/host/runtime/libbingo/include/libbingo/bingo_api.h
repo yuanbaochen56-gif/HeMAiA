@@ -608,6 +608,11 @@ void bingo_fence_fb_set(uint32_t type_mask);
 // progress being that time >> S. Until a class is learned, the learned watchdog
 // bounds start from its estimate. Write it before the first task is dispatched.
 void bingo_wd_est_set(uint32_t type, uint32_t task_class, uint32_t entry);
+// Total-time budget against those estimates (BINGO_WD_BUDGET, 0 = off): [0] EN,
+// [1] ACTION (0 one late beat, 1 a fence), [4:2] SH_B (budget = estimate << SH_B),
+// [6:5] FRAC_B (a done after (1 + FRAC_B/4) x estimate is late), [31:12] BFLOOR;
+// [11:7] reserved and written as zero.
+void bingo_wd_budget_set(uint32_t ctrl);
 
 void bingo_hw_scheduler_init(uint64_t dev_arg_base_addr, uint64_t dev_kernel_base_addr, uint32_t num_dev_tasks, uint64_t global_task_id_to_dev_task_id_base_addr, uint32_t num_total_tasks, uint64_t bingo_hw_scheduler_task_desc_list_base, uint32_t bingo_hw_scheduler_num_task_desc);
 

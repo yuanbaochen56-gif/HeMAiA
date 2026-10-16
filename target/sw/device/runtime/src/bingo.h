@@ -281,6 +281,31 @@ inline void bingo_wd_fault_stall(uint32_t cycles){
         asm volatile("csrr %0, mcycle" : "=r"(now));
     } while (cycles == 0 || (now - start) < cycles);
 }
+#ifdef BINGO_TASK_TIME
+// Test-only: a stall that keeps beating every PERIOD core cycles, as a core that
+// polls an accelerator which never finishes (the wait loops of the DMA and GEMM
+// kernels beat on every poll). Only a total-time budget (BINGO_WD_BUDGET) catches
+// it. PERIOD 0: the silent stall above. CYCLES 0: forever.
+inline void bingo_wd_fault_stall_beating(uint32_t cycles, uint32_t period){
+    if (period == 0) {
+        bingo_wd_fault_stall(cycles);
+        return;
+    }
+    uint32_t start, last, now;
+    asm volatile("csrr %0, mcycle" : "=r"(start));
+    last = start;
+    do {
+        asm volatile("csrr %0, mcycle" : "=r"(now));
+        if (now - last >= period) {
+            write_bingo_hw_manager_heartbeat(1);
+            last = now;
+        }
+    } while (cycles == 0 || (now - start) < cycles);
+}
+#define BINGO_TEST_FAULT_STALL(cycles) bingo_wd_fault_stall_beating(cycles, fault_beat_period)
+#else
+#define BINGO_TEST_FAULT_STALL(cycles) bingo_wd_fault_stall(cycles)
+#endif
 #else
 #ifdef BINGO_WD_FAULT_GID
 // Test-only fault injection for the bingo HW watchdog (compiled out unless
@@ -364,6 +389,9 @@ inline int32_t bingo_hw_offload_manager(uint32_t fault_gid, uint32_t fault_stall
 #ifdef BINGO_SDC
         , const volatile bingo_test_cfg_t *sdc_cfg
 #endif
+#ifdef BINGO_TASK_TIME
+        , uint32_t fault_beat_period
+#endif
         ){
 #else
 inline int32_t bingo_hw_offload_manager(){
@@ -414,13 +442,13 @@ inline int32_t bingo_hw_offload_manager(){
         if ((fault_cluster == UINT32_MAX || snrt_cluster_idx() == fault_cluster) &&
             (fault_core == UINT32_MAX || snrt_cluster_core_idx() == fault_core)) {
             if (cur_global_task_id == fault_gid) {
-                if (!fault_after_kernel) bingo_wd_fault_stall(fault_stall_cycles);
+                if (!fault_after_kernel) BINGO_TEST_FAULT_STALL(fault_stall_cycles);
             } else if (fault_pre_stall_cycles != 0
 #ifdef BINGO_WD_LATE
                        && cur_global_task_id >= fault_pre_stall_from
 #endif
             ) {
-                bingo_wd_fault_stall(fault_pre_stall_cycles);
+                BINGO_TEST_FAULT_STALL(fault_pre_stall_cycles);
             }
         }
 #ifdef BINGO_WD_FAULT2_GID
@@ -462,7 +490,7 @@ inline int32_t bingo_hw_offload_manager(){
             (fault_cluster == UINT32_MAX || snrt_cluster_idx() == fault_cluster) &&
             (fault_core == UINT32_MAX || snrt_cluster_core_idx() == fault_core) &&
             cur_global_task_id == fault_gid) {
-            bingo_wd_fault_stall(fault_stall_cycles);
+            BINGO_TEST_FAULT_STALL(fault_stall_cycles);
         }
 #else
 #if defined(BINGO_WD_FAULT_GID) && BINGO_WD_FAULT_AFTER_KERNEL
@@ -552,6 +580,9 @@ inline int32_t bingo_offload_manager(){
 #ifdef BINGO_WD_LATE
     uint32_t fault_pre_stall_from = cfg->fault_pre_stall_from;
 #endif
+#ifdef BINGO_TASK_TIME
+    uint32_t fault_beat_period = cfg->fault_beat_period;
+#endif
 #endif
 
     if (offload_type == 1){
@@ -567,6 +598,9 @@ inline int32_t bingo_offload_manager(){
 #endif
 #ifdef BINGO_SDC
             , cfg
+#endif
+#ifdef BINGO_TASK_TIME
+            , fault_beat_period
 #endif
             );
 #else

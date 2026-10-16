@@ -17,11 +17,14 @@ def simulation_events(log, cores_per_cluster):
         r"\[BINGO_EXPORT\] (\d+) chip=(\d+) task=(\d+).*?\(replay 1\)", log)}
     for line in log.splitlines():
         # Reason of the fence record, from the watchdog's confirm line: 3 learned
-        # threshold, 1 at-risk threshold, 2 per-type threshold, 0 without a line
-        m = re.search(r"\[BINGO_(RISK|TYPE|ADAPT)_CONFIRM\] (\d+) core=(\d+) cluster=(\d+)", line)
+        # threshold, 1 at-risk threshold, 2 per-type threshold, 4 the total-time
+        # budget, 0 without a line
+        m = re.search(r"\[BINGO_(RISK_CONFIRM|TYPE_CONFIRM|ADAPT_CONFIRM|BUDGET_FENCE)\] (\d+) "
+                      r"core=(\d+) cluster=(\d+)", line)
         if m:
             kind, _, core, cluster = m.groups()
-            reasons[(int(cluster), int(core))] = {"ADAPT": 3, "RISK": 1, "TYPE": 2}[kind]
+            reasons[(int(cluster), int(core))] = {"ADAPT_CONFIRM": 3, "RISK_CONFIRM": 1, "TYPE_CONFIRM": 2,
+                                                  "BUDGET_FENCE": 4}[kind]
         m = WD_FULL_RE.search(line)
         if m:
             time, chip, core, cluster, suspect, fenced = map(int, m.groups())

@@ -732,5 +732,17 @@
         }
       ]
     },
+    { name: "BINGO_WD_BUDGET",
+      desc: "Bingo total-time budget of every monitored slot against the compile-time estimate of its task (bingo_hw_manager_wd_budget). Heartbeats do not restart it, so it catches a core that keeps beating while it polls a stuck accelerator. 0 = off.",
+      swaccess: "rw",
+      hwaccess: "hro",
+      fields: [
+        { bits: "0", name: "EN", resval: "0", desc: "Budget on." },
+        { bits: "1", name: "ACTION", resval: "0", desc: "At the budget: 0 one late beat (fault precursor), 1 a fence." },
+        { bits: "4:2", name: "SH_B", resval: "0", desc: "Budget = estimate << SH_B (moved tasks << MOVED_SH more), at least BFLOOR." },
+        { bits: "6:5", name: "FRAC_B", resval: "0", desc: "A done after (1 + FRAC_B / 4) times the estimate is a late beat." },
+        { bits: "31:12", name: "BFLOOR", resval: "0", desc: "Smallest budget in watchdog ticks." }
+      ]
+    },
   ]
 }

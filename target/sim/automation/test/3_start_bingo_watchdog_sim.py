@@ -2118,11 +2118,15 @@ def scene_runner(sc: dict, test_cfg: Optional[dict], cfg: str, out_dir: Path,
         fail_on_task_failure=False,
         timeout_seconds=sc["sim_timeout_s"],
         extra_mounts=[Path(args.bingo_repo)],
-        plusargs=(["+bingo_dispatch_log"] if sc.get("dispatch_log", False) or sc.get("pm_count") else [])
-                 + list(sc.get("plusargs", [])),
+        plusargs=["+bingo_dispatch_log"] if sc.get("dispatch_log", False) or sc.get("pm_count") else [],
     )
     if "evlog_enable" in sc:
         runner.plusargs.append("+evlog_check")
+    # Further simulator plusargs of the scene (e.g. +clk_div_log)
+    for arg in sc.get("plusargs", []):
+        if not arg.startswith("+") or any(ch.isspace() for ch in arg):
+            raise ValueError(f"scene plusargs must be single +arguments: {arg!r}")
+        runner.plusargs.append(arg)
     return runner
 
 

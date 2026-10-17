@@ -1,0 +1,13 @@
+// Copyright 2025 KU Leuven.
+// Licensed under the Apache License, Version 2.0, see LICENSE for details.
+// SPDX-License-Identifier: Apache-2.0
+//
+// Copy sizes in bytes. Phase A: every cluster's DM core alone copies each size
+// L3 -> L1, then each size L1 -> L3. Phase B: all clusters at once, shared_sizes.
+// Both lists end with the largest size.
+{
+    // hemaia_ci has two clusters; guard_cluster_count() skips other cfgs
+    num_clusters: 2
+    sizes: [4096, 8192, 16384, 32768, 65536, 131072, 262144]
+    shared_sizes: [4096, 16384, 65536, 262144]
+}

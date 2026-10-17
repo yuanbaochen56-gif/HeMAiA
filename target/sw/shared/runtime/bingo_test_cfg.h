@@ -8,14 +8,22 @@
 
 // Test-only, little-endian image data. Each row spans sixteen 64-bit banks.
 #define BINGO_TEST_CFG_MAGIC 0x42475431u
-#if (defined(BINGO_WD_LATE) || defined(BINGO_SDC) || defined(BINGO_FENCE_FB) || defined(BINGO_TASK_TIME) || \
-     defined(BINGO_SUB_CFG)) && !defined(BINGO_WD_ADAPT)
+// Layout version 3 (a third row, from byte 256): the images built with any of
+// these flags. The version-3 images also get BINGO_WD_ADAPT, which is more than
+// the layout: the descriptors carry the A7 class bits (the compiler's header)
+// and the host writes the wd_adapt word of this data (mostly 0) to BINGO_WD_ADAPT
+// (bingo_api.c). The driver adds -DBINGO_WD_ADAPT for the same flags.
+#if defined(BINGO_WD_ADAPT) || defined(BINGO_WD_LATE) || defined(BINGO_SDC) || defined(BINGO_FENCE_FB) || \
+    defined(BINGO_TASK_TIME) || defined(BINGO_SUB_CFG)
+#define BINGO_TEST_CFG_V3
+#endif
+#if defined(BINGO_TEST_CFG_V3) && !defined(BINGO_WD_ADAPT)
 #define BINGO_WD_ADAPT
 #endif
 #if defined(BINGO_FENCE_FB) && (defined(BINGO_SDC) || defined(BINGO_WD_LATE))
 #error BINGO_FENCE_FB is not combined with BINGO_SDC or BINGO_WD_LATE
 #endif
-#ifdef BINGO_WD_ADAPT
+#ifdef BINGO_TEST_CFG_V3
 #define BINGO_TEST_CFG_VERSION 3u
 #else
 #define BINGO_TEST_CFG_VERSION 2u
@@ -57,7 +65,7 @@ typedef struct __attribute__((aligned(128))) {
     uint32_t cerf_poll_cycles;  // host cycles between polls in mode 1, 0 = back to back
     uint32_t wd_type_h[16];
     uint32_t wd_type_c[16];
-#ifdef BINGO_WD_ADAPT
+#ifdef BINGO_TEST_CFG_V3
     // Version 3 row (byte 256). Every v3 image has every field at the same
     // offset; the flag in each comment is the one that reads it, other images
     // leave it zero.
@@ -94,7 +102,7 @@ typedef struct __attribute__((aligned(128))) {
     BINGO_TEST_CFG_SDC_INITIALIZER \
 }
 
-#ifdef BINGO_WD_ADAPT
+#ifdef BINGO_TEST_CFG_V3
 _Static_assert(sizeof(bingo_test_cfg_t) == 384, "v3 test configuration must fit three rows");
 _Static_assert(offsetof(bingo_test_cfg_t, wd_adapt) == 256 && offsetof(bingo_test_cfg_t, wd_late) == 260 &&
                offsetof(bingo_test_cfg_t, sdc_enable) == 268 && offsetof(bingo_test_cfg_t, fence_fb) == 292 &&

@@ -944,8 +944,22 @@ void bingo_hw_scheduler_init(uint64_t dev_arg_base_addr, uint64_t dev_kernel_bas
     }
     // Init the power manager
     bingo_hw_scheduler_init_pm();
-    // (the default build enables the event log first, an evaluation image after
-    // its other controls; each keeps its order)
+    // The rest of the init writes the manager's controls in one of two orders:
+    //   default build (BINGO_TEST_CFG 0)      evaluation image (BINGO_TEST_CFG 1,
+    //                                         the T1 data bingo_test_cfg)
+    //   1. event log enable                   1. proxy timeout, park request, risk
+    //   2. proxy timeout, park request,          late / epoch / policy / confirm
+    //      risk late / epoch / policy /          (BINGO_CFG: the T1 fields)
+    //      confirm (BINGO_CFG: the macros)    2. wd_type H and C of every type
+    //   3. total-time budget, if              3. by image flag: wd_adapt (every
+    //      BINGO_TASK_TIME and                   version-3 image), wd_late, the
+    //      BINGO_WD_BUDGET are defined           budget, the substitute choice
+    //   4. CERF degradation of one slot's     4. event log enable
+    //      type, if BINGO_CERF_FB_CLUSTER     5. CERF degradation, C6 software CERF
+    //   then both: task list, start, host init done.
+    // They stay apart: one order for both would change the default images and
+    // the T1 images (code and the timing of the host's writes), which must stay
+    // byte for byte the same.
 #if !BINGO_TEST_CFG
     bingo_evlog_enable(BINGO_EVLOG_ENABLE);
 #endif
@@ -968,6 +982,7 @@ void bingo_hw_scheduler_init(uint64_t dev_arg_base_addr, uint64_t dev_kernel_bas
     for (uint32_t type = 0; type < BINGO_WD_NUM_TYPES; ++type) {
         bingo_wd_type_set(type, bingo_test_cfg.wd_type_h[type], bingo_test_cfg.wd_type_c[type]);
     }
+    // wd_adapt: every version-3 image (bingo_test_cfg.h), so mostly a 0 from the T1 data
 #ifdef BINGO_WD_ADAPT
     bingo_wd_adapt_set(bingo_test_cfg.wd_adapt);
 #endif

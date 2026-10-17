@@ -33,7 +33,7 @@ module occamy_quad_periph import occamy_quad_periph_reg_pkg::*; #(
   output reg_data_t bingo_hw_manager_pm_access_level_o,
   output reg_data_t bingo_hw_manager_norm_power_level_o,
   output reg_data_t [BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER-1:0][BINGO_HW_MANAGER_NR_CLUSTER-1:0] bingo_hw_manager_core_power_domain_o,
-  // DARTS CERF
+  // Conditional execution (CERF)
   output logic        cerf_write_en_o,
   output logic [31:0] cerf_write_data_o,
   input  logic [31:0] cerf_state_i,
@@ -123,7 +123,7 @@ module occamy_quad_periph import occamy_quad_periph_reg_pkg::*; #(
       end
     end
   end
-  // DARTS CERF
+  // Conditional execution (CERF)
   assign cerf_write_data_o = reg2hw.cerf_state.q;
   assign cerf_write_en_o   = reg2hw.cerf_write_en.q;
   // Auto-clear write_en: HW writes 0 back after latch takes effect
@@ -165,27 +165,46 @@ module occamy_quad_periph import occamy_quad_periph_reg_pkg::*; #(
   assign bingo_hw_manager_risk_policy_o              = reg2hw.bingo_risk_policy.q;
   assign bingo_hw_manager_risk_epoch_o               = reg2hw.bingo_risk_epoch.q;
   assign bingo_hw_manager_risk_confirm_o             = reg2hw.bingo_risk_confirm.q;
-  assign bingo_hw_manager_wd_adapt_o = {
-      reg2hw.bingo_wd_adapt.floor.q, reg2hw.bingo_wd_adapt.warmup.q,
-      reg2hw.bingo_wd_adapt.sh_c.q, reg2hw.bingo_wd_adapt.sh_h.q,
-      reg2hw.bingo_wd_adapt.load_guard.q, reg2hw.bingo_wd_adapt.en.q
+  // The watchdog CSR words, with the layout of bingo_hw_manager_pkg (the
+  // register fields by name, reserved bits 0)
+  assign bingo_hw_manager_wd_adapt_o = bingo_hw_manager_pkg::wd_adapt_csr_t'{
+      floor:      reg2hw.bingo_wd_adapt.floor.q,
+      warmup:     reg2hw.bingo_wd_adapt.warmup.q,
+      sh_c:       reg2hw.bingo_wd_adapt.sh_c.q,
+      sh_h:       reg2hw.bingo_wd_adapt.sh_h.q,
+      load_guard: reg2hw.bingo_wd_adapt.load_guard.q,
+      en:         reg2hw.bingo_wd_adapt.en.q
   };
-  assign bingo_hw_manager_wd_late_o = {
-      reg2hw.bingo_wd_late.lfloor.q, 1'b0, reg2hw.bingo_wd_late.frac.q,
-      reg2hw.bingo_wd_late.moved_sh.q, reg2hw.bingo_wd_late.local_only.q, 2'b0,
-      reg2hw.bingo_wd_late.sh_l.q, reg2hw.bingo_wd_late.en.q
+  assign bingo_hw_manager_wd_late_o = bingo_hw_manager_pkg::wd_late_csr_t'{
+      lfloor:     reg2hw.bingo_wd_late.lfloor.q,
+      rsvd11:     1'b0,
+      frac:       reg2hw.bingo_wd_late.frac.q,
+      moved_sh:   reg2hw.bingo_wd_late.moved_sh.q,
+      local_only: reg2hw.bingo_wd_late.local_only.q,
+      rsvd4:      2'b0,
+      sh_l:       reg2hw.bingo_wd_late.sh_l.q,
+      en:         reg2hw.bingo_wd_late.en.q
   };
   assign bingo_hw_manager_fence_fb_o = reg2hw.bingo_fence_fb.q;
   // A write of BINGO_WD_EST updates all three fields: the entry's qe is the pulse
   assign bingo_hw_manager_wd_est_we_o   = reg2hw.bingo_wd_est.entry.qe;
-  assign bingo_hw_manager_wd_est_data_o = {12'b0, reg2hw.bingo_wd_est.core_type.q, 1'b0,
-                                           reg2hw.bingo_wd_est.task_class.q, 2'b0,
-                                           reg2hw.bingo_wd_est.entry.q};
+  assign bingo_hw_manager_wd_est_data_o = bingo_hw_manager_pkg::wd_est_wr_t'{
+      rsvd20:     12'b0,
+      core_type:  reg2hw.bingo_wd_est.core_type.q,
+      rsvd15:     1'b0,
+      wd_class:   reg2hw.bingo_wd_est.task_class.q,
+      rsvd10:     2'b0,
+      entry:      reg2hw.bingo_wd_est.entry.q
+  };
   assign bingo_hw_manager_sub_spare_o = reg2hw.bingo_sub_spare.q;
   assign bingo_hw_manager_sub_part_o  = reg2hw.bingo_sub_part.q;
-  assign bingo_hw_manager_wd_budget_o = {
-      reg2hw.bingo_wd_budget.bfloor.q, 5'b0, reg2hw.bingo_wd_budget.frac_b.q,
-      reg2hw.bingo_wd_budget.sh_b.q, reg2hw.bingo_wd_budget.action.q, reg2hw.bingo_wd_budget.en.q
+  assign bingo_hw_manager_wd_budget_o = bingo_hw_manager_pkg::wd_budget_csr_t'{
+      bfloor:     reg2hw.bingo_wd_budget.bfloor.q,
+      rsvd7:      5'b0,
+      frac_b:     reg2hw.bingo_wd_budget.frac_b.q,
+      sh_b:       reg2hw.bingo_wd_budget.sh_b.q,
+      action:     reg2hw.bingo_wd_budget.action.q,
+      en:         reg2hw.bingo_wd_budget.en.q
   };
   for (genvar t = 0; t < NumBingoCoreTypes; t++) begin : gen_bingo_wd_type
     assign bingo_hw_manager_wd_type_h_o[t] = reg2hw.bingo_wd_type_h[t].q;

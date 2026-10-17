@@ -84,9 +84,14 @@ class PredictiveConfigurationTests(unittest.TestCase):
         for field in ('bits: "6", name: "LOCAL_ONLY"', 'bits: "8:7", name: "MOVED_SH"',
                       'bits: "10:9", name: "FRAC"'):
             self.assertIn(field, body)
+        # The word is bingo_hw_manager_pkg::wd_late_csr_t filled by field name: the
+        # bit layout is the package's, the reserved bits are 0
         periph = (ROOT / "hw/occamy/quad_periph/occamy_quad_periph.sv").read_text()
-        self.assertIn("reg2hw.bingo_wd_late.lfloor.q, 1'b0, reg2hw.bingo_wd_late.frac.q,\n"
-                      "      reg2hw.bingo_wd_late.moved_sh.q, reg2hw.bingo_wd_late.local_only.q, 2'b0,", periph)
+        word = periph[periph.index("bingo_hw_manager_wd_late_o = bingo_hw_manager_pkg::wd_late_csr_t'{"):]
+        word = word[:word.index("};")]
+        for field in ("frac:       reg2hw.bingo_wd_late.frac.q", "moved_sh:   reg2hw.bingo_wd_late.moved_sh.q",
+                      "local_only: reg2hw.bingo_wd_late.local_only.q", "rsvd11:     1'b0", "rsvd4:      2'b0"):
+            self.assertIn(field, word)
 
     def test_pre_stall_start_is_a_same_image_fault_field(self):
         first = dict(watchdog.test_cfg_defaults(3), fault_pre_stall_from=2)

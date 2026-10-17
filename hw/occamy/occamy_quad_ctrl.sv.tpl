@@ -74,7 +74,7 @@ module ${name}_quad_ctrl
   logic [AddrWidth-1:0] bingo_hw_manager_dvfs_clint_msip_addr;
   cfg_t                 bingo_hw_manager_dvfs_ack;
   cfg_t                 bingo_hw_manager_dvfs_request;
-  //  DARTS CERF
+  // Conditional execution (CERF)
   logic        cerf_write_en;
   logic [31:0] cerf_write_data;
   logic [31:0] cerf_state;
@@ -252,7 +252,7 @@ module ${name}_quad_ctrl
     .bingo_hw_manager_dvfs_clint_msip_addr_o(bingo_hw_manager_dvfs_clint_msip_addr),
     .bingo_hw_manager_dvfs_ack_o            (bingo_hw_manager_dvfs_ack           ),
     .bingo_hw_manager_dvfs_request_i        (bingo_hw_manager_dvfs_request       ),
-    // DARTS CERF
+    // Conditional execution (CERF)
     .cerf_write_en_o                        (cerf_write_en                       ),
     .cerf_write_data_o                      (cerf_write_data                     ),
     .cerf_state_i                           (cerf_state                          ),
@@ -301,7 +301,7 @@ module ${name}_quad_ctrl
 
 
   //////////////////////////////////////////////////////
-  //  32bit Quad Contorl Periph Host2Cluster Mailbox  //
+  //  32bit Quad Control Periph Host2Cluster Mailbox  //
   //////////////////////////////////////////////////////
   % for i in range(num_clusters):
   <%
@@ -346,8 +346,12 @@ module ${name}_quad_ctrl
   // cluster 0, tied off in the other clusters) sends no heartbeats and is masked.
   localparam logic [BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER-1:0][NrClustersPerQuad-1:0] BingoWatchdogCoreMask =
     {{NrClustersPerQuad{1'b0}}, {((BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER-1)*NrClustersPerQuad){1'b1}}};
-  // Remap / replay: a fenced core's tasks may only run on a live core of the
-  // same cluster with the same type. Generated from the cluster cfgs (occamygen
+  // Remap / replay: a fenced or parked core's tasks run on a live core of the
+  // same type. Where that core may be is set by the substitute levels
+  // (s1_quadrant.bingo_substitute_level_mask: the same cluster by default, other
+  // clusters with bingo_substitute_l2_type_en, other chiplets) and by the spare
+  // clusters and partitions (BINGO_SUB_SPARE / BINGO_SUB_PART, sub_cfg_i below).
+  // The core types are generated from the cluster cfgs (occamygen
   // get_bingo_core_type_ids): cores with identical configs share a type, the
   // extra (host / tied-off) slot is 0.
 <%
@@ -372,7 +376,10 @@ module ${name}_quad_ctrl
     .PmCountDomains                    (NrClustersPerQuad),
     // The PM writes only its domains' own division registers of the clock/reset
     // controller (s1_quadrant.bingo_pm_division_per_domain, default true), not
-    // the packed ones the host's clock helpers read, change and write back
+    // the packed ones the host's clock helpers read, change and write back.
+    // bingo_hw_manager_top's own default is 0 (the packed write, which its LEC
+    // reference uses): the HeMAiA default system writes the PM differently from
+    // bingo alone.
     .PmDivisionPerDomain               (1'b${bingo_pm_division_per_domain}),
     .READY_AND_DONE_QUEUE_INTERFACE_TYPE(1), // 1: CSR 0: AXI LITE
     .TASK_QUEUE_TYPE                    (1), // 1: AXI Lite Master 0: Default AXI Lite Slave 
@@ -491,7 +498,7 @@ module ${name}_quad_ctrl
     .bingo_hw_manager_dvfs_request_o           (bingo_hw_manager_dvfs_request                ),
     .pm_axi_lite_req_o                         (${quad_ctrl_axi_lite_xbar.in_bingo_hw_scheduler_write_pm.req_name()}),
     .pm_axi_lite_resp_i                        (${quad_ctrl_axi_lite_xbar.in_bingo_hw_scheduler_write_pm.rsp_name()}),
-    // DARTS CERF
+    // Conditional execution (CERF)
     .cerf_write_en_i                           (cerf_write_en                       ),
     .cerf_write_data_i                         (cerf_write_data                     ),
     .cerf_state_o                              (cerf_state                          ),
@@ -505,7 +512,8 @@ module ${name}_quad_ctrl
     .evlog_head_o                              (bingo_evlog_head                    ),
     .evlog_count_o                             (bingo_evlog_count                   ),
     .evlog_dropped_o                           (bingo_evlog_dropped                 ),
-    // DARTS: Load Monitor (not connected yet)
+    // Load monitor (upstream, observation only; not connected). The substitute
+    // choice and the boost use the checkout occupancy, not this.
     .load_total_pending_o                      (/* unused */                         ),
     .pm_count_o                                (bingo_pm_count                      ),
     // Watchdog / replay status (quad periph BINGO_* status registers)
@@ -724,6 +732,7 @@ module ${name}_quad_ctrl
   );
   // snax_intf_translator subtracts CSR_SNAX_BEGIN from the CSR number; restore the
   // architectural CSR number (0x5fe ready / 0x5ff done) that bingo_hw_manager decodes.
+  // The index order is swapped here: HeMAiA [cluster][core], bingo [core][cluster].
   %for cluster in range(num_clusters):
     %for core in range(num_cores_per_cluster):
     // Connect Normal Core${core} Cluster${cluster}

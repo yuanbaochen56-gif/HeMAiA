@@ -1011,7 +1011,9 @@ def get_quad_ctrl_kwargs(occamy_cfg, soc_wide_xbar, soc_narrow_xbar, quad_ctrl_s
         "bingo_core_type_id_width": BINGO_CORE_TYPE_ID_WIDTH,
         # Bingo PM (DFS): write one division register per clock domain of the
         # clock/reset controller (default; the vendored controller has them) or,
-        # with False, the packed registers it shares with the host
+        # with False, the packed registers it shares with the host. The default
+        # differs from bingo_hw_manager_top's own (PmDivisionPerDomain = 0, its
+        # LEC reference): the HeMAiA default system writes the PM differently.
         "bingo_pm_division_per_domain":
             int(bool(occamy_cfg["s1_quadrant"].get("bingo_pm_division_per_domain", True))),
         # Bingo level-3 remote dispatch (bingo_hw_manager_remote_link); all off by

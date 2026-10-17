@@ -50,6 +50,10 @@
     {
       "name": "CLOCK_VALID_REGISTER",
       "desc": "Clock valid register: set to 1 by sw to program clock divider, reset to 0 by hw to indicate the clock is set",
+      "swaccess": "rw",
+      "hwaccess": "hrw",
+      "hwext": "true",
+      "hwqe": "true",
       "fields": [
         { "bits": "0:0", "name": "VALID_C0", "desc": "Clock valid for C0", "swaccess": "rw", "hwaccess": "hrw", "resval": 0 },
         { "bits": "1:1", "name": "VALID_C1", "desc": "Clock valid for C1", "swaccess": "rw", "hwaccess": "hrw", "resval": 0 },
@@ -213,6 +217,345 @@
         }
       ]
     }
+
+
+    {
+      "name": "DOMAIN_DIVISION_VALID",
+      "swaccess": "rw",
+      "hwaccess": "hrw",
+      "hwext": "true",
+      "hwqe": "true",
+      "desc": '''Valid register of the per-domain division registers: set to 1 by sw to
+              load a clock divider from its DOMAIN_DIVISION_C<i> register, reset to 0
+              by hw (as CLOCK_VALID_REGISTER, which loads it from the byte of the
+              packed CLOCK_DIVISION_REGISTER_* instead). A divider runs at the
+              division of the last load, whichever register set it came from. The
+              two sets let two masters (e.g. the host and the bingo power manager)
+              each program their own clocks without a read-modify-write of a shared
+              word.''',
+      "fields": [
+        { "bits": "0:0", "name": "VALID_C0", "desc": "Load the division of C0 from DOMAIN_DIVISION_C0", "swaccess": "rw", "hwaccess": "hrw", "resval": 0 },
+        { "bits": "1:1", "name": "VALID_C1", "desc": "Load the division of C1 from DOMAIN_DIVISION_C1", "swaccess": "rw", "hwaccess": "hrw", "resval": 0 },
+        { "bits": "2:2", "name": "VALID_C2", "desc": "Load the division of C2 from DOMAIN_DIVISION_C2", "swaccess": "rw", "hwaccess": "hrw", "resval": 0 },
+        { "bits": "3:3", "name": "VALID_C3", "desc": "Load the division of C3 from DOMAIN_DIVISION_C3", "swaccess": "rw", "hwaccess": "hrw", "resval": 0 },
+        { "bits": "4:4", "name": "VALID_C4", "desc": "Load the division of C4 from DOMAIN_DIVISION_C4", "swaccess": "rw", "hwaccess": "hrw", "resval": 0 },
+        { "bits": "5:5", "name": "VALID_C5", "desc": "Load the division of C5 from DOMAIN_DIVISION_C5", "swaccess": "rw", "hwaccess": "hrw", "resval": 0 },
+        { "bits": "6:6", "name": "VALID_C6", "desc": "Load the division of C6 from DOMAIN_DIVISION_C6", "swaccess": "rw", "hwaccess": "hrw", "resval": 0 },
+        { "bits": "7:7", "name": "VALID_C7", "desc": "Load the division of C7 from DOMAIN_DIVISION_C7", "swaccess": "rw", "hwaccess": "hrw", "resval": 0 },
+        { "bits": "8:8", "name": "VALID_C8", "desc": "Load the division of C8 from DOMAIN_DIVISION_C8", "swaccess": "rw", "hwaccess": "hrw", "resval": 0 },
+        { "bits": "9:9", "name": "VALID_C9", "desc": "Load the division of C9 from DOMAIN_DIVISION_C9", "swaccess": "rw", "hwaccess": "hrw", "resval": 0 },
+        { "bits": "10:10", "name": "VALID_C10", "desc": "Load the division of C10 from DOMAIN_DIVISION_C10", "swaccess": "rw", "hwaccess": "hrw", "resval": 0 },
+        { "bits": "11:11", "name": "VALID_C11", "desc": "Load the division of C11 from DOMAIN_DIVISION_C11", "swaccess": "rw", "hwaccess": "hrw", "resval": 0 },
+        { "bits": "12:12", "name": "VALID_C12", "desc": "Load the division of C12 from DOMAIN_DIVISION_C12", "swaccess": "rw", "hwaccess": "hrw", "resval": 0 },
+        { "bits": "13:13", "name": "VALID_C13", "desc": "Load the division of C13 from DOMAIN_DIVISION_C13", "swaccess": "rw", "hwaccess": "hrw", "resval": 0 },
+        { "bits": "14:14", "name": "VALID_C14", "desc": "Load the division of C14 from DOMAIN_DIVISION_C14", "swaccess": "rw", "hwaccess": "hrw", "resval": 0 },
+        { "bits": "15:15", "name": "VALID_C15", "desc": "Load the division of C15 from DOMAIN_DIVISION_C15", "swaccess": "rw", "hwaccess": "hrw", "resval": 0 },
+        { "bits": "16:16", "name": "VALID_C16", "desc": "Load the division of C16 from DOMAIN_DIVISION_C16", "swaccess": "rw", "hwaccess": "hrw", "resval": 0 },
+        { "bits": "17:17", "name": "VALID_C17", "desc": "Load the division of C17 from DOMAIN_DIVISION_C17", "swaccess": "rw", "hwaccess": "hrw", "resval": 0 },
+        { "bits": "18:18", "name": "VALID_C18", "desc": "Load the division of C18 from DOMAIN_DIVISION_C18", "swaccess": "rw", "hwaccess": "hrw", "resval": 0 },
+        { "bits": "19:19", "name": "VALID_C19", "desc": "Load the division of C19 from DOMAIN_DIVISION_C19", "swaccess": "rw", "hwaccess": "hrw", "resval": 0 },
+        { "bits": "20:20", "name": "VALID_C20", "desc": "Load the division of C20 from DOMAIN_DIVISION_C20", "swaccess": "rw", "hwaccess": "hrw", "resval": 0 },
+        { "bits": "21:21", "name": "VALID_C21", "desc": "Load the division of C21 from DOMAIN_DIVISION_C21", "swaccess": "rw", "hwaccess": "hrw", "resval": 0 },
+        { "bits": "22:22", "name": "VALID_C22", "desc": "Load the division of C22 from DOMAIN_DIVISION_C22", "swaccess": "rw", "hwaccess": "hrw", "resval": 0 },
+        { "bits": "23:23", "name": "VALID_C23", "desc": "Load the division of C23 from DOMAIN_DIVISION_C23", "swaccess": "rw", "hwaccess": "hrw", "resval": 0 },
+        { "bits": "24:24", "name": "VALID_C24", "desc": "Load the division of C24 from DOMAIN_DIVISION_C24", "swaccess": "rw", "hwaccess": "hrw", "resval": 0 },
+        { "bits": "25:25", "name": "VALID_C25", "desc": "Load the division of C25 from DOMAIN_DIVISION_C25", "swaccess": "rw", "hwaccess": "hrw", "resval": 0 },
+        { "bits": "26:26", "name": "VALID_C26", "desc": "Load the division of C26 from DOMAIN_DIVISION_C26", "swaccess": "rw", "hwaccess": "hrw", "resval": 0 },
+        { "bits": "27:27", "name": "VALID_C27", "desc": "Load the division of C27 from DOMAIN_DIVISION_C27", "swaccess": "rw", "hwaccess": "hrw", "resval": 0 },
+        { "bits": "28:28", "name": "VALID_C28", "desc": "Load the division of C28 from DOMAIN_DIVISION_C28", "swaccess": "rw", "hwaccess": "hrw", "resval": 0 },
+        { "bits": "29:29", "name": "VALID_C29", "desc": "Load the division of C29 from DOMAIN_DIVISION_C29", "swaccess": "rw", "hwaccess": "hrw", "resval": 0 },
+        { "bits": "30:30", "name": "VALID_C30", "desc": "Load the division of C30 from DOMAIN_DIVISION_C30", "swaccess": "rw", "hwaccess": "hrw", "resval": 0 },
+        { "bits": "31:31", "name": "VALID_C31", "desc": "Load the division of C31 from DOMAIN_DIVISION_C31", "swaccess": "rw", "hwaccess": "hrw", "resval": 0 }
+      ]
+    }
+
+    {
+      "name": "DOMAIN_DIVISION_C0",
+      "desc": "Division of C0, loaded by bit 0 of DOMAIN_DIVISION_VALID. One register per domain, at an 8-byte boundary with nothing in the upper half, so a 64-bit write reaches only this domain.",
+      "fields": [
+        { "bits": "7:0", "name": "DIVISION", "desc": "Clock division for C0", "swaccess": "rw", "hwaccess": "hro", "resval": 0 }
+      ]
+    }
+    { "reserved": "1" }
+
+    {
+      "name": "DOMAIN_DIVISION_C1",
+      "desc": "Division of C1, loaded by bit 1 of DOMAIN_DIVISION_VALID. One register per domain, at an 8-byte boundary with nothing in the upper half, so a 64-bit write reaches only this domain.",
+      "fields": [
+        { "bits": "7:0", "name": "DIVISION", "desc": "Clock division for C1", "swaccess": "rw", "hwaccess": "hro", "resval": 0 }
+      ]
+    }
+    { "reserved": "1" }
+
+    {
+      "name": "DOMAIN_DIVISION_C2",
+      "desc": "Division of C2, loaded by bit 2 of DOMAIN_DIVISION_VALID. One register per domain, at an 8-byte boundary with nothing in the upper half, so a 64-bit write reaches only this domain.",
+      "fields": [
+        { "bits": "7:0", "name": "DIVISION", "desc": "Clock division for C2", "swaccess": "rw", "hwaccess": "hro", "resval": 0 }
+      ]
+    }
+    { "reserved": "1" }
+
+    {
+      "name": "DOMAIN_DIVISION_C3",
+      "desc": "Division of C3, loaded by bit 3 of DOMAIN_DIVISION_VALID. One register per domain, at an 8-byte boundary with nothing in the upper half, so a 64-bit write reaches only this domain.",
+      "fields": [
+        { "bits": "7:0", "name": "DIVISION", "desc": "Clock division for C3", "swaccess": "rw", "hwaccess": "hro", "resval": 0 }
+      ]
+    }
+    { "reserved": "1" }
+
+    {
+      "name": "DOMAIN_DIVISION_C4",
+      "desc": "Division of C4, loaded by bit 4 of DOMAIN_DIVISION_VALID. One register per domain, at an 8-byte boundary with nothing in the upper half, so a 64-bit write reaches only this domain.",
+      "fields": [
+        { "bits": "7:0", "name": "DIVISION", "desc": "Clock division for C4", "swaccess": "rw", "hwaccess": "hro", "resval": 0 }
+      ]
+    }
+    { "reserved": "1" }
+
+    {
+      "name": "DOMAIN_DIVISION_C5",
+      "desc": "Division of C5, loaded by bit 5 of DOMAIN_DIVISION_VALID. One register per domain, at an 8-byte boundary with nothing in the upper half, so a 64-bit write reaches only this domain.",
+      "fields": [
+        { "bits": "7:0", "name": "DIVISION", "desc": "Clock division for C5", "swaccess": "rw", "hwaccess": "hro", "resval": 0 }
+      ]
+    }
+    { "reserved": "1" }
+
+    {
+      "name": "DOMAIN_DIVISION_C6",
+      "desc": "Division of C6, loaded by bit 6 of DOMAIN_DIVISION_VALID. One register per domain, at an 8-byte boundary with nothing in the upper half, so a 64-bit write reaches only this domain.",
+      "fields": [
+        { "bits": "7:0", "name": "DIVISION", "desc": "Clock division for C6", "swaccess": "rw", "hwaccess": "hro", "resval": 0 }
+      ]
+    }
+    { "reserved": "1" }
+
+    {
+      "name": "DOMAIN_DIVISION_C7",
+      "desc": "Division of C7, loaded by bit 7 of DOMAIN_DIVISION_VALID. One register per domain, at an 8-byte boundary with nothing in the upper half, so a 64-bit write reaches only this domain.",
+      "fields": [
+        { "bits": "7:0", "name": "DIVISION", "desc": "Clock division for C7", "swaccess": "rw", "hwaccess": "hro", "resval": 0 }
+      ]
+    }
+    { "reserved": "1" }
+
+    {
+      "name": "DOMAIN_DIVISION_C8",
+      "desc": "Division of C8, loaded by bit 8 of DOMAIN_DIVISION_VALID. One register per domain, at an 8-byte boundary with nothing in the upper half, so a 64-bit write reaches only this domain.",
+      "fields": [
+        { "bits": "7:0", "name": "DIVISION", "desc": "Clock division for C8", "swaccess": "rw", "hwaccess": "hro", "resval": 0 }
+      ]
+    }
+    { "reserved": "1" }
+
+    {
+      "name": "DOMAIN_DIVISION_C9",
+      "desc": "Division of C9, loaded by bit 9 of DOMAIN_DIVISION_VALID. One register per domain, at an 8-byte boundary with nothing in the upper half, so a 64-bit write reaches only this domain.",
+      "fields": [
+        { "bits": "7:0", "name": "DIVISION", "desc": "Clock division for C9", "swaccess": "rw", "hwaccess": "hro", "resval": 0 }
+      ]
+    }
+    { "reserved": "1" }
+
+    {
+      "name": "DOMAIN_DIVISION_C10",
+      "desc": "Division of C10, loaded by bit 10 of DOMAIN_DIVISION_VALID. One register per domain, at an 8-byte boundary with nothing in the upper half, so a 64-bit write reaches only this domain.",
+      "fields": [
+        { "bits": "7:0", "name": "DIVISION", "desc": "Clock division for C10", "swaccess": "rw", "hwaccess": "hro", "resval": 0 }
+      ]
+    }
+    { "reserved": "1" }
+
+    {
+      "name": "DOMAIN_DIVISION_C11",
+      "desc": "Division of C11, loaded by bit 11 of DOMAIN_DIVISION_VALID. One register per domain, at an 8-byte boundary with nothing in the upper half, so a 64-bit write reaches only this domain.",
+      "fields": [
+        { "bits": "7:0", "name": "DIVISION", "desc": "Clock division for C11", "swaccess": "rw", "hwaccess": "hro", "resval": 0 }
+      ]
+    }
+    { "reserved": "1" }
+
+    {
+      "name": "DOMAIN_DIVISION_C12",
+      "desc": "Division of C12, loaded by bit 12 of DOMAIN_DIVISION_VALID. One register per domain, at an 8-byte boundary with nothing in the upper half, so a 64-bit write reaches only this domain.",
+      "fields": [
+        { "bits": "7:0", "name": "DIVISION", "desc": "Clock division for C12", "swaccess": "rw", "hwaccess": "hro", "resval": 0 }
+      ]
+    }
+    { "reserved": "1" }
+
+    {
+      "name": "DOMAIN_DIVISION_C13",
+      "desc": "Division of C13, loaded by bit 13 of DOMAIN_DIVISION_VALID. One register per domain, at an 8-byte boundary with nothing in the upper half, so a 64-bit write reaches only this domain.",
+      "fields": [
+        { "bits": "7:0", "name": "DIVISION", "desc": "Clock division for C13", "swaccess": "rw", "hwaccess": "hro", "resval": 0 }
+      ]
+    }
+    { "reserved": "1" }
+
+    {
+      "name": "DOMAIN_DIVISION_C14",
+      "desc": "Division of C14, loaded by bit 14 of DOMAIN_DIVISION_VALID. One register per domain, at an 8-byte boundary with nothing in the upper half, so a 64-bit write reaches only this domain.",
+      "fields": [
+        { "bits": "7:0", "name": "DIVISION", "desc": "Clock division for C14", "swaccess": "rw", "hwaccess": "hro", "resval": 0 }
+      ]
+    }
+    { "reserved": "1" }
+
+    {
+      "name": "DOMAIN_DIVISION_C15",
+      "desc": "Division of C15, loaded by bit 15 of DOMAIN_DIVISION_VALID. One register per domain, at an 8-byte boundary with nothing in the upper half, so a 64-bit write reaches only this domain.",
+      "fields": [
+        { "bits": "7:0", "name": "DIVISION", "desc": "Clock division for C15", "swaccess": "rw", "hwaccess": "hro", "resval": 0 }
+      ]
+    }
+    { "reserved": "1" }
+
+    {
+      "name": "DOMAIN_DIVISION_C16",
+      "desc": "Division of C16, loaded by bit 16 of DOMAIN_DIVISION_VALID. One register per domain, at an 8-byte boundary with nothing in the upper half, so a 64-bit write reaches only this domain.",
+      "fields": [
+        { "bits": "7:0", "name": "DIVISION", "desc": "Clock division for C16", "swaccess": "rw", "hwaccess": "hro", "resval": 0 }
+      ]
+    }
+    { "reserved": "1" }
+
+    {
+      "name": "DOMAIN_DIVISION_C17",
+      "desc": "Division of C17, loaded by bit 17 of DOMAIN_DIVISION_VALID. One register per domain, at an 8-byte boundary with nothing in the upper half, so a 64-bit write reaches only this domain.",
+      "fields": [
+        { "bits": "7:0", "name": "DIVISION", "desc": "Clock division for C17", "swaccess": "rw", "hwaccess": "hro", "resval": 0 }
+      ]
+    }
+    { "reserved": "1" }
+
+    {
+      "name": "DOMAIN_DIVISION_C18",
+      "desc": "Division of C18, loaded by bit 18 of DOMAIN_DIVISION_VALID. One register per domain, at an 8-byte boundary with nothing in the upper half, so a 64-bit write reaches only this domain.",
+      "fields": [
+        { "bits": "7:0", "name": "DIVISION", "desc": "Clock division for C18", "swaccess": "rw", "hwaccess": "hro", "resval": 0 }
+      ]
+    }
+    { "reserved": "1" }
+
+    {
+      "name": "DOMAIN_DIVISION_C19",
+      "desc": "Division of C19, loaded by bit 19 of DOMAIN_DIVISION_VALID. One register per domain, at an 8-byte boundary with nothing in the upper half, so a 64-bit write reaches only this domain.",
+      "fields": [
+        { "bits": "7:0", "name": "DIVISION", "desc": "Clock division for C19", "swaccess": "rw", "hwaccess": "hro", "resval": 0 }
+      ]
+    }
+    { "reserved": "1" }
+
+    {
+      "name": "DOMAIN_DIVISION_C20",
+      "desc": "Division of C20, loaded by bit 20 of DOMAIN_DIVISION_VALID. One register per domain, at an 8-byte boundary with nothing in the upper half, so a 64-bit write reaches only this domain.",
+      "fields": [
+        { "bits": "7:0", "name": "DIVISION", "desc": "Clock division for C20", "swaccess": "rw", "hwaccess": "hro", "resval": 0 }
+      ]
+    }
+    { "reserved": "1" }
+
+    {
+      "name": "DOMAIN_DIVISION_C21",
+      "desc": "Division of C21, loaded by bit 21 of DOMAIN_DIVISION_VALID. One register per domain, at an 8-byte boundary with nothing in the upper half, so a 64-bit write reaches only this domain.",
+      "fields": [
+        { "bits": "7:0", "name": "DIVISION", "desc": "Clock division for C21", "swaccess": "rw", "hwaccess": "hro", "resval": 0 }
+      ]
+    }
+    { "reserved": "1" }
+
+    {
+      "name": "DOMAIN_DIVISION_C22",
+      "desc": "Division of C22, loaded by bit 22 of DOMAIN_DIVISION_VALID. One register per domain, at an 8-byte boundary with nothing in the upper half, so a 64-bit write reaches only this domain.",
+      "fields": [
+        { "bits": "7:0", "name": "DIVISION", "desc": "Clock division for C22", "swaccess": "rw", "hwaccess": "hro", "resval": 0 }
+      ]
+    }
+    { "reserved": "1" }
+
+    {
+      "name": "DOMAIN_DIVISION_C23",
+      "desc": "Division of C23, loaded by bit 23 of DOMAIN_DIVISION_VALID. One register per domain, at an 8-byte boundary with nothing in the upper half, so a 64-bit write reaches only this domain.",
+      "fields": [
+        { "bits": "7:0", "name": "DIVISION", "desc": "Clock division for C23", "swaccess": "rw", "hwaccess": "hro", "resval": 0 }
+      ]
+    }
+    { "reserved": "1" }
+
+    {
+      "name": "DOMAIN_DIVISION_C24",
+      "desc": "Division of C24, loaded by bit 24 of DOMAIN_DIVISION_VALID. One register per domain, at an 8-byte boundary with nothing in the upper half, so a 64-bit write reaches only this domain.",
+      "fields": [
+        { "bits": "7:0", "name": "DIVISION", "desc": "Clock division for C24", "swaccess": "rw", "hwaccess": "hro", "resval": 0 }
+      ]
+    }
+    { "reserved": "1" }
+
+    {
+      "name": "DOMAIN_DIVISION_C25",
+      "desc": "Division of C25, loaded by bit 25 of DOMAIN_DIVISION_VALID. One register per domain, at an 8-byte boundary with nothing in the upper half, so a 64-bit write reaches only this domain.",
+      "fields": [
+        { "bits": "7:0", "name": "DIVISION", "desc": "Clock division for C25", "swaccess": "rw", "hwaccess": "hro", "resval": 0 }
+      ]
+    }
+    { "reserved": "1" }
+
+    {
+      "name": "DOMAIN_DIVISION_C26",
+      "desc": "Division of C26, loaded by bit 26 of DOMAIN_DIVISION_VALID. One register per domain, at an 8-byte boundary with nothing in the upper half, so a 64-bit write reaches only this domain.",
+      "fields": [
+        { "bits": "7:0", "name": "DIVISION", "desc": "Clock division for C26", "swaccess": "rw", "hwaccess": "hro", "resval": 0 }
+      ]
+    }
+    { "reserved": "1" }
+
+    {
+      "name": "DOMAIN_DIVISION_C27",
+      "desc": "Division of C27, loaded by bit 27 of DOMAIN_DIVISION_VALID. One register per domain, at an 8-byte boundary with nothing in the upper half, so a 64-bit write reaches only this domain.",
+      "fields": [
+        { "bits": "7:0", "name": "DIVISION", "desc": "Clock division for C27", "swaccess": "rw", "hwaccess": "hro", "resval": 0 }
+      ]
+    }
+    { "reserved": "1" }
+
+    {
+      "name": "DOMAIN_DIVISION_C28",
+      "desc": "Division of C28, loaded by bit 28 of DOMAIN_DIVISION_VALID. One register per domain, at an 8-byte boundary with nothing in the upper half, so a 64-bit write reaches only this domain.",
+      "fields": [
+        { "bits": "7:0", "name": "DIVISION", "desc": "Clock division for C28", "swaccess": "rw", "hwaccess": "hro", "resval": 0 }
+      ]
+    }
+    { "reserved": "1" }
+
+    {
+      "name": "DOMAIN_DIVISION_C29",
+      "desc": "Division of C29, loaded by bit 29 of DOMAIN_DIVISION_VALID. One register per domain, at an 8-byte boundary with nothing in the upper half, so a 64-bit write reaches only this domain.",
+      "fields": [
+        { "bits": "7:0", "name": "DIVISION", "desc": "Clock division for C29", "swaccess": "rw", "hwaccess": "hro", "resval": 0 }
+      ]
+    }
+    { "reserved": "1" }
+
+    {
+      "name": "DOMAIN_DIVISION_C30",
+      "desc": "Division of C30, loaded by bit 30 of DOMAIN_DIVISION_VALID. One register per domain, at an 8-byte boundary with nothing in the upper half, so a 64-bit write reaches only this domain.",
+      "fields": [
+        { "bits": "7:0", "name": "DIVISION", "desc": "Clock division for C30", "swaccess": "rw", "hwaccess": "hro", "resval": 0 }
+      ]
+    }
+    { "reserved": "1" }
+
+    {
+      "name": "DOMAIN_DIVISION_C31",
+      "desc": "Division of C31, loaded by bit 31 of DOMAIN_DIVISION_VALID. One register per domain, at an 8-byte boundary with nothing in the upper half, so a 64-bit write reaches only this domain.",
+      "fields": [
+        { "bits": "7:0", "name": "DIVISION", "desc": "Clock division for C31", "swaccess": "rw", "hwaccess": "hro", "resval": 0 }
+      ]
+    }
+    { "reserved": "1" }
 
   ]
 }

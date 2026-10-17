@@ -10,7 +10,7 @@
 module hemaia_clk_rst_controller_reg_top #(
   parameter type reg_req_t = logic,
   parameter type reg_rsp_t = logic,
-  parameter int AW = 6
+  parameter int AW = 9
 ) (
   input logic clk_i,
   input logic rst_ni,
@@ -167,99 +167,131 @@ module hemaia_clk_rst_controller_reg_top #(
   logic clock_valid_register_valid_c0_qs;
   logic clock_valid_register_valid_c0_wd;
   logic clock_valid_register_valid_c0_we;
+  logic clock_valid_register_valid_c0_re;
   logic clock_valid_register_valid_c1_qs;
   logic clock_valid_register_valid_c1_wd;
   logic clock_valid_register_valid_c1_we;
+  logic clock_valid_register_valid_c1_re;
   logic clock_valid_register_valid_c2_qs;
   logic clock_valid_register_valid_c2_wd;
   logic clock_valid_register_valid_c2_we;
+  logic clock_valid_register_valid_c2_re;
   logic clock_valid_register_valid_c3_qs;
   logic clock_valid_register_valid_c3_wd;
   logic clock_valid_register_valid_c3_we;
+  logic clock_valid_register_valid_c3_re;
   logic clock_valid_register_valid_c4_qs;
   logic clock_valid_register_valid_c4_wd;
   logic clock_valid_register_valid_c4_we;
+  logic clock_valid_register_valid_c4_re;
   logic clock_valid_register_valid_c5_qs;
   logic clock_valid_register_valid_c5_wd;
   logic clock_valid_register_valid_c5_we;
+  logic clock_valid_register_valid_c5_re;
   logic clock_valid_register_valid_c6_qs;
   logic clock_valid_register_valid_c6_wd;
   logic clock_valid_register_valid_c6_we;
+  logic clock_valid_register_valid_c6_re;
   logic clock_valid_register_valid_c7_qs;
   logic clock_valid_register_valid_c7_wd;
   logic clock_valid_register_valid_c7_we;
+  logic clock_valid_register_valid_c7_re;
   logic clock_valid_register_valid_c8_qs;
   logic clock_valid_register_valid_c8_wd;
   logic clock_valid_register_valid_c8_we;
+  logic clock_valid_register_valid_c8_re;
   logic clock_valid_register_valid_c9_qs;
   logic clock_valid_register_valid_c9_wd;
   logic clock_valid_register_valid_c9_we;
+  logic clock_valid_register_valid_c9_re;
   logic clock_valid_register_valid_c10_qs;
   logic clock_valid_register_valid_c10_wd;
   logic clock_valid_register_valid_c10_we;
+  logic clock_valid_register_valid_c10_re;
   logic clock_valid_register_valid_c11_qs;
   logic clock_valid_register_valid_c11_wd;
   logic clock_valid_register_valid_c11_we;
+  logic clock_valid_register_valid_c11_re;
   logic clock_valid_register_valid_c12_qs;
   logic clock_valid_register_valid_c12_wd;
   logic clock_valid_register_valid_c12_we;
+  logic clock_valid_register_valid_c12_re;
   logic clock_valid_register_valid_c13_qs;
   logic clock_valid_register_valid_c13_wd;
   logic clock_valid_register_valid_c13_we;
+  logic clock_valid_register_valid_c13_re;
   logic clock_valid_register_valid_c14_qs;
   logic clock_valid_register_valid_c14_wd;
   logic clock_valid_register_valid_c14_we;
+  logic clock_valid_register_valid_c14_re;
   logic clock_valid_register_valid_c15_qs;
   logic clock_valid_register_valid_c15_wd;
   logic clock_valid_register_valid_c15_we;
+  logic clock_valid_register_valid_c15_re;
   logic clock_valid_register_valid_c16_qs;
   logic clock_valid_register_valid_c16_wd;
   logic clock_valid_register_valid_c16_we;
+  logic clock_valid_register_valid_c16_re;
   logic clock_valid_register_valid_c17_qs;
   logic clock_valid_register_valid_c17_wd;
   logic clock_valid_register_valid_c17_we;
+  logic clock_valid_register_valid_c17_re;
   logic clock_valid_register_valid_c18_qs;
   logic clock_valid_register_valid_c18_wd;
   logic clock_valid_register_valid_c18_we;
+  logic clock_valid_register_valid_c18_re;
   logic clock_valid_register_valid_c19_qs;
   logic clock_valid_register_valid_c19_wd;
   logic clock_valid_register_valid_c19_we;
+  logic clock_valid_register_valid_c19_re;
   logic clock_valid_register_valid_c20_qs;
   logic clock_valid_register_valid_c20_wd;
   logic clock_valid_register_valid_c20_we;
+  logic clock_valid_register_valid_c20_re;
   logic clock_valid_register_valid_c21_qs;
   logic clock_valid_register_valid_c21_wd;
   logic clock_valid_register_valid_c21_we;
+  logic clock_valid_register_valid_c21_re;
   logic clock_valid_register_valid_c22_qs;
   logic clock_valid_register_valid_c22_wd;
   logic clock_valid_register_valid_c22_we;
+  logic clock_valid_register_valid_c22_re;
   logic clock_valid_register_valid_c23_qs;
   logic clock_valid_register_valid_c23_wd;
   logic clock_valid_register_valid_c23_we;
+  logic clock_valid_register_valid_c23_re;
   logic clock_valid_register_valid_c24_qs;
   logic clock_valid_register_valid_c24_wd;
   logic clock_valid_register_valid_c24_we;
+  logic clock_valid_register_valid_c24_re;
   logic clock_valid_register_valid_c25_qs;
   logic clock_valid_register_valid_c25_wd;
   logic clock_valid_register_valid_c25_we;
+  logic clock_valid_register_valid_c25_re;
   logic clock_valid_register_valid_c26_qs;
   logic clock_valid_register_valid_c26_wd;
   logic clock_valid_register_valid_c26_we;
+  logic clock_valid_register_valid_c26_re;
   logic clock_valid_register_valid_c27_qs;
   logic clock_valid_register_valid_c27_wd;
   logic clock_valid_register_valid_c27_we;
+  logic clock_valid_register_valid_c27_re;
   logic clock_valid_register_valid_c28_qs;
   logic clock_valid_register_valid_c28_wd;
   logic clock_valid_register_valid_c28_we;
+  logic clock_valid_register_valid_c28_re;
   logic clock_valid_register_valid_c29_qs;
   logic clock_valid_register_valid_c29_wd;
   logic clock_valid_register_valid_c29_we;
+  logic clock_valid_register_valid_c29_re;
   logic clock_valid_register_valid_c30_qs;
   logic clock_valid_register_valid_c30_wd;
   logic clock_valid_register_valid_c30_we;
+  logic clock_valid_register_valid_c30_re;
   logic clock_valid_register_valid_c31_qs;
   logic clock_valid_register_valid_c31_wd;
   logic clock_valid_register_valid_c31_we;
+  logic clock_valid_register_valid_c31_re;
   logic [7:0] clock_division_register_c0_c3_division_c0_qs;
   logic [7:0] clock_division_register_c0_c3_division_c0_wd;
   logic clock_division_register_c0_c3_division_c0_we;
@@ -365,6 +397,230 @@ module hemaia_clk_rst_controller_reg_top #(
   logic [31:0] pll_test_out_register_qs;
   logic [31:0] pll_test_out_register_wd;
   logic pll_test_out_register_we;
+  logic domain_division_valid_valid_c0_qs;
+  logic domain_division_valid_valid_c0_wd;
+  logic domain_division_valid_valid_c0_we;
+  logic domain_division_valid_valid_c0_re;
+  logic domain_division_valid_valid_c1_qs;
+  logic domain_division_valid_valid_c1_wd;
+  logic domain_division_valid_valid_c1_we;
+  logic domain_division_valid_valid_c1_re;
+  logic domain_division_valid_valid_c2_qs;
+  logic domain_division_valid_valid_c2_wd;
+  logic domain_division_valid_valid_c2_we;
+  logic domain_division_valid_valid_c2_re;
+  logic domain_division_valid_valid_c3_qs;
+  logic domain_division_valid_valid_c3_wd;
+  logic domain_division_valid_valid_c3_we;
+  logic domain_division_valid_valid_c3_re;
+  logic domain_division_valid_valid_c4_qs;
+  logic domain_division_valid_valid_c4_wd;
+  logic domain_division_valid_valid_c4_we;
+  logic domain_division_valid_valid_c4_re;
+  logic domain_division_valid_valid_c5_qs;
+  logic domain_division_valid_valid_c5_wd;
+  logic domain_division_valid_valid_c5_we;
+  logic domain_division_valid_valid_c5_re;
+  logic domain_division_valid_valid_c6_qs;
+  logic domain_division_valid_valid_c6_wd;
+  logic domain_division_valid_valid_c6_we;
+  logic domain_division_valid_valid_c6_re;
+  logic domain_division_valid_valid_c7_qs;
+  logic domain_division_valid_valid_c7_wd;
+  logic domain_division_valid_valid_c7_we;
+  logic domain_division_valid_valid_c7_re;
+  logic domain_division_valid_valid_c8_qs;
+  logic domain_division_valid_valid_c8_wd;
+  logic domain_division_valid_valid_c8_we;
+  logic domain_division_valid_valid_c8_re;
+  logic domain_division_valid_valid_c9_qs;
+  logic domain_division_valid_valid_c9_wd;
+  logic domain_division_valid_valid_c9_we;
+  logic domain_division_valid_valid_c9_re;
+  logic domain_division_valid_valid_c10_qs;
+  logic domain_division_valid_valid_c10_wd;
+  logic domain_division_valid_valid_c10_we;
+  logic domain_division_valid_valid_c10_re;
+  logic domain_division_valid_valid_c11_qs;
+  logic domain_division_valid_valid_c11_wd;
+  logic domain_division_valid_valid_c11_we;
+  logic domain_division_valid_valid_c11_re;
+  logic domain_division_valid_valid_c12_qs;
+  logic domain_division_valid_valid_c12_wd;
+  logic domain_division_valid_valid_c12_we;
+  logic domain_division_valid_valid_c12_re;
+  logic domain_division_valid_valid_c13_qs;
+  logic domain_division_valid_valid_c13_wd;
+  logic domain_division_valid_valid_c13_we;
+  logic domain_division_valid_valid_c13_re;
+  logic domain_division_valid_valid_c14_qs;
+  logic domain_division_valid_valid_c14_wd;
+  logic domain_division_valid_valid_c14_we;
+  logic domain_division_valid_valid_c14_re;
+  logic domain_division_valid_valid_c15_qs;
+  logic domain_division_valid_valid_c15_wd;
+  logic domain_division_valid_valid_c15_we;
+  logic domain_division_valid_valid_c15_re;
+  logic domain_division_valid_valid_c16_qs;
+  logic domain_division_valid_valid_c16_wd;
+  logic domain_division_valid_valid_c16_we;
+  logic domain_division_valid_valid_c16_re;
+  logic domain_division_valid_valid_c17_qs;
+  logic domain_division_valid_valid_c17_wd;
+  logic domain_division_valid_valid_c17_we;
+  logic domain_division_valid_valid_c17_re;
+  logic domain_division_valid_valid_c18_qs;
+  logic domain_division_valid_valid_c18_wd;
+  logic domain_division_valid_valid_c18_we;
+  logic domain_division_valid_valid_c18_re;
+  logic domain_division_valid_valid_c19_qs;
+  logic domain_division_valid_valid_c19_wd;
+  logic domain_division_valid_valid_c19_we;
+  logic domain_division_valid_valid_c19_re;
+  logic domain_division_valid_valid_c20_qs;
+  logic domain_division_valid_valid_c20_wd;
+  logic domain_division_valid_valid_c20_we;
+  logic domain_division_valid_valid_c20_re;
+  logic domain_division_valid_valid_c21_qs;
+  logic domain_division_valid_valid_c21_wd;
+  logic domain_division_valid_valid_c21_we;
+  logic domain_division_valid_valid_c21_re;
+  logic domain_division_valid_valid_c22_qs;
+  logic domain_division_valid_valid_c22_wd;
+  logic domain_division_valid_valid_c22_we;
+  logic domain_division_valid_valid_c22_re;
+  logic domain_division_valid_valid_c23_qs;
+  logic domain_division_valid_valid_c23_wd;
+  logic domain_division_valid_valid_c23_we;
+  logic domain_division_valid_valid_c23_re;
+  logic domain_division_valid_valid_c24_qs;
+  logic domain_division_valid_valid_c24_wd;
+  logic domain_division_valid_valid_c24_we;
+  logic domain_division_valid_valid_c24_re;
+  logic domain_division_valid_valid_c25_qs;
+  logic domain_division_valid_valid_c25_wd;
+  logic domain_division_valid_valid_c25_we;
+  logic domain_division_valid_valid_c25_re;
+  logic domain_division_valid_valid_c26_qs;
+  logic domain_division_valid_valid_c26_wd;
+  logic domain_division_valid_valid_c26_we;
+  logic domain_division_valid_valid_c26_re;
+  logic domain_division_valid_valid_c27_qs;
+  logic domain_division_valid_valid_c27_wd;
+  logic domain_division_valid_valid_c27_we;
+  logic domain_division_valid_valid_c27_re;
+  logic domain_division_valid_valid_c28_qs;
+  logic domain_division_valid_valid_c28_wd;
+  logic domain_division_valid_valid_c28_we;
+  logic domain_division_valid_valid_c28_re;
+  logic domain_division_valid_valid_c29_qs;
+  logic domain_division_valid_valid_c29_wd;
+  logic domain_division_valid_valid_c29_we;
+  logic domain_division_valid_valid_c29_re;
+  logic domain_division_valid_valid_c30_qs;
+  logic domain_division_valid_valid_c30_wd;
+  logic domain_division_valid_valid_c30_we;
+  logic domain_division_valid_valid_c30_re;
+  logic domain_division_valid_valid_c31_qs;
+  logic domain_division_valid_valid_c31_wd;
+  logic domain_division_valid_valid_c31_we;
+  logic domain_division_valid_valid_c31_re;
+  logic [7:0] domain_division_c0_qs;
+  logic [7:0] domain_division_c0_wd;
+  logic domain_division_c0_we;
+  logic [7:0] domain_division_c1_qs;
+  logic [7:0] domain_division_c1_wd;
+  logic domain_division_c1_we;
+  logic [7:0] domain_division_c2_qs;
+  logic [7:0] domain_division_c2_wd;
+  logic domain_division_c2_we;
+  logic [7:0] domain_division_c3_qs;
+  logic [7:0] domain_division_c3_wd;
+  logic domain_division_c3_we;
+  logic [7:0] domain_division_c4_qs;
+  logic [7:0] domain_division_c4_wd;
+  logic domain_division_c4_we;
+  logic [7:0] domain_division_c5_qs;
+  logic [7:0] domain_division_c5_wd;
+  logic domain_division_c5_we;
+  logic [7:0] domain_division_c6_qs;
+  logic [7:0] domain_division_c6_wd;
+  logic domain_division_c6_we;
+  logic [7:0] domain_division_c7_qs;
+  logic [7:0] domain_division_c7_wd;
+  logic domain_division_c7_we;
+  logic [7:0] domain_division_c8_qs;
+  logic [7:0] domain_division_c8_wd;
+  logic domain_division_c8_we;
+  logic [7:0] domain_division_c9_qs;
+  logic [7:0] domain_division_c9_wd;
+  logic domain_division_c9_we;
+  logic [7:0] domain_division_c10_qs;
+  logic [7:0] domain_division_c10_wd;
+  logic domain_division_c10_we;
+  logic [7:0] domain_division_c11_qs;
+  logic [7:0] domain_division_c11_wd;
+  logic domain_division_c11_we;
+  logic [7:0] domain_division_c12_qs;
+  logic [7:0] domain_division_c12_wd;
+  logic domain_division_c12_we;
+  logic [7:0] domain_division_c13_qs;
+  logic [7:0] domain_division_c13_wd;
+  logic domain_division_c13_we;
+  logic [7:0] domain_division_c14_qs;
+  logic [7:0] domain_division_c14_wd;
+  logic domain_division_c14_we;
+  logic [7:0] domain_division_c15_qs;
+  logic [7:0] domain_division_c15_wd;
+  logic domain_division_c15_we;
+  logic [7:0] domain_division_c16_qs;
+  logic [7:0] domain_division_c16_wd;
+  logic domain_division_c16_we;
+  logic [7:0] domain_division_c17_qs;
+  logic [7:0] domain_division_c17_wd;
+  logic domain_division_c17_we;
+  logic [7:0] domain_division_c18_qs;
+  logic [7:0] domain_division_c18_wd;
+  logic domain_division_c18_we;
+  logic [7:0] domain_division_c19_qs;
+  logic [7:0] domain_division_c19_wd;
+  logic domain_division_c19_we;
+  logic [7:0] domain_division_c20_qs;
+  logic [7:0] domain_division_c20_wd;
+  logic domain_division_c20_we;
+  logic [7:0] domain_division_c21_qs;
+  logic [7:0] domain_division_c21_wd;
+  logic domain_division_c21_we;
+  logic [7:0] domain_division_c22_qs;
+  logic [7:0] domain_division_c22_wd;
+  logic domain_division_c22_we;
+  logic [7:0] domain_division_c23_qs;
+  logic [7:0] domain_division_c23_wd;
+  logic domain_division_c23_we;
+  logic [7:0] domain_division_c24_qs;
+  logic [7:0] domain_division_c24_wd;
+  logic domain_division_c24_we;
+  logic [7:0] domain_division_c25_qs;
+  logic [7:0] domain_division_c25_wd;
+  logic domain_division_c25_we;
+  logic [7:0] domain_division_c26_qs;
+  logic [7:0] domain_division_c26_wd;
+  logic domain_division_c26_we;
+  logic [7:0] domain_division_c27_qs;
+  logic [7:0] domain_division_c27_wd;
+  logic domain_division_c27_we;
+  logic [7:0] domain_division_c28_qs;
+  logic [7:0] domain_division_c28_wd;
+  logic domain_division_c28_we;
+  logic [7:0] domain_division_c29_qs;
+  logic [7:0] domain_division_c29_wd;
+  logic domain_division_c29_we;
+  logic [7:0] domain_division_c30_qs;
+  logic [7:0] domain_division_c30_wd;
+  logic domain_division_c30_we;
+  logic [7:0] domain_division_c31_qs;
+  logic [7:0] domain_division_c31_wd;
+  logic domain_division_c31_we;
 
   // Register instances
   // R[reset_register]: V(False)
@@ -1201,836 +1457,484 @@ module hemaia_clk_rst_controller_reg_top #(
   );
 
 
-  // R[clock_valid_register]: V(False)
+  // R[clock_valid_register]: V(True)
 
   //   F[valid_c0]: 0:0
-  prim_subreg #(
-    .DW      (1),
-    .SWACCESS("RW"),
-    .RESVAL  (1'h0)
+  prim_subreg_ext #(
+    .DW    (1)
   ) u_clock_valid_register_valid_c0 (
-    .clk_i   (clk_i    ),
-    .rst_ni  (rst_ni  ),
-
-    // from register interface
+    .re     (clock_valid_register_valid_c0_re),
     .we     (clock_valid_register_valid_c0_we),
     .wd     (clock_valid_register_valid_c0_wd),
-
-    // from internal hardware
-    .de     (hw2reg.clock_valid_register.valid_c0.de),
-    .d      (hw2reg.clock_valid_register.valid_c0.d ),
-
-    // to internal hardware
-    .qe     (),
+    .d      (hw2reg.clock_valid_register.valid_c0.d),
+    .qre    (),
+    .qe     (reg2hw.clock_valid_register.valid_c0.qe),
     .q      (reg2hw.clock_valid_register.valid_c0.q ),
-
-    // to register interface (read)
     .qs     (clock_valid_register_valid_c0_qs)
   );
 
 
   //   F[valid_c1]: 1:1
-  prim_subreg #(
-    .DW      (1),
-    .SWACCESS("RW"),
-    .RESVAL  (1'h0)
+  prim_subreg_ext #(
+    .DW    (1)
   ) u_clock_valid_register_valid_c1 (
-    .clk_i   (clk_i    ),
-    .rst_ni  (rst_ni  ),
-
-    // from register interface
+    .re     (clock_valid_register_valid_c1_re),
     .we     (clock_valid_register_valid_c1_we),
     .wd     (clock_valid_register_valid_c1_wd),
-
-    // from internal hardware
-    .de     (hw2reg.clock_valid_register.valid_c1.de),
-    .d      (hw2reg.clock_valid_register.valid_c1.d ),
-
-    // to internal hardware
-    .qe     (),
+    .d      (hw2reg.clock_valid_register.valid_c1.d),
+    .qre    (),
+    .qe     (reg2hw.clock_valid_register.valid_c1.qe),
     .q      (reg2hw.clock_valid_register.valid_c1.q ),
-
-    // to register interface (read)
     .qs     (clock_valid_register_valid_c1_qs)
   );
 
 
   //   F[valid_c2]: 2:2
-  prim_subreg #(
-    .DW      (1),
-    .SWACCESS("RW"),
-    .RESVAL  (1'h0)
+  prim_subreg_ext #(
+    .DW    (1)
   ) u_clock_valid_register_valid_c2 (
-    .clk_i   (clk_i    ),
-    .rst_ni  (rst_ni  ),
-
-    // from register interface
+    .re     (clock_valid_register_valid_c2_re),
     .we     (clock_valid_register_valid_c2_we),
     .wd     (clock_valid_register_valid_c2_wd),
-
-    // from internal hardware
-    .de     (hw2reg.clock_valid_register.valid_c2.de),
-    .d      (hw2reg.clock_valid_register.valid_c2.d ),
-
-    // to internal hardware
-    .qe     (),
+    .d      (hw2reg.clock_valid_register.valid_c2.d),
+    .qre    (),
+    .qe     (reg2hw.clock_valid_register.valid_c2.qe),
     .q      (reg2hw.clock_valid_register.valid_c2.q ),
-
-    // to register interface (read)
     .qs     (clock_valid_register_valid_c2_qs)
   );
 
 
   //   F[valid_c3]: 3:3
-  prim_subreg #(
-    .DW      (1),
-    .SWACCESS("RW"),
-    .RESVAL  (1'h0)
+  prim_subreg_ext #(
+    .DW    (1)
   ) u_clock_valid_register_valid_c3 (
-    .clk_i   (clk_i    ),
-    .rst_ni  (rst_ni  ),
-
-    // from register interface
+    .re     (clock_valid_register_valid_c3_re),
     .we     (clock_valid_register_valid_c3_we),
     .wd     (clock_valid_register_valid_c3_wd),
-
-    // from internal hardware
-    .de     (hw2reg.clock_valid_register.valid_c3.de),
-    .d      (hw2reg.clock_valid_register.valid_c3.d ),
-
-    // to internal hardware
-    .qe     (),
+    .d      (hw2reg.clock_valid_register.valid_c3.d),
+    .qre    (),
+    .qe     (reg2hw.clock_valid_register.valid_c3.qe),
     .q      (reg2hw.clock_valid_register.valid_c3.q ),
-
-    // to register interface (read)
     .qs     (clock_valid_register_valid_c3_qs)
   );
 
 
   //   F[valid_c4]: 4:4
-  prim_subreg #(
-    .DW      (1),
-    .SWACCESS("RW"),
-    .RESVAL  (1'h0)
+  prim_subreg_ext #(
+    .DW    (1)
   ) u_clock_valid_register_valid_c4 (
-    .clk_i   (clk_i    ),
-    .rst_ni  (rst_ni  ),
-
-    // from register interface
+    .re     (clock_valid_register_valid_c4_re),
     .we     (clock_valid_register_valid_c4_we),
     .wd     (clock_valid_register_valid_c4_wd),
-
-    // from internal hardware
-    .de     (hw2reg.clock_valid_register.valid_c4.de),
-    .d      (hw2reg.clock_valid_register.valid_c4.d ),
-
-    // to internal hardware
-    .qe     (),
+    .d      (hw2reg.clock_valid_register.valid_c4.d),
+    .qre    (),
+    .qe     (reg2hw.clock_valid_register.valid_c4.qe),
     .q      (reg2hw.clock_valid_register.valid_c4.q ),
-
-    // to register interface (read)
     .qs     (clock_valid_register_valid_c4_qs)
   );
 
 
   //   F[valid_c5]: 5:5
-  prim_subreg #(
-    .DW      (1),
-    .SWACCESS("RW"),
-    .RESVAL  (1'h0)
+  prim_subreg_ext #(
+    .DW    (1)
   ) u_clock_valid_register_valid_c5 (
-    .clk_i   (clk_i    ),
-    .rst_ni  (rst_ni  ),
-
-    // from register interface
+    .re     (clock_valid_register_valid_c5_re),
     .we     (clock_valid_register_valid_c5_we),
     .wd     (clock_valid_register_valid_c5_wd),
-
-    // from internal hardware
-    .de     (hw2reg.clock_valid_register.valid_c5.de),
-    .d      (hw2reg.clock_valid_register.valid_c5.d ),
-
-    // to internal hardware
-    .qe     (),
+    .d      (hw2reg.clock_valid_register.valid_c5.d),
+    .qre    (),
+    .qe     (reg2hw.clock_valid_register.valid_c5.qe),
     .q      (reg2hw.clock_valid_register.valid_c5.q ),
-
-    // to register interface (read)
     .qs     (clock_valid_register_valid_c5_qs)
   );
 
 
   //   F[valid_c6]: 6:6
-  prim_subreg #(
-    .DW      (1),
-    .SWACCESS("RW"),
-    .RESVAL  (1'h0)
+  prim_subreg_ext #(
+    .DW    (1)
   ) u_clock_valid_register_valid_c6 (
-    .clk_i   (clk_i    ),
-    .rst_ni  (rst_ni  ),
-
-    // from register interface
+    .re     (clock_valid_register_valid_c6_re),
     .we     (clock_valid_register_valid_c6_we),
     .wd     (clock_valid_register_valid_c6_wd),
-
-    // from internal hardware
-    .de     (hw2reg.clock_valid_register.valid_c6.de),
-    .d      (hw2reg.clock_valid_register.valid_c6.d ),
-
-    // to internal hardware
-    .qe     (),
+    .d      (hw2reg.clock_valid_register.valid_c6.d),
+    .qre    (),
+    .qe     (reg2hw.clock_valid_register.valid_c6.qe),
     .q      (reg2hw.clock_valid_register.valid_c6.q ),
-
-    // to register interface (read)
     .qs     (clock_valid_register_valid_c6_qs)
   );
 
 
   //   F[valid_c7]: 7:7
-  prim_subreg #(
-    .DW      (1),
-    .SWACCESS("RW"),
-    .RESVAL  (1'h0)
+  prim_subreg_ext #(
+    .DW    (1)
   ) u_clock_valid_register_valid_c7 (
-    .clk_i   (clk_i    ),
-    .rst_ni  (rst_ni  ),
-
-    // from register interface
+    .re     (clock_valid_register_valid_c7_re),
     .we     (clock_valid_register_valid_c7_we),
     .wd     (clock_valid_register_valid_c7_wd),
-
-    // from internal hardware
-    .de     (hw2reg.clock_valid_register.valid_c7.de),
-    .d      (hw2reg.clock_valid_register.valid_c7.d ),
-
-    // to internal hardware
-    .qe     (),
+    .d      (hw2reg.clock_valid_register.valid_c7.d),
+    .qre    (),
+    .qe     (reg2hw.clock_valid_register.valid_c7.qe),
     .q      (reg2hw.clock_valid_register.valid_c7.q ),
-
-    // to register interface (read)
     .qs     (clock_valid_register_valid_c7_qs)
   );
 
 
   //   F[valid_c8]: 8:8
-  prim_subreg #(
-    .DW      (1),
-    .SWACCESS("RW"),
-    .RESVAL  (1'h0)
+  prim_subreg_ext #(
+    .DW    (1)
   ) u_clock_valid_register_valid_c8 (
-    .clk_i   (clk_i    ),
-    .rst_ni  (rst_ni  ),
-
-    // from register interface
+    .re     (clock_valid_register_valid_c8_re),
     .we     (clock_valid_register_valid_c8_we),
     .wd     (clock_valid_register_valid_c8_wd),
-
-    // from internal hardware
-    .de     (hw2reg.clock_valid_register.valid_c8.de),
-    .d      (hw2reg.clock_valid_register.valid_c8.d ),
-
-    // to internal hardware
-    .qe     (),
+    .d      (hw2reg.clock_valid_register.valid_c8.d),
+    .qre    (),
+    .qe     (reg2hw.clock_valid_register.valid_c8.qe),
     .q      (reg2hw.clock_valid_register.valid_c8.q ),
-
-    // to register interface (read)
     .qs     (clock_valid_register_valid_c8_qs)
   );
 
 
   //   F[valid_c9]: 9:9
-  prim_subreg #(
-    .DW      (1),
-    .SWACCESS("RW"),
-    .RESVAL  (1'h0)
+  prim_subreg_ext #(
+    .DW    (1)
   ) u_clock_valid_register_valid_c9 (
-    .clk_i   (clk_i    ),
-    .rst_ni  (rst_ni  ),
-
-    // from register interface
+    .re     (clock_valid_register_valid_c9_re),
     .we     (clock_valid_register_valid_c9_we),
     .wd     (clock_valid_register_valid_c9_wd),
-
-    // from internal hardware
-    .de     (hw2reg.clock_valid_register.valid_c9.de),
-    .d      (hw2reg.clock_valid_register.valid_c9.d ),
-
-    // to internal hardware
-    .qe     (),
+    .d      (hw2reg.clock_valid_register.valid_c9.d),
+    .qre    (),
+    .qe     (reg2hw.clock_valid_register.valid_c9.qe),
     .q      (reg2hw.clock_valid_register.valid_c9.q ),
-
-    // to register interface (read)
     .qs     (clock_valid_register_valid_c9_qs)
   );
 
 
   //   F[valid_c10]: 10:10
-  prim_subreg #(
-    .DW      (1),
-    .SWACCESS("RW"),
-    .RESVAL  (1'h0)
+  prim_subreg_ext #(
+    .DW    (1)
   ) u_clock_valid_register_valid_c10 (
-    .clk_i   (clk_i    ),
-    .rst_ni  (rst_ni  ),
-
-    // from register interface
+    .re     (clock_valid_register_valid_c10_re),
     .we     (clock_valid_register_valid_c10_we),
     .wd     (clock_valid_register_valid_c10_wd),
-
-    // from internal hardware
-    .de     (hw2reg.clock_valid_register.valid_c10.de),
-    .d      (hw2reg.clock_valid_register.valid_c10.d ),
-
-    // to internal hardware
-    .qe     (),
+    .d      (hw2reg.clock_valid_register.valid_c10.d),
+    .qre    (),
+    .qe     (reg2hw.clock_valid_register.valid_c10.qe),
     .q      (reg2hw.clock_valid_register.valid_c10.q ),
-
-    // to register interface (read)
     .qs     (clock_valid_register_valid_c10_qs)
   );
 
 
   //   F[valid_c11]: 11:11
-  prim_subreg #(
-    .DW      (1),
-    .SWACCESS("RW"),
-    .RESVAL  (1'h0)
+  prim_subreg_ext #(
+    .DW    (1)
   ) u_clock_valid_register_valid_c11 (
-    .clk_i   (clk_i    ),
-    .rst_ni  (rst_ni  ),
-
-    // from register interface
+    .re     (clock_valid_register_valid_c11_re),
     .we     (clock_valid_register_valid_c11_we),
     .wd     (clock_valid_register_valid_c11_wd),
-
-    // from internal hardware
-    .de     (hw2reg.clock_valid_register.valid_c11.de),
-    .d      (hw2reg.clock_valid_register.valid_c11.d ),
-
-    // to internal hardware
-    .qe     (),
+    .d      (hw2reg.clock_valid_register.valid_c11.d),
+    .qre    (),
+    .qe     (reg2hw.clock_valid_register.valid_c11.qe),
     .q      (reg2hw.clock_valid_register.valid_c11.q ),
-
-    // to register interface (read)
     .qs     (clock_valid_register_valid_c11_qs)
   );
 
 
   //   F[valid_c12]: 12:12
-  prim_subreg #(
-    .DW      (1),
-    .SWACCESS("RW"),
-    .RESVAL  (1'h0)
+  prim_subreg_ext #(
+    .DW    (1)
   ) u_clock_valid_register_valid_c12 (
-    .clk_i   (clk_i    ),
-    .rst_ni  (rst_ni  ),
-
-    // from register interface
+    .re     (clock_valid_register_valid_c12_re),
     .we     (clock_valid_register_valid_c12_we),
     .wd     (clock_valid_register_valid_c12_wd),
-
-    // from internal hardware
-    .de     (hw2reg.clock_valid_register.valid_c12.de),
-    .d      (hw2reg.clock_valid_register.valid_c12.d ),
-
-    // to internal hardware
-    .qe     (),
+    .d      (hw2reg.clock_valid_register.valid_c12.d),
+    .qre    (),
+    .qe     (reg2hw.clock_valid_register.valid_c12.qe),
     .q      (reg2hw.clock_valid_register.valid_c12.q ),
-
-    // to register interface (read)
     .qs     (clock_valid_register_valid_c12_qs)
   );
 
 
   //   F[valid_c13]: 13:13
-  prim_subreg #(
-    .DW      (1),
-    .SWACCESS("RW"),
-    .RESVAL  (1'h0)
+  prim_subreg_ext #(
+    .DW    (1)
   ) u_clock_valid_register_valid_c13 (
-    .clk_i   (clk_i    ),
-    .rst_ni  (rst_ni  ),
-
-    // from register interface
+    .re     (clock_valid_register_valid_c13_re),
     .we     (clock_valid_register_valid_c13_we),
     .wd     (clock_valid_register_valid_c13_wd),
-
-    // from internal hardware
-    .de     (hw2reg.clock_valid_register.valid_c13.de),
-    .d      (hw2reg.clock_valid_register.valid_c13.d ),
-
-    // to internal hardware
-    .qe     (),
+    .d      (hw2reg.clock_valid_register.valid_c13.d),
+    .qre    (),
+    .qe     (reg2hw.clock_valid_register.valid_c13.qe),
     .q      (reg2hw.clock_valid_register.valid_c13.q ),
-
-    // to register interface (read)
     .qs     (clock_valid_register_valid_c13_qs)
   );
 
 
   //   F[valid_c14]: 14:14
-  prim_subreg #(
-    .DW      (1),
-    .SWACCESS("RW"),
-    .RESVAL  (1'h0)
+  prim_subreg_ext #(
+    .DW    (1)
   ) u_clock_valid_register_valid_c14 (
-    .clk_i   (clk_i    ),
-    .rst_ni  (rst_ni  ),
-
-    // from register interface
+    .re     (clock_valid_register_valid_c14_re),
     .we     (clock_valid_register_valid_c14_we),
     .wd     (clock_valid_register_valid_c14_wd),
-
-    // from internal hardware
-    .de     (hw2reg.clock_valid_register.valid_c14.de),
-    .d      (hw2reg.clock_valid_register.valid_c14.d ),
-
-    // to internal hardware
-    .qe     (),
+    .d      (hw2reg.clock_valid_register.valid_c14.d),
+    .qre    (),
+    .qe     (reg2hw.clock_valid_register.valid_c14.qe),
     .q      (reg2hw.clock_valid_register.valid_c14.q ),
-
-    // to register interface (read)
     .qs     (clock_valid_register_valid_c14_qs)
   );
 
 
   //   F[valid_c15]: 15:15
-  prim_subreg #(
-    .DW      (1),
-    .SWACCESS("RW"),
-    .RESVAL  (1'h0)
+  prim_subreg_ext #(
+    .DW    (1)
   ) u_clock_valid_register_valid_c15 (
-    .clk_i   (clk_i    ),
-    .rst_ni  (rst_ni  ),
-
-    // from register interface
+    .re     (clock_valid_register_valid_c15_re),
     .we     (clock_valid_register_valid_c15_we),
     .wd     (clock_valid_register_valid_c15_wd),
-
-    // from internal hardware
-    .de     (hw2reg.clock_valid_register.valid_c15.de),
-    .d      (hw2reg.clock_valid_register.valid_c15.d ),
-
-    // to internal hardware
-    .qe     (),
+    .d      (hw2reg.clock_valid_register.valid_c15.d),
+    .qre    (),
+    .qe     (reg2hw.clock_valid_register.valid_c15.qe),
     .q      (reg2hw.clock_valid_register.valid_c15.q ),
-
-    // to register interface (read)
     .qs     (clock_valid_register_valid_c15_qs)
   );
 
 
   //   F[valid_c16]: 16:16
-  prim_subreg #(
-    .DW      (1),
-    .SWACCESS("RW"),
-    .RESVAL  (1'h0)
+  prim_subreg_ext #(
+    .DW    (1)
   ) u_clock_valid_register_valid_c16 (
-    .clk_i   (clk_i    ),
-    .rst_ni  (rst_ni  ),
-
-    // from register interface
+    .re     (clock_valid_register_valid_c16_re),
     .we     (clock_valid_register_valid_c16_we),
     .wd     (clock_valid_register_valid_c16_wd),
-
-    // from internal hardware
-    .de     (hw2reg.clock_valid_register.valid_c16.de),
-    .d      (hw2reg.clock_valid_register.valid_c16.d ),
-
-    // to internal hardware
-    .qe     (),
+    .d      (hw2reg.clock_valid_register.valid_c16.d),
+    .qre    (),
+    .qe     (reg2hw.clock_valid_register.valid_c16.qe),
     .q      (reg2hw.clock_valid_register.valid_c16.q ),
-
-    // to register interface (read)
     .qs     (clock_valid_register_valid_c16_qs)
   );
 
 
   //   F[valid_c17]: 17:17
-  prim_subreg #(
-    .DW      (1),
-    .SWACCESS("RW"),
-    .RESVAL  (1'h0)
+  prim_subreg_ext #(
+    .DW    (1)
   ) u_clock_valid_register_valid_c17 (
-    .clk_i   (clk_i    ),
-    .rst_ni  (rst_ni  ),
-
-    // from register interface
+    .re     (clock_valid_register_valid_c17_re),
     .we     (clock_valid_register_valid_c17_we),
     .wd     (clock_valid_register_valid_c17_wd),
-
-    // from internal hardware
-    .de     (hw2reg.clock_valid_register.valid_c17.de),
-    .d      (hw2reg.clock_valid_register.valid_c17.d ),
-
-    // to internal hardware
-    .qe     (),
+    .d      (hw2reg.clock_valid_register.valid_c17.d),
+    .qre    (),
+    .qe     (reg2hw.clock_valid_register.valid_c17.qe),
     .q      (reg2hw.clock_valid_register.valid_c17.q ),
-
-    // to register interface (read)
     .qs     (clock_valid_register_valid_c17_qs)
   );
 
 
   //   F[valid_c18]: 18:18
-  prim_subreg #(
-    .DW      (1),
-    .SWACCESS("RW"),
-    .RESVAL  (1'h0)
+  prim_subreg_ext #(
+    .DW    (1)
   ) u_clock_valid_register_valid_c18 (
-    .clk_i   (clk_i    ),
-    .rst_ni  (rst_ni  ),
-
-    // from register interface
+    .re     (clock_valid_register_valid_c18_re),
     .we     (clock_valid_register_valid_c18_we),
     .wd     (clock_valid_register_valid_c18_wd),
-
-    // from internal hardware
-    .de     (hw2reg.clock_valid_register.valid_c18.de),
-    .d      (hw2reg.clock_valid_register.valid_c18.d ),
-
-    // to internal hardware
-    .qe     (),
+    .d      (hw2reg.clock_valid_register.valid_c18.d),
+    .qre    (),
+    .qe     (reg2hw.clock_valid_register.valid_c18.qe),
     .q      (reg2hw.clock_valid_register.valid_c18.q ),
-
-    // to register interface (read)
     .qs     (clock_valid_register_valid_c18_qs)
   );
 
 
   //   F[valid_c19]: 19:19
-  prim_subreg #(
-    .DW      (1),
-    .SWACCESS("RW"),
-    .RESVAL  (1'h0)
+  prim_subreg_ext #(
+    .DW    (1)
   ) u_clock_valid_register_valid_c19 (
-    .clk_i   (clk_i    ),
-    .rst_ni  (rst_ni  ),
-
-    // from register interface
+    .re     (clock_valid_register_valid_c19_re),
     .we     (clock_valid_register_valid_c19_we),
     .wd     (clock_valid_register_valid_c19_wd),
-
-    // from internal hardware
-    .de     (hw2reg.clock_valid_register.valid_c19.de),
-    .d      (hw2reg.clock_valid_register.valid_c19.d ),
-
-    // to internal hardware
-    .qe     (),
+    .d      (hw2reg.clock_valid_register.valid_c19.d),
+    .qre    (),
+    .qe     (reg2hw.clock_valid_register.valid_c19.qe),
     .q      (reg2hw.clock_valid_register.valid_c19.q ),
-
-    // to register interface (read)
     .qs     (clock_valid_register_valid_c19_qs)
   );
 
 
   //   F[valid_c20]: 20:20
-  prim_subreg #(
-    .DW      (1),
-    .SWACCESS("RW"),
-    .RESVAL  (1'h0)
+  prim_subreg_ext #(
+    .DW    (1)
   ) u_clock_valid_register_valid_c20 (
-    .clk_i   (clk_i    ),
-    .rst_ni  (rst_ni  ),
-
-    // from register interface
+    .re     (clock_valid_register_valid_c20_re),
     .we     (clock_valid_register_valid_c20_we),
     .wd     (clock_valid_register_valid_c20_wd),
-
-    // from internal hardware
-    .de     (hw2reg.clock_valid_register.valid_c20.de),
-    .d      (hw2reg.clock_valid_register.valid_c20.d ),
-
-    // to internal hardware
-    .qe     (),
+    .d      (hw2reg.clock_valid_register.valid_c20.d),
+    .qre    (),
+    .qe     (reg2hw.clock_valid_register.valid_c20.qe),
     .q      (reg2hw.clock_valid_register.valid_c20.q ),
-
-    // to register interface (read)
     .qs     (clock_valid_register_valid_c20_qs)
   );
 
 
   //   F[valid_c21]: 21:21
-  prim_subreg #(
-    .DW      (1),
-    .SWACCESS("RW"),
-    .RESVAL  (1'h0)
+  prim_subreg_ext #(
+    .DW    (1)
   ) u_clock_valid_register_valid_c21 (
-    .clk_i   (clk_i    ),
-    .rst_ni  (rst_ni  ),
-
-    // from register interface
+    .re     (clock_valid_register_valid_c21_re),
     .we     (clock_valid_register_valid_c21_we),
     .wd     (clock_valid_register_valid_c21_wd),
-
-    // from internal hardware
-    .de     (hw2reg.clock_valid_register.valid_c21.de),
-    .d      (hw2reg.clock_valid_register.valid_c21.d ),
-
-    // to internal hardware
-    .qe     (),
+    .d      (hw2reg.clock_valid_register.valid_c21.d),
+    .qre    (),
+    .qe     (reg2hw.clock_valid_register.valid_c21.qe),
     .q      (reg2hw.clock_valid_register.valid_c21.q ),
-
-    // to register interface (read)
     .qs     (clock_valid_register_valid_c21_qs)
   );
 
 
   //   F[valid_c22]: 22:22
-  prim_subreg #(
-    .DW      (1),
-    .SWACCESS("RW"),
-    .RESVAL  (1'h0)
+  prim_subreg_ext #(
+    .DW    (1)
   ) u_clock_valid_register_valid_c22 (
-    .clk_i   (clk_i    ),
-    .rst_ni  (rst_ni  ),
-
-    // from register interface
+    .re     (clock_valid_register_valid_c22_re),
     .we     (clock_valid_register_valid_c22_we),
     .wd     (clock_valid_register_valid_c22_wd),
-
-    // from internal hardware
-    .de     (hw2reg.clock_valid_register.valid_c22.de),
-    .d      (hw2reg.clock_valid_register.valid_c22.d ),
-
-    // to internal hardware
-    .qe     (),
+    .d      (hw2reg.clock_valid_register.valid_c22.d),
+    .qre    (),
+    .qe     (reg2hw.clock_valid_register.valid_c22.qe),
     .q      (reg2hw.clock_valid_register.valid_c22.q ),
-
-    // to register interface (read)
     .qs     (clock_valid_register_valid_c22_qs)
   );
 
 
   //   F[valid_c23]: 23:23
-  prim_subreg #(
-    .DW      (1),
-    .SWACCESS("RW"),
-    .RESVAL  (1'h0)
+  prim_subreg_ext #(
+    .DW    (1)
   ) u_clock_valid_register_valid_c23 (
-    .clk_i   (clk_i    ),
-    .rst_ni  (rst_ni  ),
-
-    // from register interface
+    .re     (clock_valid_register_valid_c23_re),
     .we     (clock_valid_register_valid_c23_we),
     .wd     (clock_valid_register_valid_c23_wd),
-
-    // from internal hardware
-    .de     (hw2reg.clock_valid_register.valid_c23.de),
-    .d      (hw2reg.clock_valid_register.valid_c23.d ),
-
-    // to internal hardware
-    .qe     (),
+    .d      (hw2reg.clock_valid_register.valid_c23.d),
+    .qre    (),
+    .qe     (reg2hw.clock_valid_register.valid_c23.qe),
     .q      (reg2hw.clock_valid_register.valid_c23.q ),
-
-    // to register interface (read)
     .qs     (clock_valid_register_valid_c23_qs)
   );
 
 
   //   F[valid_c24]: 24:24
-  prim_subreg #(
-    .DW      (1),
-    .SWACCESS("RW"),
-    .RESVAL  (1'h0)
+  prim_subreg_ext #(
+    .DW    (1)
   ) u_clock_valid_register_valid_c24 (
-    .clk_i   (clk_i    ),
-    .rst_ni  (rst_ni  ),
-
-    // from register interface
+    .re     (clock_valid_register_valid_c24_re),
     .we     (clock_valid_register_valid_c24_we),
     .wd     (clock_valid_register_valid_c24_wd),
-
-    // from internal hardware
-    .de     (hw2reg.clock_valid_register.valid_c24.de),
-    .d      (hw2reg.clock_valid_register.valid_c24.d ),
-
-    // to internal hardware
-    .qe     (),
+    .d      (hw2reg.clock_valid_register.valid_c24.d),
+    .qre    (),
+    .qe     (reg2hw.clock_valid_register.valid_c24.qe),
     .q      (reg2hw.clock_valid_register.valid_c24.q ),
-
-    // to register interface (read)
     .qs     (clock_valid_register_valid_c24_qs)
   );
 
 
   //   F[valid_c25]: 25:25
-  prim_subreg #(
-    .DW      (1),
-    .SWACCESS("RW"),
-    .RESVAL  (1'h0)
+  prim_subreg_ext #(
+    .DW    (1)
   ) u_clock_valid_register_valid_c25 (
-    .clk_i   (clk_i    ),
-    .rst_ni  (rst_ni  ),
-
-    // from register interface
+    .re     (clock_valid_register_valid_c25_re),
     .we     (clock_valid_register_valid_c25_we),
     .wd     (clock_valid_register_valid_c25_wd),
-
-    // from internal hardware
-    .de     (hw2reg.clock_valid_register.valid_c25.de),
-    .d      (hw2reg.clock_valid_register.valid_c25.d ),
-
-    // to internal hardware
-    .qe     (),
+    .d      (hw2reg.clock_valid_register.valid_c25.d),
+    .qre    (),
+    .qe     (reg2hw.clock_valid_register.valid_c25.qe),
     .q      (reg2hw.clock_valid_register.valid_c25.q ),
-
-    // to register interface (read)
     .qs     (clock_valid_register_valid_c25_qs)
   );
 
 
   //   F[valid_c26]: 26:26
-  prim_subreg #(
-    .DW      (1),
-    .SWACCESS("RW"),
-    .RESVAL  (1'h0)
+  prim_subreg_ext #(
+    .DW    (1)
   ) u_clock_valid_register_valid_c26 (
-    .clk_i   (clk_i    ),
-    .rst_ni  (rst_ni  ),
-
-    // from register interface
+    .re     (clock_valid_register_valid_c26_re),
     .we     (clock_valid_register_valid_c26_we),
     .wd     (clock_valid_register_valid_c26_wd),
-
-    // from internal hardware
-    .de     (hw2reg.clock_valid_register.valid_c26.de),
-    .d      (hw2reg.clock_valid_register.valid_c26.d ),
-
-    // to internal hardware
-    .qe     (),
+    .d      (hw2reg.clock_valid_register.valid_c26.d),
+    .qre    (),
+    .qe     (reg2hw.clock_valid_register.valid_c26.qe),
     .q      (reg2hw.clock_valid_register.valid_c26.q ),
-
-    // to register interface (read)
     .qs     (clock_valid_register_valid_c26_qs)
   );
 
 
   //   F[valid_c27]: 27:27
-  prim_subreg #(
-    .DW      (1),
-    .SWACCESS("RW"),
-    .RESVAL  (1'h0)
+  prim_subreg_ext #(
+    .DW    (1)
   ) u_clock_valid_register_valid_c27 (
-    .clk_i   (clk_i    ),
-    .rst_ni  (rst_ni  ),
-
-    // from register interface
+    .re     (clock_valid_register_valid_c27_re),
     .we     (clock_valid_register_valid_c27_we),
     .wd     (clock_valid_register_valid_c27_wd),
-
-    // from internal hardware
-    .de     (hw2reg.clock_valid_register.valid_c27.de),
-    .d      (hw2reg.clock_valid_register.valid_c27.d ),
-
-    // to internal hardware
-    .qe     (),
+    .d      (hw2reg.clock_valid_register.valid_c27.d),
+    .qre    (),
+    .qe     (reg2hw.clock_valid_register.valid_c27.qe),
     .q      (reg2hw.clock_valid_register.valid_c27.q ),
-
-    // to register interface (read)
     .qs     (clock_valid_register_valid_c27_qs)
   );
 
 
   //   F[valid_c28]: 28:28
-  prim_subreg #(
-    .DW      (1),
-    .SWACCESS("RW"),
-    .RESVAL  (1'h0)
+  prim_subreg_ext #(
+    .DW    (1)
   ) u_clock_valid_register_valid_c28 (
-    .clk_i   (clk_i    ),
-    .rst_ni  (rst_ni  ),
-
-    // from register interface
+    .re     (clock_valid_register_valid_c28_re),
     .we     (clock_valid_register_valid_c28_we),
     .wd     (clock_valid_register_valid_c28_wd),
-
-    // from internal hardware
-    .de     (hw2reg.clock_valid_register.valid_c28.de),
-    .d      (hw2reg.clock_valid_register.valid_c28.d ),
-
-    // to internal hardware
-    .qe     (),
+    .d      (hw2reg.clock_valid_register.valid_c28.d),
+    .qre    (),
+    .qe     (reg2hw.clock_valid_register.valid_c28.qe),
     .q      (reg2hw.clock_valid_register.valid_c28.q ),
-
-    // to register interface (read)
     .qs     (clock_valid_register_valid_c28_qs)
   );
 
 
   //   F[valid_c29]: 29:29
-  prim_subreg #(
-    .DW      (1),
-    .SWACCESS("RW"),
-    .RESVAL  (1'h0)
+  prim_subreg_ext #(
+    .DW    (1)
   ) u_clock_valid_register_valid_c29 (
-    .clk_i   (clk_i    ),
-    .rst_ni  (rst_ni  ),
-
-    // from register interface
+    .re     (clock_valid_register_valid_c29_re),
     .we     (clock_valid_register_valid_c29_we),
     .wd     (clock_valid_register_valid_c29_wd),
-
-    // from internal hardware
-    .de     (hw2reg.clock_valid_register.valid_c29.de),
-    .d      (hw2reg.clock_valid_register.valid_c29.d ),
-
-    // to internal hardware
-    .qe     (),
+    .d      (hw2reg.clock_valid_register.valid_c29.d),
+    .qre    (),
+    .qe     (reg2hw.clock_valid_register.valid_c29.qe),
     .q      (reg2hw.clock_valid_register.valid_c29.q ),
-
-    // to register interface (read)
     .qs     (clock_valid_register_valid_c29_qs)
   );
 
 
   //   F[valid_c30]: 30:30
-  prim_subreg #(
-    .DW      (1),
-    .SWACCESS("RW"),
-    .RESVAL  (1'h0)
+  prim_subreg_ext #(
+    .DW    (1)
   ) u_clock_valid_register_valid_c30 (
-    .clk_i   (clk_i    ),
-    .rst_ni  (rst_ni  ),
-
-    // from register interface
+    .re     (clock_valid_register_valid_c30_re),
     .we     (clock_valid_register_valid_c30_we),
     .wd     (clock_valid_register_valid_c30_wd),
-
-    // from internal hardware
-    .de     (hw2reg.clock_valid_register.valid_c30.de),
-    .d      (hw2reg.clock_valid_register.valid_c30.d ),
-
-    // to internal hardware
-    .qe     (),
+    .d      (hw2reg.clock_valid_register.valid_c30.d),
+    .qre    (),
+    .qe     (reg2hw.clock_valid_register.valid_c30.qe),
     .q      (reg2hw.clock_valid_register.valid_c30.q ),
-
-    // to register interface (read)
     .qs     (clock_valid_register_valid_c30_qs)
   );
 
 
   //   F[valid_c31]: 31:31
-  prim_subreg #(
-    .DW      (1),
-    .SWACCESS("RW"),
-    .RESVAL  (1'h0)
+  prim_subreg_ext #(
+    .DW    (1)
   ) u_clock_valid_register_valid_c31 (
-    .clk_i   (clk_i    ),
-    .rst_ni  (rst_ni  ),
-
-    // from register interface
+    .re     (clock_valid_register_valid_c31_re),
     .we     (clock_valid_register_valid_c31_we),
     .wd     (clock_valid_register_valid_c31_wd),
-
-    // from internal hardware
-    .de     (hw2reg.clock_valid_register.valid_c31.de),
-    .d      (hw2reg.clock_valid_register.valid_c31.d ),
-
-    // to internal hardware
-    .qe     (),
+    .d      (hw2reg.clock_valid_register.valid_c31.d),
+    .qre    (),
+    .qe     (reg2hw.clock_valid_register.valid_c31.qe),
     .q      (reg2hw.clock_valid_register.valid_c31.q ),
-
-    // to register interface (read)
     .qs     (clock_valid_register_valid_c31_qs)
   );
 
@@ -2964,9 +2868,1355 @@ module hemaia_clk_rst_controller_reg_top #(
   );
 
 
+  // R[domain_division_valid]: V(True)
+
+  //   F[valid_c0]: 0:0
+  prim_subreg_ext #(
+    .DW    (1)
+  ) u_domain_division_valid_valid_c0 (
+    .re     (domain_division_valid_valid_c0_re),
+    .we     (domain_division_valid_valid_c0_we),
+    .wd     (domain_division_valid_valid_c0_wd),
+    .d      (hw2reg.domain_division_valid.valid_c0.d),
+    .qre    (),
+    .qe     (reg2hw.domain_division_valid.valid_c0.qe),
+    .q      (reg2hw.domain_division_valid.valid_c0.q ),
+    .qs     (domain_division_valid_valid_c0_qs)
+  );
 
 
-  logic [12:0] addr_hit;
+  //   F[valid_c1]: 1:1
+  prim_subreg_ext #(
+    .DW    (1)
+  ) u_domain_division_valid_valid_c1 (
+    .re     (domain_division_valid_valid_c1_re),
+    .we     (domain_division_valid_valid_c1_we),
+    .wd     (domain_division_valid_valid_c1_wd),
+    .d      (hw2reg.domain_division_valid.valid_c1.d),
+    .qre    (),
+    .qe     (reg2hw.domain_division_valid.valid_c1.qe),
+    .q      (reg2hw.domain_division_valid.valid_c1.q ),
+    .qs     (domain_division_valid_valid_c1_qs)
+  );
+
+
+  //   F[valid_c2]: 2:2
+  prim_subreg_ext #(
+    .DW    (1)
+  ) u_domain_division_valid_valid_c2 (
+    .re     (domain_division_valid_valid_c2_re),
+    .we     (domain_division_valid_valid_c2_we),
+    .wd     (domain_division_valid_valid_c2_wd),
+    .d      (hw2reg.domain_division_valid.valid_c2.d),
+    .qre    (),
+    .qe     (reg2hw.domain_division_valid.valid_c2.qe),
+    .q      (reg2hw.domain_division_valid.valid_c2.q ),
+    .qs     (domain_division_valid_valid_c2_qs)
+  );
+
+
+  //   F[valid_c3]: 3:3
+  prim_subreg_ext #(
+    .DW    (1)
+  ) u_domain_division_valid_valid_c3 (
+    .re     (domain_division_valid_valid_c3_re),
+    .we     (domain_division_valid_valid_c3_we),
+    .wd     (domain_division_valid_valid_c3_wd),
+    .d      (hw2reg.domain_division_valid.valid_c3.d),
+    .qre    (),
+    .qe     (reg2hw.domain_division_valid.valid_c3.qe),
+    .q      (reg2hw.domain_division_valid.valid_c3.q ),
+    .qs     (domain_division_valid_valid_c3_qs)
+  );
+
+
+  //   F[valid_c4]: 4:4
+  prim_subreg_ext #(
+    .DW    (1)
+  ) u_domain_division_valid_valid_c4 (
+    .re     (domain_division_valid_valid_c4_re),
+    .we     (domain_division_valid_valid_c4_we),
+    .wd     (domain_division_valid_valid_c4_wd),
+    .d      (hw2reg.domain_division_valid.valid_c4.d),
+    .qre    (),
+    .qe     (reg2hw.domain_division_valid.valid_c4.qe),
+    .q      (reg2hw.domain_division_valid.valid_c4.q ),
+    .qs     (domain_division_valid_valid_c4_qs)
+  );
+
+
+  //   F[valid_c5]: 5:5
+  prim_subreg_ext #(
+    .DW    (1)
+  ) u_domain_division_valid_valid_c5 (
+    .re     (domain_division_valid_valid_c5_re),
+    .we     (domain_division_valid_valid_c5_we),
+    .wd     (domain_division_valid_valid_c5_wd),
+    .d      (hw2reg.domain_division_valid.valid_c5.d),
+    .qre    (),
+    .qe     (reg2hw.domain_division_valid.valid_c5.qe),
+    .q      (reg2hw.domain_division_valid.valid_c5.q ),
+    .qs     (domain_division_valid_valid_c5_qs)
+  );
+
+
+  //   F[valid_c6]: 6:6
+  prim_subreg_ext #(
+    .DW    (1)
+  ) u_domain_division_valid_valid_c6 (
+    .re     (domain_division_valid_valid_c6_re),
+    .we     (domain_division_valid_valid_c6_we),
+    .wd     (domain_division_valid_valid_c6_wd),
+    .d      (hw2reg.domain_division_valid.valid_c6.d),
+    .qre    (),
+    .qe     (reg2hw.domain_division_valid.valid_c6.qe),
+    .q      (reg2hw.domain_division_valid.valid_c6.q ),
+    .qs     (domain_division_valid_valid_c6_qs)
+  );
+
+
+  //   F[valid_c7]: 7:7
+  prim_subreg_ext #(
+    .DW    (1)
+  ) u_domain_division_valid_valid_c7 (
+    .re     (domain_division_valid_valid_c7_re),
+    .we     (domain_division_valid_valid_c7_we),
+    .wd     (domain_division_valid_valid_c7_wd),
+    .d      (hw2reg.domain_division_valid.valid_c7.d),
+    .qre    (),
+    .qe     (reg2hw.domain_division_valid.valid_c7.qe),
+    .q      (reg2hw.domain_division_valid.valid_c7.q ),
+    .qs     (domain_division_valid_valid_c7_qs)
+  );
+
+
+  //   F[valid_c8]: 8:8
+  prim_subreg_ext #(
+    .DW    (1)
+  ) u_domain_division_valid_valid_c8 (
+    .re     (domain_division_valid_valid_c8_re),
+    .we     (domain_division_valid_valid_c8_we),
+    .wd     (domain_division_valid_valid_c8_wd),
+    .d      (hw2reg.domain_division_valid.valid_c8.d),
+    .qre    (),
+    .qe     (reg2hw.domain_division_valid.valid_c8.qe),
+    .q      (reg2hw.domain_division_valid.valid_c8.q ),
+    .qs     (domain_division_valid_valid_c8_qs)
+  );
+
+
+  //   F[valid_c9]: 9:9
+  prim_subreg_ext #(
+    .DW    (1)
+  ) u_domain_division_valid_valid_c9 (
+    .re     (domain_division_valid_valid_c9_re),
+    .we     (domain_division_valid_valid_c9_we),
+    .wd     (domain_division_valid_valid_c9_wd),
+    .d      (hw2reg.domain_division_valid.valid_c9.d),
+    .qre    (),
+    .qe     (reg2hw.domain_division_valid.valid_c9.qe),
+    .q      (reg2hw.domain_division_valid.valid_c9.q ),
+    .qs     (domain_division_valid_valid_c9_qs)
+  );
+
+
+  //   F[valid_c10]: 10:10
+  prim_subreg_ext #(
+    .DW    (1)
+  ) u_domain_division_valid_valid_c10 (
+    .re     (domain_division_valid_valid_c10_re),
+    .we     (domain_division_valid_valid_c10_we),
+    .wd     (domain_division_valid_valid_c10_wd),
+    .d      (hw2reg.domain_division_valid.valid_c10.d),
+    .qre    (),
+    .qe     (reg2hw.domain_division_valid.valid_c10.qe),
+    .q      (reg2hw.domain_division_valid.valid_c10.q ),
+    .qs     (domain_division_valid_valid_c10_qs)
+  );
+
+
+  //   F[valid_c11]: 11:11
+  prim_subreg_ext #(
+    .DW    (1)
+  ) u_domain_division_valid_valid_c11 (
+    .re     (domain_division_valid_valid_c11_re),
+    .we     (domain_division_valid_valid_c11_we),
+    .wd     (domain_division_valid_valid_c11_wd),
+    .d      (hw2reg.domain_division_valid.valid_c11.d),
+    .qre    (),
+    .qe     (reg2hw.domain_division_valid.valid_c11.qe),
+    .q      (reg2hw.domain_division_valid.valid_c11.q ),
+    .qs     (domain_division_valid_valid_c11_qs)
+  );
+
+
+  //   F[valid_c12]: 12:12
+  prim_subreg_ext #(
+    .DW    (1)
+  ) u_domain_division_valid_valid_c12 (
+    .re     (domain_division_valid_valid_c12_re),
+    .we     (domain_division_valid_valid_c12_we),
+    .wd     (domain_division_valid_valid_c12_wd),
+    .d      (hw2reg.domain_division_valid.valid_c12.d),
+    .qre    (),
+    .qe     (reg2hw.domain_division_valid.valid_c12.qe),
+    .q      (reg2hw.domain_division_valid.valid_c12.q ),
+    .qs     (domain_division_valid_valid_c12_qs)
+  );
+
+
+  //   F[valid_c13]: 13:13
+  prim_subreg_ext #(
+    .DW    (1)
+  ) u_domain_division_valid_valid_c13 (
+    .re     (domain_division_valid_valid_c13_re),
+    .we     (domain_division_valid_valid_c13_we),
+    .wd     (domain_division_valid_valid_c13_wd),
+    .d      (hw2reg.domain_division_valid.valid_c13.d),
+    .qre    (),
+    .qe     (reg2hw.domain_division_valid.valid_c13.qe),
+    .q      (reg2hw.domain_division_valid.valid_c13.q ),
+    .qs     (domain_division_valid_valid_c13_qs)
+  );
+
+
+  //   F[valid_c14]: 14:14
+  prim_subreg_ext #(
+    .DW    (1)
+  ) u_domain_division_valid_valid_c14 (
+    .re     (domain_division_valid_valid_c14_re),
+    .we     (domain_division_valid_valid_c14_we),
+    .wd     (domain_division_valid_valid_c14_wd),
+    .d      (hw2reg.domain_division_valid.valid_c14.d),
+    .qre    (),
+    .qe     (reg2hw.domain_division_valid.valid_c14.qe),
+    .q      (reg2hw.domain_division_valid.valid_c14.q ),
+    .qs     (domain_division_valid_valid_c14_qs)
+  );
+
+
+  //   F[valid_c15]: 15:15
+  prim_subreg_ext #(
+    .DW    (1)
+  ) u_domain_division_valid_valid_c15 (
+    .re     (domain_division_valid_valid_c15_re),
+    .we     (domain_division_valid_valid_c15_we),
+    .wd     (domain_division_valid_valid_c15_wd),
+    .d      (hw2reg.domain_division_valid.valid_c15.d),
+    .qre    (),
+    .qe     (reg2hw.domain_division_valid.valid_c15.qe),
+    .q      (reg2hw.domain_division_valid.valid_c15.q ),
+    .qs     (domain_division_valid_valid_c15_qs)
+  );
+
+
+  //   F[valid_c16]: 16:16
+  prim_subreg_ext #(
+    .DW    (1)
+  ) u_domain_division_valid_valid_c16 (
+    .re     (domain_division_valid_valid_c16_re),
+    .we     (domain_division_valid_valid_c16_we),
+    .wd     (domain_division_valid_valid_c16_wd),
+    .d      (hw2reg.domain_division_valid.valid_c16.d),
+    .qre    (),
+    .qe     (reg2hw.domain_division_valid.valid_c16.qe),
+    .q      (reg2hw.domain_division_valid.valid_c16.q ),
+    .qs     (domain_division_valid_valid_c16_qs)
+  );
+
+
+  //   F[valid_c17]: 17:17
+  prim_subreg_ext #(
+    .DW    (1)
+  ) u_domain_division_valid_valid_c17 (
+    .re     (domain_division_valid_valid_c17_re),
+    .we     (domain_division_valid_valid_c17_we),
+    .wd     (domain_division_valid_valid_c17_wd),
+    .d      (hw2reg.domain_division_valid.valid_c17.d),
+    .qre    (),
+    .qe     (reg2hw.domain_division_valid.valid_c17.qe),
+    .q      (reg2hw.domain_division_valid.valid_c17.q ),
+    .qs     (domain_division_valid_valid_c17_qs)
+  );
+
+
+  //   F[valid_c18]: 18:18
+  prim_subreg_ext #(
+    .DW    (1)
+  ) u_domain_division_valid_valid_c18 (
+    .re     (domain_division_valid_valid_c18_re),
+    .we     (domain_division_valid_valid_c18_we),
+    .wd     (domain_division_valid_valid_c18_wd),
+    .d      (hw2reg.domain_division_valid.valid_c18.d),
+    .qre    (),
+    .qe     (reg2hw.domain_division_valid.valid_c18.qe),
+    .q      (reg2hw.domain_division_valid.valid_c18.q ),
+    .qs     (domain_division_valid_valid_c18_qs)
+  );
+
+
+  //   F[valid_c19]: 19:19
+  prim_subreg_ext #(
+    .DW    (1)
+  ) u_domain_division_valid_valid_c19 (
+    .re     (domain_division_valid_valid_c19_re),
+    .we     (domain_division_valid_valid_c19_we),
+    .wd     (domain_division_valid_valid_c19_wd),
+    .d      (hw2reg.domain_division_valid.valid_c19.d),
+    .qre    (),
+    .qe     (reg2hw.domain_division_valid.valid_c19.qe),
+    .q      (reg2hw.domain_division_valid.valid_c19.q ),
+    .qs     (domain_division_valid_valid_c19_qs)
+  );
+
+
+  //   F[valid_c20]: 20:20
+  prim_subreg_ext #(
+    .DW    (1)
+  ) u_domain_division_valid_valid_c20 (
+    .re     (domain_division_valid_valid_c20_re),
+    .we     (domain_division_valid_valid_c20_we),
+    .wd     (domain_division_valid_valid_c20_wd),
+    .d      (hw2reg.domain_division_valid.valid_c20.d),
+    .qre    (),
+    .qe     (reg2hw.domain_division_valid.valid_c20.qe),
+    .q      (reg2hw.domain_division_valid.valid_c20.q ),
+    .qs     (domain_division_valid_valid_c20_qs)
+  );
+
+
+  //   F[valid_c21]: 21:21
+  prim_subreg_ext #(
+    .DW    (1)
+  ) u_domain_division_valid_valid_c21 (
+    .re     (domain_division_valid_valid_c21_re),
+    .we     (domain_division_valid_valid_c21_we),
+    .wd     (domain_division_valid_valid_c21_wd),
+    .d      (hw2reg.domain_division_valid.valid_c21.d),
+    .qre    (),
+    .qe     (reg2hw.domain_division_valid.valid_c21.qe),
+    .q      (reg2hw.domain_division_valid.valid_c21.q ),
+    .qs     (domain_division_valid_valid_c21_qs)
+  );
+
+
+  //   F[valid_c22]: 22:22
+  prim_subreg_ext #(
+    .DW    (1)
+  ) u_domain_division_valid_valid_c22 (
+    .re     (domain_division_valid_valid_c22_re),
+    .we     (domain_division_valid_valid_c22_we),
+    .wd     (domain_division_valid_valid_c22_wd),
+    .d      (hw2reg.domain_division_valid.valid_c22.d),
+    .qre    (),
+    .qe     (reg2hw.domain_division_valid.valid_c22.qe),
+    .q      (reg2hw.domain_division_valid.valid_c22.q ),
+    .qs     (domain_division_valid_valid_c22_qs)
+  );
+
+
+  //   F[valid_c23]: 23:23
+  prim_subreg_ext #(
+    .DW    (1)
+  ) u_domain_division_valid_valid_c23 (
+    .re     (domain_division_valid_valid_c23_re),
+    .we     (domain_division_valid_valid_c23_we),
+    .wd     (domain_division_valid_valid_c23_wd),
+    .d      (hw2reg.domain_division_valid.valid_c23.d),
+    .qre    (),
+    .qe     (reg2hw.domain_division_valid.valid_c23.qe),
+    .q      (reg2hw.domain_division_valid.valid_c23.q ),
+    .qs     (domain_division_valid_valid_c23_qs)
+  );
+
+
+  //   F[valid_c24]: 24:24
+  prim_subreg_ext #(
+    .DW    (1)
+  ) u_domain_division_valid_valid_c24 (
+    .re     (domain_division_valid_valid_c24_re),
+    .we     (domain_division_valid_valid_c24_we),
+    .wd     (domain_division_valid_valid_c24_wd),
+    .d      (hw2reg.domain_division_valid.valid_c24.d),
+    .qre    (),
+    .qe     (reg2hw.domain_division_valid.valid_c24.qe),
+    .q      (reg2hw.domain_division_valid.valid_c24.q ),
+    .qs     (domain_division_valid_valid_c24_qs)
+  );
+
+
+  //   F[valid_c25]: 25:25
+  prim_subreg_ext #(
+    .DW    (1)
+  ) u_domain_division_valid_valid_c25 (
+    .re     (domain_division_valid_valid_c25_re),
+    .we     (domain_division_valid_valid_c25_we),
+    .wd     (domain_division_valid_valid_c25_wd),
+    .d      (hw2reg.domain_division_valid.valid_c25.d),
+    .qre    (),
+    .qe     (reg2hw.domain_division_valid.valid_c25.qe),
+    .q      (reg2hw.domain_division_valid.valid_c25.q ),
+    .qs     (domain_division_valid_valid_c25_qs)
+  );
+
+
+  //   F[valid_c26]: 26:26
+  prim_subreg_ext #(
+    .DW    (1)
+  ) u_domain_division_valid_valid_c26 (
+    .re     (domain_division_valid_valid_c26_re),
+    .we     (domain_division_valid_valid_c26_we),
+    .wd     (domain_division_valid_valid_c26_wd),
+    .d      (hw2reg.domain_division_valid.valid_c26.d),
+    .qre    (),
+    .qe     (reg2hw.domain_division_valid.valid_c26.qe),
+    .q      (reg2hw.domain_division_valid.valid_c26.q ),
+    .qs     (domain_division_valid_valid_c26_qs)
+  );
+
+
+  //   F[valid_c27]: 27:27
+  prim_subreg_ext #(
+    .DW    (1)
+  ) u_domain_division_valid_valid_c27 (
+    .re     (domain_division_valid_valid_c27_re),
+    .we     (domain_division_valid_valid_c27_we),
+    .wd     (domain_division_valid_valid_c27_wd),
+    .d      (hw2reg.domain_division_valid.valid_c27.d),
+    .qre    (),
+    .qe     (reg2hw.domain_division_valid.valid_c27.qe),
+    .q      (reg2hw.domain_division_valid.valid_c27.q ),
+    .qs     (domain_division_valid_valid_c27_qs)
+  );
+
+
+  //   F[valid_c28]: 28:28
+  prim_subreg_ext #(
+    .DW    (1)
+  ) u_domain_division_valid_valid_c28 (
+    .re     (domain_division_valid_valid_c28_re),
+    .we     (domain_division_valid_valid_c28_we),
+    .wd     (domain_division_valid_valid_c28_wd),
+    .d      (hw2reg.domain_division_valid.valid_c28.d),
+    .qre    (),
+    .qe     (reg2hw.domain_division_valid.valid_c28.qe),
+    .q      (reg2hw.domain_division_valid.valid_c28.q ),
+    .qs     (domain_division_valid_valid_c28_qs)
+  );
+
+
+  //   F[valid_c29]: 29:29
+  prim_subreg_ext #(
+    .DW    (1)
+  ) u_domain_division_valid_valid_c29 (
+    .re     (domain_division_valid_valid_c29_re),
+    .we     (domain_division_valid_valid_c29_we),
+    .wd     (domain_division_valid_valid_c29_wd),
+    .d      (hw2reg.domain_division_valid.valid_c29.d),
+    .qre    (),
+    .qe     (reg2hw.domain_division_valid.valid_c29.qe),
+    .q      (reg2hw.domain_division_valid.valid_c29.q ),
+    .qs     (domain_division_valid_valid_c29_qs)
+  );
+
+
+  //   F[valid_c30]: 30:30
+  prim_subreg_ext #(
+    .DW    (1)
+  ) u_domain_division_valid_valid_c30 (
+    .re     (domain_division_valid_valid_c30_re),
+    .we     (domain_division_valid_valid_c30_we),
+    .wd     (domain_division_valid_valid_c30_wd),
+    .d      (hw2reg.domain_division_valid.valid_c30.d),
+    .qre    (),
+    .qe     (reg2hw.domain_division_valid.valid_c30.qe),
+    .q      (reg2hw.domain_division_valid.valid_c30.q ),
+    .qs     (domain_division_valid_valid_c30_qs)
+  );
+
+
+  //   F[valid_c31]: 31:31
+  prim_subreg_ext #(
+    .DW    (1)
+  ) u_domain_division_valid_valid_c31 (
+    .re     (domain_division_valid_valid_c31_re),
+    .we     (domain_division_valid_valid_c31_we),
+    .wd     (domain_division_valid_valid_c31_wd),
+    .d      (hw2reg.domain_division_valid.valid_c31.d),
+    .qre    (),
+    .qe     (reg2hw.domain_division_valid.valid_c31.qe),
+    .q      (reg2hw.domain_division_valid.valid_c31.q ),
+    .qs     (domain_division_valid_valid_c31_qs)
+  );
+
+
+  // R[domain_division_c0]: V(False)
+
+  prim_subreg #(
+    .DW      (8),
+    .SWACCESS("RW"),
+    .RESVAL  (8'h0)
+  ) u_domain_division_c0 (
+    .clk_i   (clk_i    ),
+    .rst_ni  (rst_ni  ),
+
+    // from register interface
+    .we     (domain_division_c0_we),
+    .wd     (domain_division_c0_wd),
+
+    // from internal hardware
+    .de     (1'b0),
+    .d      ('0  ),
+
+    // to internal hardware
+    .qe     (),
+    .q      (reg2hw.domain_division_c0.q ),
+
+    // to register interface (read)
+    .qs     (domain_division_c0_qs)
+  );
+
+
+  // R[domain_division_c1]: V(False)
+
+  prim_subreg #(
+    .DW      (8),
+    .SWACCESS("RW"),
+    .RESVAL  (8'h0)
+  ) u_domain_division_c1 (
+    .clk_i   (clk_i    ),
+    .rst_ni  (rst_ni  ),
+
+    // from register interface
+    .we     (domain_division_c1_we),
+    .wd     (domain_division_c1_wd),
+
+    // from internal hardware
+    .de     (1'b0),
+    .d      ('0  ),
+
+    // to internal hardware
+    .qe     (),
+    .q      (reg2hw.domain_division_c1.q ),
+
+    // to register interface (read)
+    .qs     (domain_division_c1_qs)
+  );
+
+
+  // R[domain_division_c2]: V(False)
+
+  prim_subreg #(
+    .DW      (8),
+    .SWACCESS("RW"),
+    .RESVAL  (8'h0)
+  ) u_domain_division_c2 (
+    .clk_i   (clk_i    ),
+    .rst_ni  (rst_ni  ),
+
+    // from register interface
+    .we     (domain_division_c2_we),
+    .wd     (domain_division_c2_wd),
+
+    // from internal hardware
+    .de     (1'b0),
+    .d      ('0  ),
+
+    // to internal hardware
+    .qe     (),
+    .q      (reg2hw.domain_division_c2.q ),
+
+    // to register interface (read)
+    .qs     (domain_division_c2_qs)
+  );
+
+
+  // R[domain_division_c3]: V(False)
+
+  prim_subreg #(
+    .DW      (8),
+    .SWACCESS("RW"),
+    .RESVAL  (8'h0)
+  ) u_domain_division_c3 (
+    .clk_i   (clk_i    ),
+    .rst_ni  (rst_ni  ),
+
+    // from register interface
+    .we     (domain_division_c3_we),
+    .wd     (domain_division_c3_wd),
+
+    // from internal hardware
+    .de     (1'b0),
+    .d      ('0  ),
+
+    // to internal hardware
+    .qe     (),
+    .q      (reg2hw.domain_division_c3.q ),
+
+    // to register interface (read)
+    .qs     (domain_division_c3_qs)
+  );
+
+
+  // R[domain_division_c4]: V(False)
+
+  prim_subreg #(
+    .DW      (8),
+    .SWACCESS("RW"),
+    .RESVAL  (8'h0)
+  ) u_domain_division_c4 (
+    .clk_i   (clk_i    ),
+    .rst_ni  (rst_ni  ),
+
+    // from register interface
+    .we     (domain_division_c4_we),
+    .wd     (domain_division_c4_wd),
+
+    // from internal hardware
+    .de     (1'b0),
+    .d      ('0  ),
+
+    // to internal hardware
+    .qe     (),
+    .q      (reg2hw.domain_division_c4.q ),
+
+    // to register interface (read)
+    .qs     (domain_division_c4_qs)
+  );
+
+
+  // R[domain_division_c5]: V(False)
+
+  prim_subreg #(
+    .DW      (8),
+    .SWACCESS("RW"),
+    .RESVAL  (8'h0)
+  ) u_domain_division_c5 (
+    .clk_i   (clk_i    ),
+    .rst_ni  (rst_ni  ),
+
+    // from register interface
+    .we     (domain_division_c5_we),
+    .wd     (domain_division_c5_wd),
+
+    // from internal hardware
+    .de     (1'b0),
+    .d      ('0  ),
+
+    // to internal hardware
+    .qe     (),
+    .q      (reg2hw.domain_division_c5.q ),
+
+    // to register interface (read)
+    .qs     (domain_division_c5_qs)
+  );
+
+
+  // R[domain_division_c6]: V(False)
+
+  prim_subreg #(
+    .DW      (8),
+    .SWACCESS("RW"),
+    .RESVAL  (8'h0)
+  ) u_domain_division_c6 (
+    .clk_i   (clk_i    ),
+    .rst_ni  (rst_ni  ),
+
+    // from register interface
+    .we     (domain_division_c6_we),
+    .wd     (domain_division_c6_wd),
+
+    // from internal hardware
+    .de     (1'b0),
+    .d      ('0  ),
+
+    // to internal hardware
+    .qe     (),
+    .q      (reg2hw.domain_division_c6.q ),
+
+    // to register interface (read)
+    .qs     (domain_division_c6_qs)
+  );
+
+
+  // R[domain_division_c7]: V(False)
+
+  prim_subreg #(
+    .DW      (8),
+    .SWACCESS("RW"),
+    .RESVAL  (8'h0)
+  ) u_domain_division_c7 (
+    .clk_i   (clk_i    ),
+    .rst_ni  (rst_ni  ),
+
+    // from register interface
+    .we     (domain_division_c7_we),
+    .wd     (domain_division_c7_wd),
+
+    // from internal hardware
+    .de     (1'b0),
+    .d      ('0  ),
+
+    // to internal hardware
+    .qe     (),
+    .q      (reg2hw.domain_division_c7.q ),
+
+    // to register interface (read)
+    .qs     (domain_division_c7_qs)
+  );
+
+
+  // R[domain_division_c8]: V(False)
+
+  prim_subreg #(
+    .DW      (8),
+    .SWACCESS("RW"),
+    .RESVAL  (8'h0)
+  ) u_domain_division_c8 (
+    .clk_i   (clk_i    ),
+    .rst_ni  (rst_ni  ),
+
+    // from register interface
+    .we     (domain_division_c8_we),
+    .wd     (domain_division_c8_wd),
+
+    // from internal hardware
+    .de     (1'b0),
+    .d      ('0  ),
+
+    // to internal hardware
+    .qe     (),
+    .q      (reg2hw.domain_division_c8.q ),
+
+    // to register interface (read)
+    .qs     (domain_division_c8_qs)
+  );
+
+
+  // R[domain_division_c9]: V(False)
+
+  prim_subreg #(
+    .DW      (8),
+    .SWACCESS("RW"),
+    .RESVAL  (8'h0)
+  ) u_domain_division_c9 (
+    .clk_i   (clk_i    ),
+    .rst_ni  (rst_ni  ),
+
+    // from register interface
+    .we     (domain_division_c9_we),
+    .wd     (domain_division_c9_wd),
+
+    // from internal hardware
+    .de     (1'b0),
+    .d      ('0  ),
+
+    // to internal hardware
+    .qe     (),
+    .q      (reg2hw.domain_division_c9.q ),
+
+    // to register interface (read)
+    .qs     (domain_division_c9_qs)
+  );
+
+
+  // R[domain_division_c10]: V(False)
+
+  prim_subreg #(
+    .DW      (8),
+    .SWACCESS("RW"),
+    .RESVAL  (8'h0)
+  ) u_domain_division_c10 (
+    .clk_i   (clk_i    ),
+    .rst_ni  (rst_ni  ),
+
+    // from register interface
+    .we     (domain_division_c10_we),
+    .wd     (domain_division_c10_wd),
+
+    // from internal hardware
+    .de     (1'b0),
+    .d      ('0  ),
+
+    // to internal hardware
+    .qe     (),
+    .q      (reg2hw.domain_division_c10.q ),
+
+    // to register interface (read)
+    .qs     (domain_division_c10_qs)
+  );
+
+
+  // R[domain_division_c11]: V(False)
+
+  prim_subreg #(
+    .DW      (8),
+    .SWACCESS("RW"),
+    .RESVAL  (8'h0)
+  ) u_domain_division_c11 (
+    .clk_i   (clk_i    ),
+    .rst_ni  (rst_ni  ),
+
+    // from register interface
+    .we     (domain_division_c11_we),
+    .wd     (domain_division_c11_wd),
+
+    // from internal hardware
+    .de     (1'b0),
+    .d      ('0  ),
+
+    // to internal hardware
+    .qe     (),
+    .q      (reg2hw.domain_division_c11.q ),
+
+    // to register interface (read)
+    .qs     (domain_division_c11_qs)
+  );
+
+
+  // R[domain_division_c12]: V(False)
+
+  prim_subreg #(
+    .DW      (8),
+    .SWACCESS("RW"),
+    .RESVAL  (8'h0)
+  ) u_domain_division_c12 (
+    .clk_i   (clk_i    ),
+    .rst_ni  (rst_ni  ),
+
+    // from register interface
+    .we     (domain_division_c12_we),
+    .wd     (domain_division_c12_wd),
+
+    // from internal hardware
+    .de     (1'b0),
+    .d      ('0  ),
+
+    // to internal hardware
+    .qe     (),
+    .q      (reg2hw.domain_division_c12.q ),
+
+    // to register interface (read)
+    .qs     (domain_division_c12_qs)
+  );
+
+
+  // R[domain_division_c13]: V(False)
+
+  prim_subreg #(
+    .DW      (8),
+    .SWACCESS("RW"),
+    .RESVAL  (8'h0)
+  ) u_domain_division_c13 (
+    .clk_i   (clk_i    ),
+    .rst_ni  (rst_ni  ),
+
+    // from register interface
+    .we     (domain_division_c13_we),
+    .wd     (domain_division_c13_wd),
+
+    // from internal hardware
+    .de     (1'b0),
+    .d      ('0  ),
+
+    // to internal hardware
+    .qe     (),
+    .q      (reg2hw.domain_division_c13.q ),
+
+    // to register interface (read)
+    .qs     (domain_division_c13_qs)
+  );
+
+
+  // R[domain_division_c14]: V(False)
+
+  prim_subreg #(
+    .DW      (8),
+    .SWACCESS("RW"),
+    .RESVAL  (8'h0)
+  ) u_domain_division_c14 (
+    .clk_i   (clk_i    ),
+    .rst_ni  (rst_ni  ),
+
+    // from register interface
+    .we     (domain_division_c14_we),
+    .wd     (domain_division_c14_wd),
+
+    // from internal hardware
+    .de     (1'b0),
+    .d      ('0  ),
+
+    // to internal hardware
+    .qe     (),
+    .q      (reg2hw.domain_division_c14.q ),
+
+    // to register interface (read)
+    .qs     (domain_division_c14_qs)
+  );
+
+
+  // R[domain_division_c15]: V(False)
+
+  prim_subreg #(
+    .DW      (8),
+    .SWACCESS("RW"),
+    .RESVAL  (8'h0)
+  ) u_domain_division_c15 (
+    .clk_i   (clk_i    ),
+    .rst_ni  (rst_ni  ),
+
+    // from register interface
+    .we     (domain_division_c15_we),
+    .wd     (domain_division_c15_wd),
+
+    // from internal hardware
+    .de     (1'b0),
+    .d      ('0  ),
+
+    // to internal hardware
+    .qe     (),
+    .q      (reg2hw.domain_division_c15.q ),
+
+    // to register interface (read)
+    .qs     (domain_division_c15_qs)
+  );
+
+
+  // R[domain_division_c16]: V(False)
+
+  prim_subreg #(
+    .DW      (8),
+    .SWACCESS("RW"),
+    .RESVAL  (8'h0)
+  ) u_domain_division_c16 (
+    .clk_i   (clk_i    ),
+    .rst_ni  (rst_ni  ),
+
+    // from register interface
+    .we     (domain_division_c16_we),
+    .wd     (domain_division_c16_wd),
+
+    // from internal hardware
+    .de     (1'b0),
+    .d      ('0  ),
+
+    // to internal hardware
+    .qe     (),
+    .q      (reg2hw.domain_division_c16.q ),
+
+    // to register interface (read)
+    .qs     (domain_division_c16_qs)
+  );
+
+
+  // R[domain_division_c17]: V(False)
+
+  prim_subreg #(
+    .DW      (8),
+    .SWACCESS("RW"),
+    .RESVAL  (8'h0)
+  ) u_domain_division_c17 (
+    .clk_i   (clk_i    ),
+    .rst_ni  (rst_ni  ),
+
+    // from register interface
+    .we     (domain_division_c17_we),
+    .wd     (domain_division_c17_wd),
+
+    // from internal hardware
+    .de     (1'b0),
+    .d      ('0  ),
+
+    // to internal hardware
+    .qe     (),
+    .q      (reg2hw.domain_division_c17.q ),
+
+    // to register interface (read)
+    .qs     (domain_division_c17_qs)
+  );
+
+
+  // R[domain_division_c18]: V(False)
+
+  prim_subreg #(
+    .DW      (8),
+    .SWACCESS("RW"),
+    .RESVAL  (8'h0)
+  ) u_domain_division_c18 (
+    .clk_i   (clk_i    ),
+    .rst_ni  (rst_ni  ),
+
+    // from register interface
+    .we     (domain_division_c18_we),
+    .wd     (domain_division_c18_wd),
+
+    // from internal hardware
+    .de     (1'b0),
+    .d      ('0  ),
+
+    // to internal hardware
+    .qe     (),
+    .q      (reg2hw.domain_division_c18.q ),
+
+    // to register interface (read)
+    .qs     (domain_division_c18_qs)
+  );
+
+
+  // R[domain_division_c19]: V(False)
+
+  prim_subreg #(
+    .DW      (8),
+    .SWACCESS("RW"),
+    .RESVAL  (8'h0)
+  ) u_domain_division_c19 (
+    .clk_i   (clk_i    ),
+    .rst_ni  (rst_ni  ),
+
+    // from register interface
+    .we     (domain_division_c19_we),
+    .wd     (domain_division_c19_wd),
+
+    // from internal hardware
+    .de     (1'b0),
+    .d      ('0  ),
+
+    // to internal hardware
+    .qe     (),
+    .q      (reg2hw.domain_division_c19.q ),
+
+    // to register interface (read)
+    .qs     (domain_division_c19_qs)
+  );
+
+
+  // R[domain_division_c20]: V(False)
+
+  prim_subreg #(
+    .DW      (8),
+    .SWACCESS("RW"),
+    .RESVAL  (8'h0)
+  ) u_domain_division_c20 (
+    .clk_i   (clk_i    ),
+    .rst_ni  (rst_ni  ),
+
+    // from register interface
+    .we     (domain_division_c20_we),
+    .wd     (domain_division_c20_wd),
+
+    // from internal hardware
+    .de     (1'b0),
+    .d      ('0  ),
+
+    // to internal hardware
+    .qe     (),
+    .q      (reg2hw.domain_division_c20.q ),
+
+    // to register interface (read)
+    .qs     (domain_division_c20_qs)
+  );
+
+
+  // R[domain_division_c21]: V(False)
+
+  prim_subreg #(
+    .DW      (8),
+    .SWACCESS("RW"),
+    .RESVAL  (8'h0)
+  ) u_domain_division_c21 (
+    .clk_i   (clk_i    ),
+    .rst_ni  (rst_ni  ),
+
+    // from register interface
+    .we     (domain_division_c21_we),
+    .wd     (domain_division_c21_wd),
+
+    // from internal hardware
+    .de     (1'b0),
+    .d      ('0  ),
+
+    // to internal hardware
+    .qe     (),
+    .q      (reg2hw.domain_division_c21.q ),
+
+    // to register interface (read)
+    .qs     (domain_division_c21_qs)
+  );
+
+
+  // R[domain_division_c22]: V(False)
+
+  prim_subreg #(
+    .DW      (8),
+    .SWACCESS("RW"),
+    .RESVAL  (8'h0)
+  ) u_domain_division_c22 (
+    .clk_i   (clk_i    ),
+    .rst_ni  (rst_ni  ),
+
+    // from register interface
+    .we     (domain_division_c22_we),
+    .wd     (domain_division_c22_wd),
+
+    // from internal hardware
+    .de     (1'b0),
+    .d      ('0  ),
+
+    // to internal hardware
+    .qe     (),
+    .q      (reg2hw.domain_division_c22.q ),
+
+    // to register interface (read)
+    .qs     (domain_division_c22_qs)
+  );
+
+
+  // R[domain_division_c23]: V(False)
+
+  prim_subreg #(
+    .DW      (8),
+    .SWACCESS("RW"),
+    .RESVAL  (8'h0)
+  ) u_domain_division_c23 (
+    .clk_i   (clk_i    ),
+    .rst_ni  (rst_ni  ),
+
+    // from register interface
+    .we     (domain_division_c23_we),
+    .wd     (domain_division_c23_wd),
+
+    // from internal hardware
+    .de     (1'b0),
+    .d      ('0  ),
+
+    // to internal hardware
+    .qe     (),
+    .q      (reg2hw.domain_division_c23.q ),
+
+    // to register interface (read)
+    .qs     (domain_division_c23_qs)
+  );
+
+
+  // R[domain_division_c24]: V(False)
+
+  prim_subreg #(
+    .DW      (8),
+    .SWACCESS("RW"),
+    .RESVAL  (8'h0)
+  ) u_domain_division_c24 (
+    .clk_i   (clk_i    ),
+    .rst_ni  (rst_ni  ),
+
+    // from register interface
+    .we     (domain_division_c24_we),
+    .wd     (domain_division_c24_wd),
+
+    // from internal hardware
+    .de     (1'b0),
+    .d      ('0  ),
+
+    // to internal hardware
+    .qe     (),
+    .q      (reg2hw.domain_division_c24.q ),
+
+    // to register interface (read)
+    .qs     (domain_division_c24_qs)
+  );
+
+
+  // R[domain_division_c25]: V(False)
+
+  prim_subreg #(
+    .DW      (8),
+    .SWACCESS("RW"),
+    .RESVAL  (8'h0)
+  ) u_domain_division_c25 (
+    .clk_i   (clk_i    ),
+    .rst_ni  (rst_ni  ),
+
+    // from register interface
+    .we     (domain_division_c25_we),
+    .wd     (domain_division_c25_wd),
+
+    // from internal hardware
+    .de     (1'b0),
+    .d      ('0  ),
+
+    // to internal hardware
+    .qe     (),
+    .q      (reg2hw.domain_division_c25.q ),
+
+    // to register interface (read)
+    .qs     (domain_division_c25_qs)
+  );
+
+
+  // R[domain_division_c26]: V(False)
+
+  prim_subreg #(
+    .DW      (8),
+    .SWACCESS("RW"),
+    .RESVAL  (8'h0)
+  ) u_domain_division_c26 (
+    .clk_i   (clk_i    ),
+    .rst_ni  (rst_ni  ),
+
+    // from register interface
+    .we     (domain_division_c26_we),
+    .wd     (domain_division_c26_wd),
+
+    // from internal hardware
+    .de     (1'b0),
+    .d      ('0  ),
+
+    // to internal hardware
+    .qe     (),
+    .q      (reg2hw.domain_division_c26.q ),
+
+    // to register interface (read)
+    .qs     (domain_division_c26_qs)
+  );
+
+
+  // R[domain_division_c27]: V(False)
+
+  prim_subreg #(
+    .DW      (8),
+    .SWACCESS("RW"),
+    .RESVAL  (8'h0)
+  ) u_domain_division_c27 (
+    .clk_i   (clk_i    ),
+    .rst_ni  (rst_ni  ),
+
+    // from register interface
+    .we     (domain_division_c27_we),
+    .wd     (domain_division_c27_wd),
+
+    // from internal hardware
+    .de     (1'b0),
+    .d      ('0  ),
+
+    // to internal hardware
+    .qe     (),
+    .q      (reg2hw.domain_division_c27.q ),
+
+    // to register interface (read)
+    .qs     (domain_division_c27_qs)
+  );
+
+
+  // R[domain_division_c28]: V(False)
+
+  prim_subreg #(
+    .DW      (8),
+    .SWACCESS("RW"),
+    .RESVAL  (8'h0)
+  ) u_domain_division_c28 (
+    .clk_i   (clk_i    ),
+    .rst_ni  (rst_ni  ),
+
+    // from register interface
+    .we     (domain_division_c28_we),
+    .wd     (domain_division_c28_wd),
+
+    // from internal hardware
+    .de     (1'b0),
+    .d      ('0  ),
+
+    // to internal hardware
+    .qe     (),
+    .q      (reg2hw.domain_division_c28.q ),
+
+    // to register interface (read)
+    .qs     (domain_division_c28_qs)
+  );
+
+
+  // R[domain_division_c29]: V(False)
+
+  prim_subreg #(
+    .DW      (8),
+    .SWACCESS("RW"),
+    .RESVAL  (8'h0)
+  ) u_domain_division_c29 (
+    .clk_i   (clk_i    ),
+    .rst_ni  (rst_ni  ),
+
+    // from register interface
+    .we     (domain_division_c29_we),
+    .wd     (domain_division_c29_wd),
+
+    // from internal hardware
+    .de     (1'b0),
+    .d      ('0  ),
+
+    // to internal hardware
+    .qe     (),
+    .q      (reg2hw.domain_division_c29.q ),
+
+    // to register interface (read)
+    .qs     (domain_division_c29_qs)
+  );
+
+
+  // R[domain_division_c30]: V(False)
+
+  prim_subreg #(
+    .DW      (8),
+    .SWACCESS("RW"),
+    .RESVAL  (8'h0)
+  ) u_domain_division_c30 (
+    .clk_i   (clk_i    ),
+    .rst_ni  (rst_ni  ),
+
+    // from register interface
+    .we     (domain_division_c30_we),
+    .wd     (domain_division_c30_wd),
+
+    // from internal hardware
+    .de     (1'b0),
+    .d      ('0  ),
+
+    // to internal hardware
+    .qe     (),
+    .q      (reg2hw.domain_division_c30.q ),
+
+    // to register interface (read)
+    .qs     (domain_division_c30_qs)
+  );
+
+
+  // R[domain_division_c31]: V(False)
+
+  prim_subreg #(
+    .DW      (8),
+    .SWACCESS("RW"),
+    .RESVAL  (8'h0)
+  ) u_domain_division_c31 (
+    .clk_i   (clk_i    ),
+    .rst_ni  (rst_ni  ),
+
+    // from register interface
+    .we     (domain_division_c31_we),
+    .wd     (domain_division_c31_wd),
+
+    // from internal hardware
+    .de     (1'b0),
+    .d      ('0  ),
+
+    // to internal hardware
+    .qe     (),
+    .q      (reg2hw.domain_division_c31.q ),
+
+    // to register interface (read)
+    .qs     (domain_division_c31_qs)
+  );
+
+
+
+
+  logic [45:0] addr_hit;
   always_comb begin
     addr_hit = '0;
     addr_hit[ 0] = (reg_addr == HEMAIA_CLK_RST_CONTROLLER_RESET_REGISTER_OFFSET);
@@ -2982,6 +4232,39 @@ module hemaia_clk_rst_controller_reg_top #(
     addr_hit[10] = (reg_addr == HEMAIA_CLK_RST_CONTROLLER_PLL_TEST_EN_REGISTER_OFFSET);
     addr_hit[11] = (reg_addr == HEMAIA_CLK_RST_CONTROLLER_PLL_TEST_SEL_REGISTER_OFFSET);
     addr_hit[12] = (reg_addr == HEMAIA_CLK_RST_CONTROLLER_PLL_TEST_OUT_REGISTER_OFFSET);
+    addr_hit[13] = (reg_addr == HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_VALID_OFFSET);
+    addr_hit[14] = (reg_addr == HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C0_OFFSET);
+    addr_hit[15] = (reg_addr == HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C1_OFFSET);
+    addr_hit[16] = (reg_addr == HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C2_OFFSET);
+    addr_hit[17] = (reg_addr == HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C3_OFFSET);
+    addr_hit[18] = (reg_addr == HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C4_OFFSET);
+    addr_hit[19] = (reg_addr == HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C5_OFFSET);
+    addr_hit[20] = (reg_addr == HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C6_OFFSET);
+    addr_hit[21] = (reg_addr == HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C7_OFFSET);
+    addr_hit[22] = (reg_addr == HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C8_OFFSET);
+    addr_hit[23] = (reg_addr == HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C9_OFFSET);
+    addr_hit[24] = (reg_addr == HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C10_OFFSET);
+    addr_hit[25] = (reg_addr == HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C11_OFFSET);
+    addr_hit[26] = (reg_addr == HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C12_OFFSET);
+    addr_hit[27] = (reg_addr == HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C13_OFFSET);
+    addr_hit[28] = (reg_addr == HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C14_OFFSET);
+    addr_hit[29] = (reg_addr == HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C15_OFFSET);
+    addr_hit[30] = (reg_addr == HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C16_OFFSET);
+    addr_hit[31] = (reg_addr == HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C17_OFFSET);
+    addr_hit[32] = (reg_addr == HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C18_OFFSET);
+    addr_hit[33] = (reg_addr == HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C19_OFFSET);
+    addr_hit[34] = (reg_addr == HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C20_OFFSET);
+    addr_hit[35] = (reg_addr == HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C21_OFFSET);
+    addr_hit[36] = (reg_addr == HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C22_OFFSET);
+    addr_hit[37] = (reg_addr == HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C23_OFFSET);
+    addr_hit[38] = (reg_addr == HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C24_OFFSET);
+    addr_hit[39] = (reg_addr == HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C25_OFFSET);
+    addr_hit[40] = (reg_addr == HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C26_OFFSET);
+    addr_hit[41] = (reg_addr == HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C27_OFFSET);
+    addr_hit[42] = (reg_addr == HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C28_OFFSET);
+    addr_hit[43] = (reg_addr == HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C29_OFFSET);
+    addr_hit[44] = (reg_addr == HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C30_OFFSET);
+    addr_hit[45] = (reg_addr == HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C31_OFFSET);
   end
 
   assign addrmiss = (reg_re || reg_we) ? ~|addr_hit : 1'b0 ;
@@ -3001,7 +4284,40 @@ module hemaia_clk_rst_controller_reg_top #(
                (addr_hit[ 9] & (|(HEMAIA_CLK_RST_CONTROLLER_PERMIT[ 9] & ~reg_be))) |
                (addr_hit[10] & (|(HEMAIA_CLK_RST_CONTROLLER_PERMIT[10] & ~reg_be))) |
                (addr_hit[11] & (|(HEMAIA_CLK_RST_CONTROLLER_PERMIT[11] & ~reg_be))) |
-               (addr_hit[12] & (|(HEMAIA_CLK_RST_CONTROLLER_PERMIT[12] & ~reg_be)))));
+               (addr_hit[12] & (|(HEMAIA_CLK_RST_CONTROLLER_PERMIT[12] & ~reg_be))) |
+               (addr_hit[13] & (|(HEMAIA_CLK_RST_CONTROLLER_PERMIT[13] & ~reg_be))) |
+               (addr_hit[14] & (|(HEMAIA_CLK_RST_CONTROLLER_PERMIT[14] & ~reg_be))) |
+               (addr_hit[15] & (|(HEMAIA_CLK_RST_CONTROLLER_PERMIT[15] & ~reg_be))) |
+               (addr_hit[16] & (|(HEMAIA_CLK_RST_CONTROLLER_PERMIT[16] & ~reg_be))) |
+               (addr_hit[17] & (|(HEMAIA_CLK_RST_CONTROLLER_PERMIT[17] & ~reg_be))) |
+               (addr_hit[18] & (|(HEMAIA_CLK_RST_CONTROLLER_PERMIT[18] & ~reg_be))) |
+               (addr_hit[19] & (|(HEMAIA_CLK_RST_CONTROLLER_PERMIT[19] & ~reg_be))) |
+               (addr_hit[20] & (|(HEMAIA_CLK_RST_CONTROLLER_PERMIT[20] & ~reg_be))) |
+               (addr_hit[21] & (|(HEMAIA_CLK_RST_CONTROLLER_PERMIT[21] & ~reg_be))) |
+               (addr_hit[22] & (|(HEMAIA_CLK_RST_CONTROLLER_PERMIT[22] & ~reg_be))) |
+               (addr_hit[23] & (|(HEMAIA_CLK_RST_CONTROLLER_PERMIT[23] & ~reg_be))) |
+               (addr_hit[24] & (|(HEMAIA_CLK_RST_CONTROLLER_PERMIT[24] & ~reg_be))) |
+               (addr_hit[25] & (|(HEMAIA_CLK_RST_CONTROLLER_PERMIT[25] & ~reg_be))) |
+               (addr_hit[26] & (|(HEMAIA_CLK_RST_CONTROLLER_PERMIT[26] & ~reg_be))) |
+               (addr_hit[27] & (|(HEMAIA_CLK_RST_CONTROLLER_PERMIT[27] & ~reg_be))) |
+               (addr_hit[28] & (|(HEMAIA_CLK_RST_CONTROLLER_PERMIT[28] & ~reg_be))) |
+               (addr_hit[29] & (|(HEMAIA_CLK_RST_CONTROLLER_PERMIT[29] & ~reg_be))) |
+               (addr_hit[30] & (|(HEMAIA_CLK_RST_CONTROLLER_PERMIT[30] & ~reg_be))) |
+               (addr_hit[31] & (|(HEMAIA_CLK_RST_CONTROLLER_PERMIT[31] & ~reg_be))) |
+               (addr_hit[32] & (|(HEMAIA_CLK_RST_CONTROLLER_PERMIT[32] & ~reg_be))) |
+               (addr_hit[33] & (|(HEMAIA_CLK_RST_CONTROLLER_PERMIT[33] & ~reg_be))) |
+               (addr_hit[34] & (|(HEMAIA_CLK_RST_CONTROLLER_PERMIT[34] & ~reg_be))) |
+               (addr_hit[35] & (|(HEMAIA_CLK_RST_CONTROLLER_PERMIT[35] & ~reg_be))) |
+               (addr_hit[36] & (|(HEMAIA_CLK_RST_CONTROLLER_PERMIT[36] & ~reg_be))) |
+               (addr_hit[37] & (|(HEMAIA_CLK_RST_CONTROLLER_PERMIT[37] & ~reg_be))) |
+               (addr_hit[38] & (|(HEMAIA_CLK_RST_CONTROLLER_PERMIT[38] & ~reg_be))) |
+               (addr_hit[39] & (|(HEMAIA_CLK_RST_CONTROLLER_PERMIT[39] & ~reg_be))) |
+               (addr_hit[40] & (|(HEMAIA_CLK_RST_CONTROLLER_PERMIT[40] & ~reg_be))) |
+               (addr_hit[41] & (|(HEMAIA_CLK_RST_CONTROLLER_PERMIT[41] & ~reg_be))) |
+               (addr_hit[42] & (|(HEMAIA_CLK_RST_CONTROLLER_PERMIT[42] & ~reg_be))) |
+               (addr_hit[43] & (|(HEMAIA_CLK_RST_CONTROLLER_PERMIT[43] & ~reg_be))) |
+               (addr_hit[44] & (|(HEMAIA_CLK_RST_CONTROLLER_PERMIT[44] & ~reg_be))) |
+               (addr_hit[45] & (|(HEMAIA_CLK_RST_CONTROLLER_PERMIT[45] & ~reg_be)))));
   end
 
   assign reset_register_reset_c0_we = addr_hit[0] & reg_we & !reg_error;
@@ -3102,99 +4418,131 @@ module hemaia_clk_rst_controller_reg_top #(
 
   assign clock_valid_register_valid_c0_we = addr_hit[1] & reg_we & !reg_error;
   assign clock_valid_register_valid_c0_wd = reg_wdata[0];
+  assign clock_valid_register_valid_c0_re = addr_hit[1] & reg_re & !reg_error;
 
   assign clock_valid_register_valid_c1_we = addr_hit[1] & reg_we & !reg_error;
   assign clock_valid_register_valid_c1_wd = reg_wdata[1];
+  assign clock_valid_register_valid_c1_re = addr_hit[1] & reg_re & !reg_error;
 
   assign clock_valid_register_valid_c2_we = addr_hit[1] & reg_we & !reg_error;
   assign clock_valid_register_valid_c2_wd = reg_wdata[2];
+  assign clock_valid_register_valid_c2_re = addr_hit[1] & reg_re & !reg_error;
 
   assign clock_valid_register_valid_c3_we = addr_hit[1] & reg_we & !reg_error;
   assign clock_valid_register_valid_c3_wd = reg_wdata[3];
+  assign clock_valid_register_valid_c3_re = addr_hit[1] & reg_re & !reg_error;
 
   assign clock_valid_register_valid_c4_we = addr_hit[1] & reg_we & !reg_error;
   assign clock_valid_register_valid_c4_wd = reg_wdata[4];
+  assign clock_valid_register_valid_c4_re = addr_hit[1] & reg_re & !reg_error;
 
   assign clock_valid_register_valid_c5_we = addr_hit[1] & reg_we & !reg_error;
   assign clock_valid_register_valid_c5_wd = reg_wdata[5];
+  assign clock_valid_register_valid_c5_re = addr_hit[1] & reg_re & !reg_error;
 
   assign clock_valid_register_valid_c6_we = addr_hit[1] & reg_we & !reg_error;
   assign clock_valid_register_valid_c6_wd = reg_wdata[6];
+  assign clock_valid_register_valid_c6_re = addr_hit[1] & reg_re & !reg_error;
 
   assign clock_valid_register_valid_c7_we = addr_hit[1] & reg_we & !reg_error;
   assign clock_valid_register_valid_c7_wd = reg_wdata[7];
+  assign clock_valid_register_valid_c7_re = addr_hit[1] & reg_re & !reg_error;
 
   assign clock_valid_register_valid_c8_we = addr_hit[1] & reg_we & !reg_error;
   assign clock_valid_register_valid_c8_wd = reg_wdata[8];
+  assign clock_valid_register_valid_c8_re = addr_hit[1] & reg_re & !reg_error;
 
   assign clock_valid_register_valid_c9_we = addr_hit[1] & reg_we & !reg_error;
   assign clock_valid_register_valid_c9_wd = reg_wdata[9];
+  assign clock_valid_register_valid_c9_re = addr_hit[1] & reg_re & !reg_error;
 
   assign clock_valid_register_valid_c10_we = addr_hit[1] & reg_we & !reg_error;
   assign clock_valid_register_valid_c10_wd = reg_wdata[10];
+  assign clock_valid_register_valid_c10_re = addr_hit[1] & reg_re & !reg_error;
 
   assign clock_valid_register_valid_c11_we = addr_hit[1] & reg_we & !reg_error;
   assign clock_valid_register_valid_c11_wd = reg_wdata[11];
+  assign clock_valid_register_valid_c11_re = addr_hit[1] & reg_re & !reg_error;
 
   assign clock_valid_register_valid_c12_we = addr_hit[1] & reg_we & !reg_error;
   assign clock_valid_register_valid_c12_wd = reg_wdata[12];
+  assign clock_valid_register_valid_c12_re = addr_hit[1] & reg_re & !reg_error;
 
   assign clock_valid_register_valid_c13_we = addr_hit[1] & reg_we & !reg_error;
   assign clock_valid_register_valid_c13_wd = reg_wdata[13];
+  assign clock_valid_register_valid_c13_re = addr_hit[1] & reg_re & !reg_error;
 
   assign clock_valid_register_valid_c14_we = addr_hit[1] & reg_we & !reg_error;
   assign clock_valid_register_valid_c14_wd = reg_wdata[14];
+  assign clock_valid_register_valid_c14_re = addr_hit[1] & reg_re & !reg_error;
 
   assign clock_valid_register_valid_c15_we = addr_hit[1] & reg_we & !reg_error;
   assign clock_valid_register_valid_c15_wd = reg_wdata[15];
+  assign clock_valid_register_valid_c15_re = addr_hit[1] & reg_re & !reg_error;
 
   assign clock_valid_register_valid_c16_we = addr_hit[1] & reg_we & !reg_error;
   assign clock_valid_register_valid_c16_wd = reg_wdata[16];
+  assign clock_valid_register_valid_c16_re = addr_hit[1] & reg_re & !reg_error;
 
   assign clock_valid_register_valid_c17_we = addr_hit[1] & reg_we & !reg_error;
   assign clock_valid_register_valid_c17_wd = reg_wdata[17];
+  assign clock_valid_register_valid_c17_re = addr_hit[1] & reg_re & !reg_error;
 
   assign clock_valid_register_valid_c18_we = addr_hit[1] & reg_we & !reg_error;
   assign clock_valid_register_valid_c18_wd = reg_wdata[18];
+  assign clock_valid_register_valid_c18_re = addr_hit[1] & reg_re & !reg_error;
 
   assign clock_valid_register_valid_c19_we = addr_hit[1] & reg_we & !reg_error;
   assign clock_valid_register_valid_c19_wd = reg_wdata[19];
+  assign clock_valid_register_valid_c19_re = addr_hit[1] & reg_re & !reg_error;
 
   assign clock_valid_register_valid_c20_we = addr_hit[1] & reg_we & !reg_error;
   assign clock_valid_register_valid_c20_wd = reg_wdata[20];
+  assign clock_valid_register_valid_c20_re = addr_hit[1] & reg_re & !reg_error;
 
   assign clock_valid_register_valid_c21_we = addr_hit[1] & reg_we & !reg_error;
   assign clock_valid_register_valid_c21_wd = reg_wdata[21];
+  assign clock_valid_register_valid_c21_re = addr_hit[1] & reg_re & !reg_error;
 
   assign clock_valid_register_valid_c22_we = addr_hit[1] & reg_we & !reg_error;
   assign clock_valid_register_valid_c22_wd = reg_wdata[22];
+  assign clock_valid_register_valid_c22_re = addr_hit[1] & reg_re & !reg_error;
 
   assign clock_valid_register_valid_c23_we = addr_hit[1] & reg_we & !reg_error;
   assign clock_valid_register_valid_c23_wd = reg_wdata[23];
+  assign clock_valid_register_valid_c23_re = addr_hit[1] & reg_re & !reg_error;
 
   assign clock_valid_register_valid_c24_we = addr_hit[1] & reg_we & !reg_error;
   assign clock_valid_register_valid_c24_wd = reg_wdata[24];
+  assign clock_valid_register_valid_c24_re = addr_hit[1] & reg_re & !reg_error;
 
   assign clock_valid_register_valid_c25_we = addr_hit[1] & reg_we & !reg_error;
   assign clock_valid_register_valid_c25_wd = reg_wdata[25];
+  assign clock_valid_register_valid_c25_re = addr_hit[1] & reg_re & !reg_error;
 
   assign clock_valid_register_valid_c26_we = addr_hit[1] & reg_we & !reg_error;
   assign clock_valid_register_valid_c26_wd = reg_wdata[26];
+  assign clock_valid_register_valid_c26_re = addr_hit[1] & reg_re & !reg_error;
 
   assign clock_valid_register_valid_c27_we = addr_hit[1] & reg_we & !reg_error;
   assign clock_valid_register_valid_c27_wd = reg_wdata[27];
+  assign clock_valid_register_valid_c27_re = addr_hit[1] & reg_re & !reg_error;
 
   assign clock_valid_register_valid_c28_we = addr_hit[1] & reg_we & !reg_error;
   assign clock_valid_register_valid_c28_wd = reg_wdata[28];
+  assign clock_valid_register_valid_c28_re = addr_hit[1] & reg_re & !reg_error;
 
   assign clock_valid_register_valid_c29_we = addr_hit[1] & reg_we & !reg_error;
   assign clock_valid_register_valid_c29_wd = reg_wdata[29];
+  assign clock_valid_register_valid_c29_re = addr_hit[1] & reg_re & !reg_error;
 
   assign clock_valid_register_valid_c30_we = addr_hit[1] & reg_we & !reg_error;
   assign clock_valid_register_valid_c30_wd = reg_wdata[30];
+  assign clock_valid_register_valid_c30_re = addr_hit[1] & reg_re & !reg_error;
 
   assign clock_valid_register_valid_c31_we = addr_hit[1] & reg_we & !reg_error;
   assign clock_valid_register_valid_c31_wd = reg_wdata[31];
+  assign clock_valid_register_valid_c31_re = addr_hit[1] & reg_re & !reg_error;
 
   assign clock_division_register_c0_c3_division_c0_we = addr_hit[2] & reg_we & !reg_error;
   assign clock_division_register_c0_c3_division_c0_wd = reg_wdata[7:0];
@@ -3300,6 +4648,230 @@ module hemaia_clk_rst_controller_reg_top #(
 
   assign pll_test_out_register_we = addr_hit[12] & reg_we & !reg_error;
   assign pll_test_out_register_wd = reg_wdata[31:0];
+
+  assign domain_division_valid_valid_c0_we = addr_hit[13] & reg_we & !reg_error;
+  assign domain_division_valid_valid_c0_wd = reg_wdata[0];
+  assign domain_division_valid_valid_c0_re = addr_hit[13] & reg_re & !reg_error;
+
+  assign domain_division_valid_valid_c1_we = addr_hit[13] & reg_we & !reg_error;
+  assign domain_division_valid_valid_c1_wd = reg_wdata[1];
+  assign domain_division_valid_valid_c1_re = addr_hit[13] & reg_re & !reg_error;
+
+  assign domain_division_valid_valid_c2_we = addr_hit[13] & reg_we & !reg_error;
+  assign domain_division_valid_valid_c2_wd = reg_wdata[2];
+  assign domain_division_valid_valid_c2_re = addr_hit[13] & reg_re & !reg_error;
+
+  assign domain_division_valid_valid_c3_we = addr_hit[13] & reg_we & !reg_error;
+  assign domain_division_valid_valid_c3_wd = reg_wdata[3];
+  assign domain_division_valid_valid_c3_re = addr_hit[13] & reg_re & !reg_error;
+
+  assign domain_division_valid_valid_c4_we = addr_hit[13] & reg_we & !reg_error;
+  assign domain_division_valid_valid_c4_wd = reg_wdata[4];
+  assign domain_division_valid_valid_c4_re = addr_hit[13] & reg_re & !reg_error;
+
+  assign domain_division_valid_valid_c5_we = addr_hit[13] & reg_we & !reg_error;
+  assign domain_division_valid_valid_c5_wd = reg_wdata[5];
+  assign domain_division_valid_valid_c5_re = addr_hit[13] & reg_re & !reg_error;
+
+  assign domain_division_valid_valid_c6_we = addr_hit[13] & reg_we & !reg_error;
+  assign domain_division_valid_valid_c6_wd = reg_wdata[6];
+  assign domain_division_valid_valid_c6_re = addr_hit[13] & reg_re & !reg_error;
+
+  assign domain_division_valid_valid_c7_we = addr_hit[13] & reg_we & !reg_error;
+  assign domain_division_valid_valid_c7_wd = reg_wdata[7];
+  assign domain_division_valid_valid_c7_re = addr_hit[13] & reg_re & !reg_error;
+
+  assign domain_division_valid_valid_c8_we = addr_hit[13] & reg_we & !reg_error;
+  assign domain_division_valid_valid_c8_wd = reg_wdata[8];
+  assign domain_division_valid_valid_c8_re = addr_hit[13] & reg_re & !reg_error;
+
+  assign domain_division_valid_valid_c9_we = addr_hit[13] & reg_we & !reg_error;
+  assign domain_division_valid_valid_c9_wd = reg_wdata[9];
+  assign domain_division_valid_valid_c9_re = addr_hit[13] & reg_re & !reg_error;
+
+  assign domain_division_valid_valid_c10_we = addr_hit[13] & reg_we & !reg_error;
+  assign domain_division_valid_valid_c10_wd = reg_wdata[10];
+  assign domain_division_valid_valid_c10_re = addr_hit[13] & reg_re & !reg_error;
+
+  assign domain_division_valid_valid_c11_we = addr_hit[13] & reg_we & !reg_error;
+  assign domain_division_valid_valid_c11_wd = reg_wdata[11];
+  assign domain_division_valid_valid_c11_re = addr_hit[13] & reg_re & !reg_error;
+
+  assign domain_division_valid_valid_c12_we = addr_hit[13] & reg_we & !reg_error;
+  assign domain_division_valid_valid_c12_wd = reg_wdata[12];
+  assign domain_division_valid_valid_c12_re = addr_hit[13] & reg_re & !reg_error;
+
+  assign domain_division_valid_valid_c13_we = addr_hit[13] & reg_we & !reg_error;
+  assign domain_division_valid_valid_c13_wd = reg_wdata[13];
+  assign domain_division_valid_valid_c13_re = addr_hit[13] & reg_re & !reg_error;
+
+  assign domain_division_valid_valid_c14_we = addr_hit[13] & reg_we & !reg_error;
+  assign domain_division_valid_valid_c14_wd = reg_wdata[14];
+  assign domain_division_valid_valid_c14_re = addr_hit[13] & reg_re & !reg_error;
+
+  assign domain_division_valid_valid_c15_we = addr_hit[13] & reg_we & !reg_error;
+  assign domain_division_valid_valid_c15_wd = reg_wdata[15];
+  assign domain_division_valid_valid_c15_re = addr_hit[13] & reg_re & !reg_error;
+
+  assign domain_division_valid_valid_c16_we = addr_hit[13] & reg_we & !reg_error;
+  assign domain_division_valid_valid_c16_wd = reg_wdata[16];
+  assign domain_division_valid_valid_c16_re = addr_hit[13] & reg_re & !reg_error;
+
+  assign domain_division_valid_valid_c17_we = addr_hit[13] & reg_we & !reg_error;
+  assign domain_division_valid_valid_c17_wd = reg_wdata[17];
+  assign domain_division_valid_valid_c17_re = addr_hit[13] & reg_re & !reg_error;
+
+  assign domain_division_valid_valid_c18_we = addr_hit[13] & reg_we & !reg_error;
+  assign domain_division_valid_valid_c18_wd = reg_wdata[18];
+  assign domain_division_valid_valid_c18_re = addr_hit[13] & reg_re & !reg_error;
+
+  assign domain_division_valid_valid_c19_we = addr_hit[13] & reg_we & !reg_error;
+  assign domain_division_valid_valid_c19_wd = reg_wdata[19];
+  assign domain_division_valid_valid_c19_re = addr_hit[13] & reg_re & !reg_error;
+
+  assign domain_division_valid_valid_c20_we = addr_hit[13] & reg_we & !reg_error;
+  assign domain_division_valid_valid_c20_wd = reg_wdata[20];
+  assign domain_division_valid_valid_c20_re = addr_hit[13] & reg_re & !reg_error;
+
+  assign domain_division_valid_valid_c21_we = addr_hit[13] & reg_we & !reg_error;
+  assign domain_division_valid_valid_c21_wd = reg_wdata[21];
+  assign domain_division_valid_valid_c21_re = addr_hit[13] & reg_re & !reg_error;
+
+  assign domain_division_valid_valid_c22_we = addr_hit[13] & reg_we & !reg_error;
+  assign domain_division_valid_valid_c22_wd = reg_wdata[22];
+  assign domain_division_valid_valid_c22_re = addr_hit[13] & reg_re & !reg_error;
+
+  assign domain_division_valid_valid_c23_we = addr_hit[13] & reg_we & !reg_error;
+  assign domain_division_valid_valid_c23_wd = reg_wdata[23];
+  assign domain_division_valid_valid_c23_re = addr_hit[13] & reg_re & !reg_error;
+
+  assign domain_division_valid_valid_c24_we = addr_hit[13] & reg_we & !reg_error;
+  assign domain_division_valid_valid_c24_wd = reg_wdata[24];
+  assign domain_division_valid_valid_c24_re = addr_hit[13] & reg_re & !reg_error;
+
+  assign domain_division_valid_valid_c25_we = addr_hit[13] & reg_we & !reg_error;
+  assign domain_division_valid_valid_c25_wd = reg_wdata[25];
+  assign domain_division_valid_valid_c25_re = addr_hit[13] & reg_re & !reg_error;
+
+  assign domain_division_valid_valid_c26_we = addr_hit[13] & reg_we & !reg_error;
+  assign domain_division_valid_valid_c26_wd = reg_wdata[26];
+  assign domain_division_valid_valid_c26_re = addr_hit[13] & reg_re & !reg_error;
+
+  assign domain_division_valid_valid_c27_we = addr_hit[13] & reg_we & !reg_error;
+  assign domain_division_valid_valid_c27_wd = reg_wdata[27];
+  assign domain_division_valid_valid_c27_re = addr_hit[13] & reg_re & !reg_error;
+
+  assign domain_division_valid_valid_c28_we = addr_hit[13] & reg_we & !reg_error;
+  assign domain_division_valid_valid_c28_wd = reg_wdata[28];
+  assign domain_division_valid_valid_c28_re = addr_hit[13] & reg_re & !reg_error;
+
+  assign domain_division_valid_valid_c29_we = addr_hit[13] & reg_we & !reg_error;
+  assign domain_division_valid_valid_c29_wd = reg_wdata[29];
+  assign domain_division_valid_valid_c29_re = addr_hit[13] & reg_re & !reg_error;
+
+  assign domain_division_valid_valid_c30_we = addr_hit[13] & reg_we & !reg_error;
+  assign domain_division_valid_valid_c30_wd = reg_wdata[30];
+  assign domain_division_valid_valid_c30_re = addr_hit[13] & reg_re & !reg_error;
+
+  assign domain_division_valid_valid_c31_we = addr_hit[13] & reg_we & !reg_error;
+  assign domain_division_valid_valid_c31_wd = reg_wdata[31];
+  assign domain_division_valid_valid_c31_re = addr_hit[13] & reg_re & !reg_error;
+
+  assign domain_division_c0_we = addr_hit[14] & reg_we & !reg_error;
+  assign domain_division_c0_wd = reg_wdata[7:0];
+
+  assign domain_division_c1_we = addr_hit[15] & reg_we & !reg_error;
+  assign domain_division_c1_wd = reg_wdata[7:0];
+
+  assign domain_division_c2_we = addr_hit[16] & reg_we & !reg_error;
+  assign domain_division_c2_wd = reg_wdata[7:0];
+
+  assign domain_division_c3_we = addr_hit[17] & reg_we & !reg_error;
+  assign domain_division_c3_wd = reg_wdata[7:0];
+
+  assign domain_division_c4_we = addr_hit[18] & reg_we & !reg_error;
+  assign domain_division_c4_wd = reg_wdata[7:0];
+
+  assign domain_division_c5_we = addr_hit[19] & reg_we & !reg_error;
+  assign domain_division_c5_wd = reg_wdata[7:0];
+
+  assign domain_division_c6_we = addr_hit[20] & reg_we & !reg_error;
+  assign domain_division_c6_wd = reg_wdata[7:0];
+
+  assign domain_division_c7_we = addr_hit[21] & reg_we & !reg_error;
+  assign domain_division_c7_wd = reg_wdata[7:0];
+
+  assign domain_division_c8_we = addr_hit[22] & reg_we & !reg_error;
+  assign domain_division_c8_wd = reg_wdata[7:0];
+
+  assign domain_division_c9_we = addr_hit[23] & reg_we & !reg_error;
+  assign domain_division_c9_wd = reg_wdata[7:0];
+
+  assign domain_division_c10_we = addr_hit[24] & reg_we & !reg_error;
+  assign domain_division_c10_wd = reg_wdata[7:0];
+
+  assign domain_division_c11_we = addr_hit[25] & reg_we & !reg_error;
+  assign domain_division_c11_wd = reg_wdata[7:0];
+
+  assign domain_division_c12_we = addr_hit[26] & reg_we & !reg_error;
+  assign domain_division_c12_wd = reg_wdata[7:0];
+
+  assign domain_division_c13_we = addr_hit[27] & reg_we & !reg_error;
+  assign domain_division_c13_wd = reg_wdata[7:0];
+
+  assign domain_division_c14_we = addr_hit[28] & reg_we & !reg_error;
+  assign domain_division_c14_wd = reg_wdata[7:0];
+
+  assign domain_division_c15_we = addr_hit[29] & reg_we & !reg_error;
+  assign domain_division_c15_wd = reg_wdata[7:0];
+
+  assign domain_division_c16_we = addr_hit[30] & reg_we & !reg_error;
+  assign domain_division_c16_wd = reg_wdata[7:0];
+
+  assign domain_division_c17_we = addr_hit[31] & reg_we & !reg_error;
+  assign domain_division_c17_wd = reg_wdata[7:0];
+
+  assign domain_division_c18_we = addr_hit[32] & reg_we & !reg_error;
+  assign domain_division_c18_wd = reg_wdata[7:0];
+
+  assign domain_division_c19_we = addr_hit[33] & reg_we & !reg_error;
+  assign domain_division_c19_wd = reg_wdata[7:0];
+
+  assign domain_division_c20_we = addr_hit[34] & reg_we & !reg_error;
+  assign domain_division_c20_wd = reg_wdata[7:0];
+
+  assign domain_division_c21_we = addr_hit[35] & reg_we & !reg_error;
+  assign domain_division_c21_wd = reg_wdata[7:0];
+
+  assign domain_division_c22_we = addr_hit[36] & reg_we & !reg_error;
+  assign domain_division_c22_wd = reg_wdata[7:0];
+
+  assign domain_division_c23_we = addr_hit[37] & reg_we & !reg_error;
+  assign domain_division_c23_wd = reg_wdata[7:0];
+
+  assign domain_division_c24_we = addr_hit[38] & reg_we & !reg_error;
+  assign domain_division_c24_wd = reg_wdata[7:0];
+
+  assign domain_division_c25_we = addr_hit[39] & reg_we & !reg_error;
+  assign domain_division_c25_wd = reg_wdata[7:0];
+
+  assign domain_division_c26_we = addr_hit[40] & reg_we & !reg_error;
+  assign domain_division_c26_wd = reg_wdata[7:0];
+
+  assign domain_division_c27_we = addr_hit[41] & reg_we & !reg_error;
+  assign domain_division_c27_wd = reg_wdata[7:0];
+
+  assign domain_division_c28_we = addr_hit[42] & reg_we & !reg_error;
+  assign domain_division_c28_wd = reg_wdata[7:0];
+
+  assign domain_division_c29_we = addr_hit[43] & reg_we & !reg_error;
+  assign domain_division_c29_wd = reg_wdata[7:0];
+
+  assign domain_division_c30_we = addr_hit[44] & reg_we & !reg_error;
+  assign domain_division_c30_wd = reg_wdata[7:0];
+
+  assign domain_division_c31_we = addr_hit[45] & reg_we & !reg_error;
+  assign domain_division_c31_wd = reg_wdata[7:0];
 
   // Read data return
   always_comb begin
@@ -3443,6 +5015,169 @@ module hemaia_clk_rst_controller_reg_top #(
         reg_rdata_next[31:0] = pll_test_out_register_qs;
       end
 
+      addr_hit[13]: begin
+        reg_rdata_next[0] = domain_division_valid_valid_c0_qs;
+        reg_rdata_next[1] = domain_division_valid_valid_c1_qs;
+        reg_rdata_next[2] = domain_division_valid_valid_c2_qs;
+        reg_rdata_next[3] = domain_division_valid_valid_c3_qs;
+        reg_rdata_next[4] = domain_division_valid_valid_c4_qs;
+        reg_rdata_next[5] = domain_division_valid_valid_c5_qs;
+        reg_rdata_next[6] = domain_division_valid_valid_c6_qs;
+        reg_rdata_next[7] = domain_division_valid_valid_c7_qs;
+        reg_rdata_next[8] = domain_division_valid_valid_c8_qs;
+        reg_rdata_next[9] = domain_division_valid_valid_c9_qs;
+        reg_rdata_next[10] = domain_division_valid_valid_c10_qs;
+        reg_rdata_next[11] = domain_division_valid_valid_c11_qs;
+        reg_rdata_next[12] = domain_division_valid_valid_c12_qs;
+        reg_rdata_next[13] = domain_division_valid_valid_c13_qs;
+        reg_rdata_next[14] = domain_division_valid_valid_c14_qs;
+        reg_rdata_next[15] = domain_division_valid_valid_c15_qs;
+        reg_rdata_next[16] = domain_division_valid_valid_c16_qs;
+        reg_rdata_next[17] = domain_division_valid_valid_c17_qs;
+        reg_rdata_next[18] = domain_division_valid_valid_c18_qs;
+        reg_rdata_next[19] = domain_division_valid_valid_c19_qs;
+        reg_rdata_next[20] = domain_division_valid_valid_c20_qs;
+        reg_rdata_next[21] = domain_division_valid_valid_c21_qs;
+        reg_rdata_next[22] = domain_division_valid_valid_c22_qs;
+        reg_rdata_next[23] = domain_division_valid_valid_c23_qs;
+        reg_rdata_next[24] = domain_division_valid_valid_c24_qs;
+        reg_rdata_next[25] = domain_division_valid_valid_c25_qs;
+        reg_rdata_next[26] = domain_division_valid_valid_c26_qs;
+        reg_rdata_next[27] = domain_division_valid_valid_c27_qs;
+        reg_rdata_next[28] = domain_division_valid_valid_c28_qs;
+        reg_rdata_next[29] = domain_division_valid_valid_c29_qs;
+        reg_rdata_next[30] = domain_division_valid_valid_c30_qs;
+        reg_rdata_next[31] = domain_division_valid_valid_c31_qs;
+      end
+
+      addr_hit[14]: begin
+        reg_rdata_next[7:0] = domain_division_c0_qs;
+      end
+
+      addr_hit[15]: begin
+        reg_rdata_next[7:0] = domain_division_c1_qs;
+      end
+
+      addr_hit[16]: begin
+        reg_rdata_next[7:0] = domain_division_c2_qs;
+      end
+
+      addr_hit[17]: begin
+        reg_rdata_next[7:0] = domain_division_c3_qs;
+      end
+
+      addr_hit[18]: begin
+        reg_rdata_next[7:0] = domain_division_c4_qs;
+      end
+
+      addr_hit[19]: begin
+        reg_rdata_next[7:0] = domain_division_c5_qs;
+      end
+
+      addr_hit[20]: begin
+        reg_rdata_next[7:0] = domain_division_c6_qs;
+      end
+
+      addr_hit[21]: begin
+        reg_rdata_next[7:0] = domain_division_c7_qs;
+      end
+
+      addr_hit[22]: begin
+        reg_rdata_next[7:0] = domain_division_c8_qs;
+      end
+
+      addr_hit[23]: begin
+        reg_rdata_next[7:0] = domain_division_c9_qs;
+      end
+
+      addr_hit[24]: begin
+        reg_rdata_next[7:0] = domain_division_c10_qs;
+      end
+
+      addr_hit[25]: begin
+        reg_rdata_next[7:0] = domain_division_c11_qs;
+      end
+
+      addr_hit[26]: begin
+        reg_rdata_next[7:0] = domain_division_c12_qs;
+      end
+
+      addr_hit[27]: begin
+        reg_rdata_next[7:0] = domain_division_c13_qs;
+      end
+
+      addr_hit[28]: begin
+        reg_rdata_next[7:0] = domain_division_c14_qs;
+      end
+
+      addr_hit[29]: begin
+        reg_rdata_next[7:0] = domain_division_c15_qs;
+      end
+
+      addr_hit[30]: begin
+        reg_rdata_next[7:0] = domain_division_c16_qs;
+      end
+
+      addr_hit[31]: begin
+        reg_rdata_next[7:0] = domain_division_c17_qs;
+      end
+
+      addr_hit[32]: begin
+        reg_rdata_next[7:0] = domain_division_c18_qs;
+      end
+
+      addr_hit[33]: begin
+        reg_rdata_next[7:0] = domain_division_c19_qs;
+      end
+
+      addr_hit[34]: begin
+        reg_rdata_next[7:0] = domain_division_c20_qs;
+      end
+
+      addr_hit[35]: begin
+        reg_rdata_next[7:0] = domain_division_c21_qs;
+      end
+
+      addr_hit[36]: begin
+        reg_rdata_next[7:0] = domain_division_c22_qs;
+      end
+
+      addr_hit[37]: begin
+        reg_rdata_next[7:0] = domain_division_c23_qs;
+      end
+
+      addr_hit[38]: begin
+        reg_rdata_next[7:0] = domain_division_c24_qs;
+      end
+
+      addr_hit[39]: begin
+        reg_rdata_next[7:0] = domain_division_c25_qs;
+      end
+
+      addr_hit[40]: begin
+        reg_rdata_next[7:0] = domain_division_c26_qs;
+      end
+
+      addr_hit[41]: begin
+        reg_rdata_next[7:0] = domain_division_c27_qs;
+      end
+
+      addr_hit[42]: begin
+        reg_rdata_next[7:0] = domain_division_c28_qs;
+      end
+
+      addr_hit[43]: begin
+        reg_rdata_next[7:0] = domain_division_c29_qs;
+      end
+
+      addr_hit[44]: begin
+        reg_rdata_next[7:0] = domain_division_c30_qs;
+      end
+
+      addr_hit[45]: begin
+        reg_rdata_next[7:0] = domain_division_c31_qs;
+      end
+
       default: begin
         reg_rdata_next = '1;
       end
@@ -3465,7 +5200,7 @@ endmodule
 
 module hemaia_clk_rst_controller_reg_top_intf
 #(
-  parameter int AW = 6,
+  parameter int AW = 9,
   localparam int DW = 32
 ) (
   input logic clk_i,

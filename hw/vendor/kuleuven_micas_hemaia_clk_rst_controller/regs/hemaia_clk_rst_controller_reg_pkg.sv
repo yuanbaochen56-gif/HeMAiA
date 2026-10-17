@@ -7,7 +7,7 @@
 package hemaia_clk_rst_controller_reg_pkg;
 
   // Address widths within the block
-  parameter int BlockAw = 6;
+  parameter int BlockAw = 9;
 
   ////////////////////////////
   // Typedefs for registers //
@@ -115,99 +115,131 @@ package hemaia_clk_rst_controller_reg_pkg;
   typedef struct packed {
     struct packed {
       logic        q;
+      logic        qe;
     } valid_c0;
     struct packed {
       logic        q;
+      logic        qe;
     } valid_c1;
     struct packed {
       logic        q;
+      logic        qe;
     } valid_c2;
     struct packed {
       logic        q;
+      logic        qe;
     } valid_c3;
     struct packed {
       logic        q;
+      logic        qe;
     } valid_c4;
     struct packed {
       logic        q;
+      logic        qe;
     } valid_c5;
     struct packed {
       logic        q;
+      logic        qe;
     } valid_c6;
     struct packed {
       logic        q;
+      logic        qe;
     } valid_c7;
     struct packed {
       logic        q;
+      logic        qe;
     } valid_c8;
     struct packed {
       logic        q;
+      logic        qe;
     } valid_c9;
     struct packed {
       logic        q;
+      logic        qe;
     } valid_c10;
     struct packed {
       logic        q;
+      logic        qe;
     } valid_c11;
     struct packed {
       logic        q;
+      logic        qe;
     } valid_c12;
     struct packed {
       logic        q;
+      logic        qe;
     } valid_c13;
     struct packed {
       logic        q;
+      logic        qe;
     } valid_c14;
     struct packed {
       logic        q;
+      logic        qe;
     } valid_c15;
     struct packed {
       logic        q;
+      logic        qe;
     } valid_c16;
     struct packed {
       logic        q;
+      logic        qe;
     } valid_c17;
     struct packed {
       logic        q;
+      logic        qe;
     } valid_c18;
     struct packed {
       logic        q;
+      logic        qe;
     } valid_c19;
     struct packed {
       logic        q;
+      logic        qe;
     } valid_c20;
     struct packed {
       logic        q;
+      logic        qe;
     } valid_c21;
     struct packed {
       logic        q;
+      logic        qe;
     } valid_c22;
     struct packed {
       logic        q;
+      logic        qe;
     } valid_c23;
     struct packed {
       logic        q;
+      logic        qe;
     } valid_c24;
     struct packed {
       logic        q;
+      logic        qe;
     } valid_c25;
     struct packed {
       logic        q;
+      logic        qe;
     } valid_c26;
     struct packed {
       logic        q;
+      logic        qe;
     } valid_c27;
     struct packed {
       logic        q;
+      logic        qe;
     } valid_c28;
     struct packed {
       logic        q;
+      logic        qe;
     } valid_c29;
     struct packed {
       logic        q;
+      logic        qe;
     } valid_c30;
     struct packed {
       logic        q;
+      logic        qe;
     } valid_c31;
   } hemaia_clk_rst_controller_reg2hw_clock_valid_register_reg_t;
 
@@ -345,6 +377,265 @@ package hemaia_clk_rst_controller_reg_pkg;
 
   typedef struct packed {
     struct packed {
+      logic        q;
+      logic        qe;
+    } valid_c0;
+    struct packed {
+      logic        q;
+      logic        qe;
+    } valid_c1;
+    struct packed {
+      logic        q;
+      logic        qe;
+    } valid_c2;
+    struct packed {
+      logic        q;
+      logic        qe;
+    } valid_c3;
+    struct packed {
+      logic        q;
+      logic        qe;
+    } valid_c4;
+    struct packed {
+      logic        q;
+      logic        qe;
+    } valid_c5;
+    struct packed {
+      logic        q;
+      logic        qe;
+    } valid_c6;
+    struct packed {
+      logic        q;
+      logic        qe;
+    } valid_c7;
+    struct packed {
+      logic        q;
+      logic        qe;
+    } valid_c8;
+    struct packed {
+      logic        q;
+      logic        qe;
+    } valid_c9;
+    struct packed {
+      logic        q;
+      logic        qe;
+    } valid_c10;
+    struct packed {
+      logic        q;
+      logic        qe;
+    } valid_c11;
+    struct packed {
+      logic        q;
+      logic        qe;
+    } valid_c12;
+    struct packed {
+      logic        q;
+      logic        qe;
+    } valid_c13;
+    struct packed {
+      logic        q;
+      logic        qe;
+    } valid_c14;
+    struct packed {
+      logic        q;
+      logic        qe;
+    } valid_c15;
+    struct packed {
+      logic        q;
+      logic        qe;
+    } valid_c16;
+    struct packed {
+      logic        q;
+      logic        qe;
+    } valid_c17;
+    struct packed {
+      logic        q;
+      logic        qe;
+    } valid_c18;
+    struct packed {
+      logic        q;
+      logic        qe;
+    } valid_c19;
+    struct packed {
+      logic        q;
+      logic        qe;
+    } valid_c20;
+    struct packed {
+      logic        q;
+      logic        qe;
+    } valid_c21;
+    struct packed {
+      logic        q;
+      logic        qe;
+    } valid_c22;
+    struct packed {
+      logic        q;
+      logic        qe;
+    } valid_c23;
+    struct packed {
+      logic        q;
+      logic        qe;
+    } valid_c24;
+    struct packed {
+      logic        q;
+      logic        qe;
+    } valid_c25;
+    struct packed {
+      logic        q;
+      logic        qe;
+    } valid_c26;
+    struct packed {
+      logic        q;
+      logic        qe;
+    } valid_c27;
+    struct packed {
+      logic        q;
+      logic        qe;
+    } valid_c28;
+    struct packed {
+      logic        q;
+      logic        qe;
+    } valid_c29;
+    struct packed {
+      logic        q;
+      logic        qe;
+    } valid_c30;
+    struct packed {
+      logic        q;
+      logic        qe;
+    } valid_c31;
+  } hemaia_clk_rst_controller_reg2hw_domain_division_valid_reg_t;
+
+  typedef struct packed {
+    logic [7:0]  q;
+  } hemaia_clk_rst_controller_reg2hw_domain_division_c0_reg_t;
+
+  typedef struct packed {
+    logic [7:0]  q;
+  } hemaia_clk_rst_controller_reg2hw_domain_division_c1_reg_t;
+
+  typedef struct packed {
+    logic [7:0]  q;
+  } hemaia_clk_rst_controller_reg2hw_domain_division_c2_reg_t;
+
+  typedef struct packed {
+    logic [7:0]  q;
+  } hemaia_clk_rst_controller_reg2hw_domain_division_c3_reg_t;
+
+  typedef struct packed {
+    logic [7:0]  q;
+  } hemaia_clk_rst_controller_reg2hw_domain_division_c4_reg_t;
+
+  typedef struct packed {
+    logic [7:0]  q;
+  } hemaia_clk_rst_controller_reg2hw_domain_division_c5_reg_t;
+
+  typedef struct packed {
+    logic [7:0]  q;
+  } hemaia_clk_rst_controller_reg2hw_domain_division_c6_reg_t;
+
+  typedef struct packed {
+    logic [7:0]  q;
+  } hemaia_clk_rst_controller_reg2hw_domain_division_c7_reg_t;
+
+  typedef struct packed {
+    logic [7:0]  q;
+  } hemaia_clk_rst_controller_reg2hw_domain_division_c8_reg_t;
+
+  typedef struct packed {
+    logic [7:0]  q;
+  } hemaia_clk_rst_controller_reg2hw_domain_division_c9_reg_t;
+
+  typedef struct packed {
+    logic [7:0]  q;
+  } hemaia_clk_rst_controller_reg2hw_domain_division_c10_reg_t;
+
+  typedef struct packed {
+    logic [7:0]  q;
+  } hemaia_clk_rst_controller_reg2hw_domain_division_c11_reg_t;
+
+  typedef struct packed {
+    logic [7:0]  q;
+  } hemaia_clk_rst_controller_reg2hw_domain_division_c12_reg_t;
+
+  typedef struct packed {
+    logic [7:0]  q;
+  } hemaia_clk_rst_controller_reg2hw_domain_division_c13_reg_t;
+
+  typedef struct packed {
+    logic [7:0]  q;
+  } hemaia_clk_rst_controller_reg2hw_domain_division_c14_reg_t;
+
+  typedef struct packed {
+    logic [7:0]  q;
+  } hemaia_clk_rst_controller_reg2hw_domain_division_c15_reg_t;
+
+  typedef struct packed {
+    logic [7:0]  q;
+  } hemaia_clk_rst_controller_reg2hw_domain_division_c16_reg_t;
+
+  typedef struct packed {
+    logic [7:0]  q;
+  } hemaia_clk_rst_controller_reg2hw_domain_division_c17_reg_t;
+
+  typedef struct packed {
+    logic [7:0]  q;
+  } hemaia_clk_rst_controller_reg2hw_domain_division_c18_reg_t;
+
+  typedef struct packed {
+    logic [7:0]  q;
+  } hemaia_clk_rst_controller_reg2hw_domain_division_c19_reg_t;
+
+  typedef struct packed {
+    logic [7:0]  q;
+  } hemaia_clk_rst_controller_reg2hw_domain_division_c20_reg_t;
+
+  typedef struct packed {
+    logic [7:0]  q;
+  } hemaia_clk_rst_controller_reg2hw_domain_division_c21_reg_t;
+
+  typedef struct packed {
+    logic [7:0]  q;
+  } hemaia_clk_rst_controller_reg2hw_domain_division_c22_reg_t;
+
+  typedef struct packed {
+    logic [7:0]  q;
+  } hemaia_clk_rst_controller_reg2hw_domain_division_c23_reg_t;
+
+  typedef struct packed {
+    logic [7:0]  q;
+  } hemaia_clk_rst_controller_reg2hw_domain_division_c24_reg_t;
+
+  typedef struct packed {
+    logic [7:0]  q;
+  } hemaia_clk_rst_controller_reg2hw_domain_division_c25_reg_t;
+
+  typedef struct packed {
+    logic [7:0]  q;
+  } hemaia_clk_rst_controller_reg2hw_domain_division_c26_reg_t;
+
+  typedef struct packed {
+    logic [7:0]  q;
+  } hemaia_clk_rst_controller_reg2hw_domain_division_c27_reg_t;
+
+  typedef struct packed {
+    logic [7:0]  q;
+  } hemaia_clk_rst_controller_reg2hw_domain_division_c28_reg_t;
+
+  typedef struct packed {
+    logic [7:0]  q;
+  } hemaia_clk_rst_controller_reg2hw_domain_division_c29_reg_t;
+
+  typedef struct packed {
+    logic [7:0]  q;
+  } hemaia_clk_rst_controller_reg2hw_domain_division_c30_reg_t;
+
+  typedef struct packed {
+    logic [7:0]  q;
+  } hemaia_clk_rst_controller_reg2hw_domain_division_c31_reg_t;
+
+  typedef struct packed {
+    struct packed {
       logic        d;
       logic        de;
     } reset_c0;
@@ -477,131 +768,99 @@ package hemaia_clk_rst_controller_reg_pkg;
   typedef struct packed {
     struct packed {
       logic        d;
-      logic        de;
     } valid_c0;
     struct packed {
       logic        d;
-      logic        de;
     } valid_c1;
     struct packed {
       logic        d;
-      logic        de;
     } valid_c2;
     struct packed {
       logic        d;
-      logic        de;
     } valid_c3;
     struct packed {
       logic        d;
-      logic        de;
     } valid_c4;
     struct packed {
       logic        d;
-      logic        de;
     } valid_c5;
     struct packed {
       logic        d;
-      logic        de;
     } valid_c6;
     struct packed {
       logic        d;
-      logic        de;
     } valid_c7;
     struct packed {
       logic        d;
-      logic        de;
     } valid_c8;
     struct packed {
       logic        d;
-      logic        de;
     } valid_c9;
     struct packed {
       logic        d;
-      logic        de;
     } valid_c10;
     struct packed {
       logic        d;
-      logic        de;
     } valid_c11;
     struct packed {
       logic        d;
-      logic        de;
     } valid_c12;
     struct packed {
       logic        d;
-      logic        de;
     } valid_c13;
     struct packed {
       logic        d;
-      logic        de;
     } valid_c14;
     struct packed {
       logic        d;
-      logic        de;
     } valid_c15;
     struct packed {
       logic        d;
-      logic        de;
     } valid_c16;
     struct packed {
       logic        d;
-      logic        de;
     } valid_c17;
     struct packed {
       logic        d;
-      logic        de;
     } valid_c18;
     struct packed {
       logic        d;
-      logic        de;
     } valid_c19;
     struct packed {
       logic        d;
-      logic        de;
     } valid_c20;
     struct packed {
       logic        d;
-      logic        de;
     } valid_c21;
     struct packed {
       logic        d;
-      logic        de;
     } valid_c22;
     struct packed {
       logic        d;
-      logic        de;
     } valid_c23;
     struct packed {
       logic        d;
-      logic        de;
     } valid_c24;
     struct packed {
       logic        d;
-      logic        de;
     } valid_c25;
     struct packed {
       logic        d;
-      logic        de;
     } valid_c26;
     struct packed {
       logic        d;
-      logic        de;
     } valid_c27;
     struct packed {
       logic        d;
-      logic        de;
     } valid_c28;
     struct packed {
       logic        d;
-      logic        de;
     } valid_c29;
     struct packed {
       logic        d;
-      logic        de;
     } valid_c30;
     struct packed {
       logic        d;
-      logic        de;
     } valid_c31;
   } hemaia_clk_rst_controller_hw2reg_clock_valid_register_reg_t;
 
@@ -620,46 +879,280 @@ package hemaia_clk_rst_controller_reg_pkg;
     logic        de;
   } hemaia_clk_rst_controller_hw2reg_pll_test_out_register_reg_t;
 
+  typedef struct packed {
+    struct packed {
+      logic        d;
+    } valid_c0;
+    struct packed {
+      logic        d;
+    } valid_c1;
+    struct packed {
+      logic        d;
+    } valid_c2;
+    struct packed {
+      logic        d;
+    } valid_c3;
+    struct packed {
+      logic        d;
+    } valid_c4;
+    struct packed {
+      logic        d;
+    } valid_c5;
+    struct packed {
+      logic        d;
+    } valid_c6;
+    struct packed {
+      logic        d;
+    } valid_c7;
+    struct packed {
+      logic        d;
+    } valid_c8;
+    struct packed {
+      logic        d;
+    } valid_c9;
+    struct packed {
+      logic        d;
+    } valid_c10;
+    struct packed {
+      logic        d;
+    } valid_c11;
+    struct packed {
+      logic        d;
+    } valid_c12;
+    struct packed {
+      logic        d;
+    } valid_c13;
+    struct packed {
+      logic        d;
+    } valid_c14;
+    struct packed {
+      logic        d;
+    } valid_c15;
+    struct packed {
+      logic        d;
+    } valid_c16;
+    struct packed {
+      logic        d;
+    } valid_c17;
+    struct packed {
+      logic        d;
+    } valid_c18;
+    struct packed {
+      logic        d;
+    } valid_c19;
+    struct packed {
+      logic        d;
+    } valid_c20;
+    struct packed {
+      logic        d;
+    } valid_c21;
+    struct packed {
+      logic        d;
+    } valid_c22;
+    struct packed {
+      logic        d;
+    } valid_c23;
+    struct packed {
+      logic        d;
+    } valid_c24;
+    struct packed {
+      logic        d;
+    } valid_c25;
+    struct packed {
+      logic        d;
+    } valid_c26;
+    struct packed {
+      logic        d;
+    } valid_c27;
+    struct packed {
+      logic        d;
+    } valid_c28;
+    struct packed {
+      logic        d;
+    } valid_c29;
+    struct packed {
+      logic        d;
+    } valid_c30;
+    struct packed {
+      logic        d;
+    } valid_c31;
+  } hemaia_clk_rst_controller_hw2reg_domain_division_valid_reg_t;
+
   // Register -> HW type
   typedef struct packed {
-    hemaia_clk_rst_controller_reg2hw_reset_register_reg_t reset_register; // [415:384]
-    hemaia_clk_rst_controller_reg2hw_clock_valid_register_reg_t clock_valid_register; // [383:352]
-    hemaia_clk_rst_controller_reg2hw_clock_division_register_c0_c3_reg_t clock_division_register_c0_c3; // [351:320]
-    hemaia_clk_rst_controller_reg2hw_clock_division_register_c4_c7_reg_t clock_division_register_c4_c7; // [319:288]
-    hemaia_clk_rst_controller_reg2hw_clock_division_register_c8_c11_reg_t clock_division_register_c8_c11; // [287:256]
-    hemaia_clk_rst_controller_reg2hw_clock_division_register_c12_c15_reg_t clock_division_register_c12_c15; // [255:224]
-    hemaia_clk_rst_controller_reg2hw_clock_division_register_c16_c19_reg_t clock_division_register_c16_c19; // [223:192]
-    hemaia_clk_rst_controller_reg2hw_clock_division_register_c20_c23_reg_t clock_division_register_c20_c23; // [191:160]
-    hemaia_clk_rst_controller_reg2hw_clock_division_register_c24_c27_reg_t clock_division_register_c24_c27; // [159:128]
-    hemaia_clk_rst_controller_reg2hw_clock_division_register_c28_c31_reg_t clock_division_register_c28_c31; // [127:96]
-    hemaia_clk_rst_controller_reg2hw_pll_test_en_register_reg_t pll_test_en_register; // [95:64]
-    hemaia_clk_rst_controller_reg2hw_pll_test_sel_register_reg_t pll_test_sel_register; // [63:32]
-    hemaia_clk_rst_controller_reg2hw_pll_test_out_register_reg_t pll_test_out_register; // [31:0]
+    hemaia_clk_rst_controller_reg2hw_reset_register_reg_t reset_register; // [767:736]
+    hemaia_clk_rst_controller_reg2hw_clock_valid_register_reg_t clock_valid_register; // [735:672]
+    hemaia_clk_rst_controller_reg2hw_clock_division_register_c0_c3_reg_t clock_division_register_c0_c3; // [671:640]
+    hemaia_clk_rst_controller_reg2hw_clock_division_register_c4_c7_reg_t clock_division_register_c4_c7; // [639:608]
+    hemaia_clk_rst_controller_reg2hw_clock_division_register_c8_c11_reg_t clock_division_register_c8_c11; // [607:576]
+    hemaia_clk_rst_controller_reg2hw_clock_division_register_c12_c15_reg_t clock_division_register_c12_c15; // [575:544]
+    hemaia_clk_rst_controller_reg2hw_clock_division_register_c16_c19_reg_t clock_division_register_c16_c19; // [543:512]
+    hemaia_clk_rst_controller_reg2hw_clock_division_register_c20_c23_reg_t clock_division_register_c20_c23; // [511:480]
+    hemaia_clk_rst_controller_reg2hw_clock_division_register_c24_c27_reg_t clock_division_register_c24_c27; // [479:448]
+    hemaia_clk_rst_controller_reg2hw_clock_division_register_c28_c31_reg_t clock_division_register_c28_c31; // [447:416]
+    hemaia_clk_rst_controller_reg2hw_pll_test_en_register_reg_t pll_test_en_register; // [415:384]
+    hemaia_clk_rst_controller_reg2hw_pll_test_sel_register_reg_t pll_test_sel_register; // [383:352]
+    hemaia_clk_rst_controller_reg2hw_pll_test_out_register_reg_t pll_test_out_register; // [351:320]
+    hemaia_clk_rst_controller_reg2hw_domain_division_valid_reg_t domain_division_valid; // [319:256]
+    hemaia_clk_rst_controller_reg2hw_domain_division_c0_reg_t domain_division_c0; // [255:248]
+    hemaia_clk_rst_controller_reg2hw_domain_division_c1_reg_t domain_division_c1; // [247:240]
+    hemaia_clk_rst_controller_reg2hw_domain_division_c2_reg_t domain_division_c2; // [239:232]
+    hemaia_clk_rst_controller_reg2hw_domain_division_c3_reg_t domain_division_c3; // [231:224]
+    hemaia_clk_rst_controller_reg2hw_domain_division_c4_reg_t domain_division_c4; // [223:216]
+    hemaia_clk_rst_controller_reg2hw_domain_division_c5_reg_t domain_division_c5; // [215:208]
+    hemaia_clk_rst_controller_reg2hw_domain_division_c6_reg_t domain_division_c6; // [207:200]
+    hemaia_clk_rst_controller_reg2hw_domain_division_c7_reg_t domain_division_c7; // [199:192]
+    hemaia_clk_rst_controller_reg2hw_domain_division_c8_reg_t domain_division_c8; // [191:184]
+    hemaia_clk_rst_controller_reg2hw_domain_division_c9_reg_t domain_division_c9; // [183:176]
+    hemaia_clk_rst_controller_reg2hw_domain_division_c10_reg_t domain_division_c10; // [175:168]
+    hemaia_clk_rst_controller_reg2hw_domain_division_c11_reg_t domain_division_c11; // [167:160]
+    hemaia_clk_rst_controller_reg2hw_domain_division_c12_reg_t domain_division_c12; // [159:152]
+    hemaia_clk_rst_controller_reg2hw_domain_division_c13_reg_t domain_division_c13; // [151:144]
+    hemaia_clk_rst_controller_reg2hw_domain_division_c14_reg_t domain_division_c14; // [143:136]
+    hemaia_clk_rst_controller_reg2hw_domain_division_c15_reg_t domain_division_c15; // [135:128]
+    hemaia_clk_rst_controller_reg2hw_domain_division_c16_reg_t domain_division_c16; // [127:120]
+    hemaia_clk_rst_controller_reg2hw_domain_division_c17_reg_t domain_division_c17; // [119:112]
+    hemaia_clk_rst_controller_reg2hw_domain_division_c18_reg_t domain_division_c18; // [111:104]
+    hemaia_clk_rst_controller_reg2hw_domain_division_c19_reg_t domain_division_c19; // [103:96]
+    hemaia_clk_rst_controller_reg2hw_domain_division_c20_reg_t domain_division_c20; // [95:88]
+    hemaia_clk_rst_controller_reg2hw_domain_division_c21_reg_t domain_division_c21; // [87:80]
+    hemaia_clk_rst_controller_reg2hw_domain_division_c22_reg_t domain_division_c22; // [79:72]
+    hemaia_clk_rst_controller_reg2hw_domain_division_c23_reg_t domain_division_c23; // [71:64]
+    hemaia_clk_rst_controller_reg2hw_domain_division_c24_reg_t domain_division_c24; // [63:56]
+    hemaia_clk_rst_controller_reg2hw_domain_division_c25_reg_t domain_division_c25; // [55:48]
+    hemaia_clk_rst_controller_reg2hw_domain_division_c26_reg_t domain_division_c26; // [47:40]
+    hemaia_clk_rst_controller_reg2hw_domain_division_c27_reg_t domain_division_c27; // [39:32]
+    hemaia_clk_rst_controller_reg2hw_domain_division_c28_reg_t domain_division_c28; // [31:24]
+    hemaia_clk_rst_controller_reg2hw_domain_division_c29_reg_t domain_division_c29; // [23:16]
+    hemaia_clk_rst_controller_reg2hw_domain_division_c30_reg_t domain_division_c30; // [15:8]
+    hemaia_clk_rst_controller_reg2hw_domain_division_c31_reg_t domain_division_c31; // [7:0]
   } hemaia_clk_rst_controller_reg2hw_t;
 
   // HW -> register type
   typedef struct packed {
     hemaia_clk_rst_controller_hw2reg_reset_register_reg_t reset_register; // [226:163]
-    hemaia_clk_rst_controller_hw2reg_clock_valid_register_reg_t clock_valid_register; // [162:99]
-    hemaia_clk_rst_controller_hw2reg_pll_test_en_register_reg_t pll_test_en_register; // [98:66]
-    hemaia_clk_rst_controller_hw2reg_pll_test_sel_register_reg_t pll_test_sel_register; // [65:33]
-    hemaia_clk_rst_controller_hw2reg_pll_test_out_register_reg_t pll_test_out_register; // [32:0]
+    hemaia_clk_rst_controller_hw2reg_clock_valid_register_reg_t clock_valid_register; // [162:131]
+    hemaia_clk_rst_controller_hw2reg_pll_test_en_register_reg_t pll_test_en_register; // [130:98]
+    hemaia_clk_rst_controller_hw2reg_pll_test_sel_register_reg_t pll_test_sel_register; // [97:65]
+    hemaia_clk_rst_controller_hw2reg_pll_test_out_register_reg_t pll_test_out_register; // [64:32]
+    hemaia_clk_rst_controller_hw2reg_domain_division_valid_reg_t domain_division_valid; // [31:0]
   } hemaia_clk_rst_controller_hw2reg_t;
 
   // Register offsets
-  parameter logic [BlockAw-1:0] HEMAIA_CLK_RST_CONTROLLER_RESET_REGISTER_OFFSET = 6'h 0;
-  parameter logic [BlockAw-1:0] HEMAIA_CLK_RST_CONTROLLER_CLOCK_VALID_REGISTER_OFFSET = 6'h 4;
-  parameter logic [BlockAw-1:0] HEMAIA_CLK_RST_CONTROLLER_CLOCK_DIVISION_REGISTER_C0_C3_OFFSET = 6'h 8;
-  parameter logic [BlockAw-1:0] HEMAIA_CLK_RST_CONTROLLER_CLOCK_DIVISION_REGISTER_C4_C7_OFFSET = 6'h c;
-  parameter logic [BlockAw-1:0] HEMAIA_CLK_RST_CONTROLLER_CLOCK_DIVISION_REGISTER_C8_C11_OFFSET = 6'h 10;
-  parameter logic [BlockAw-1:0] HEMAIA_CLK_RST_CONTROLLER_CLOCK_DIVISION_REGISTER_C12_C15_OFFSET = 6'h 14;
-  parameter logic [BlockAw-1:0] HEMAIA_CLK_RST_CONTROLLER_CLOCK_DIVISION_REGISTER_C16_C19_OFFSET = 6'h 18;
-  parameter logic [BlockAw-1:0] HEMAIA_CLK_RST_CONTROLLER_CLOCK_DIVISION_REGISTER_C20_C23_OFFSET = 6'h 1c;
-  parameter logic [BlockAw-1:0] HEMAIA_CLK_RST_CONTROLLER_CLOCK_DIVISION_REGISTER_C24_C27_OFFSET = 6'h 20;
-  parameter logic [BlockAw-1:0] HEMAIA_CLK_RST_CONTROLLER_CLOCK_DIVISION_REGISTER_C28_C31_OFFSET = 6'h 24;
-  parameter logic [BlockAw-1:0] HEMAIA_CLK_RST_CONTROLLER_PLL_TEST_EN_REGISTER_OFFSET = 6'h 28;
-  parameter logic [BlockAw-1:0] HEMAIA_CLK_RST_CONTROLLER_PLL_TEST_SEL_REGISTER_OFFSET = 6'h 2c;
-  parameter logic [BlockAw-1:0] HEMAIA_CLK_RST_CONTROLLER_PLL_TEST_OUT_REGISTER_OFFSET = 6'h 30;
+  parameter logic [BlockAw-1:0] HEMAIA_CLK_RST_CONTROLLER_RESET_REGISTER_OFFSET = 9'h 0;
+  parameter logic [BlockAw-1:0] HEMAIA_CLK_RST_CONTROLLER_CLOCK_VALID_REGISTER_OFFSET = 9'h 4;
+  parameter logic [BlockAw-1:0] HEMAIA_CLK_RST_CONTROLLER_CLOCK_DIVISION_REGISTER_C0_C3_OFFSET = 9'h 8;
+  parameter logic [BlockAw-1:0] HEMAIA_CLK_RST_CONTROLLER_CLOCK_DIVISION_REGISTER_C4_C7_OFFSET = 9'h c;
+  parameter logic [BlockAw-1:0] HEMAIA_CLK_RST_CONTROLLER_CLOCK_DIVISION_REGISTER_C8_C11_OFFSET = 9'h 10;
+  parameter logic [BlockAw-1:0] HEMAIA_CLK_RST_CONTROLLER_CLOCK_DIVISION_REGISTER_C12_C15_OFFSET = 9'h 14;
+  parameter logic [BlockAw-1:0] HEMAIA_CLK_RST_CONTROLLER_CLOCK_DIVISION_REGISTER_C16_C19_OFFSET = 9'h 18;
+  parameter logic [BlockAw-1:0] HEMAIA_CLK_RST_CONTROLLER_CLOCK_DIVISION_REGISTER_C20_C23_OFFSET = 9'h 1c;
+  parameter logic [BlockAw-1:0] HEMAIA_CLK_RST_CONTROLLER_CLOCK_DIVISION_REGISTER_C24_C27_OFFSET = 9'h 20;
+  parameter logic [BlockAw-1:0] HEMAIA_CLK_RST_CONTROLLER_CLOCK_DIVISION_REGISTER_C28_C31_OFFSET = 9'h 24;
+  parameter logic [BlockAw-1:0] HEMAIA_CLK_RST_CONTROLLER_PLL_TEST_EN_REGISTER_OFFSET = 9'h 28;
+  parameter logic [BlockAw-1:0] HEMAIA_CLK_RST_CONTROLLER_PLL_TEST_SEL_REGISTER_OFFSET = 9'h 2c;
+  parameter logic [BlockAw-1:0] HEMAIA_CLK_RST_CONTROLLER_PLL_TEST_OUT_REGISTER_OFFSET = 9'h 30;
+  parameter logic [BlockAw-1:0] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_VALID_OFFSET = 9'h 34;
+  parameter logic [BlockAw-1:0] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C0_OFFSET = 9'h 38;
+  parameter logic [BlockAw-1:0] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C1_OFFSET = 9'h 40;
+  parameter logic [BlockAw-1:0] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C2_OFFSET = 9'h 48;
+  parameter logic [BlockAw-1:0] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C3_OFFSET = 9'h 50;
+  parameter logic [BlockAw-1:0] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C4_OFFSET = 9'h 58;
+  parameter logic [BlockAw-1:0] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C5_OFFSET = 9'h 60;
+  parameter logic [BlockAw-1:0] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C6_OFFSET = 9'h 68;
+  parameter logic [BlockAw-1:0] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C7_OFFSET = 9'h 70;
+  parameter logic [BlockAw-1:0] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C8_OFFSET = 9'h 78;
+  parameter logic [BlockAw-1:0] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C9_OFFSET = 9'h 80;
+  parameter logic [BlockAw-1:0] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C10_OFFSET = 9'h 88;
+  parameter logic [BlockAw-1:0] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C11_OFFSET = 9'h 90;
+  parameter logic [BlockAw-1:0] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C12_OFFSET = 9'h 98;
+  parameter logic [BlockAw-1:0] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C13_OFFSET = 9'h a0;
+  parameter logic [BlockAw-1:0] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C14_OFFSET = 9'h a8;
+  parameter logic [BlockAw-1:0] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C15_OFFSET = 9'h b0;
+  parameter logic [BlockAw-1:0] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C16_OFFSET = 9'h b8;
+  parameter logic [BlockAw-1:0] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C17_OFFSET = 9'h c0;
+  parameter logic [BlockAw-1:0] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C18_OFFSET = 9'h c8;
+  parameter logic [BlockAw-1:0] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C19_OFFSET = 9'h d0;
+  parameter logic [BlockAw-1:0] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C20_OFFSET = 9'h d8;
+  parameter logic [BlockAw-1:0] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C21_OFFSET = 9'h e0;
+  parameter logic [BlockAw-1:0] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C22_OFFSET = 9'h e8;
+  parameter logic [BlockAw-1:0] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C23_OFFSET = 9'h f0;
+  parameter logic [BlockAw-1:0] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C24_OFFSET = 9'h f8;
+  parameter logic [BlockAw-1:0] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C25_OFFSET = 9'h 100;
+  parameter logic [BlockAw-1:0] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C26_OFFSET = 9'h 108;
+  parameter logic [BlockAw-1:0] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C27_OFFSET = 9'h 110;
+  parameter logic [BlockAw-1:0] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C28_OFFSET = 9'h 118;
+  parameter logic [BlockAw-1:0] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C29_OFFSET = 9'h 120;
+  parameter logic [BlockAw-1:0] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C30_OFFSET = 9'h 128;
+  parameter logic [BlockAw-1:0] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C31_OFFSET = 9'h 130;
+
+  // Reset values for hwext registers and their fields
+  parameter logic [31:0] HEMAIA_CLK_RST_CONTROLLER_CLOCK_VALID_REGISTER_RESVAL = 32'h 0;
+  parameter logic [0:0] HEMAIA_CLK_RST_CONTROLLER_CLOCK_VALID_REGISTER_VALID_C0_RESVAL = 1'h 0;
+  parameter logic [0:0] HEMAIA_CLK_RST_CONTROLLER_CLOCK_VALID_REGISTER_VALID_C1_RESVAL = 1'h 0;
+  parameter logic [0:0] HEMAIA_CLK_RST_CONTROLLER_CLOCK_VALID_REGISTER_VALID_C2_RESVAL = 1'h 0;
+  parameter logic [0:0] HEMAIA_CLK_RST_CONTROLLER_CLOCK_VALID_REGISTER_VALID_C3_RESVAL = 1'h 0;
+  parameter logic [0:0] HEMAIA_CLK_RST_CONTROLLER_CLOCK_VALID_REGISTER_VALID_C4_RESVAL = 1'h 0;
+  parameter logic [0:0] HEMAIA_CLK_RST_CONTROLLER_CLOCK_VALID_REGISTER_VALID_C5_RESVAL = 1'h 0;
+  parameter logic [0:0] HEMAIA_CLK_RST_CONTROLLER_CLOCK_VALID_REGISTER_VALID_C6_RESVAL = 1'h 0;
+  parameter logic [0:0] HEMAIA_CLK_RST_CONTROLLER_CLOCK_VALID_REGISTER_VALID_C7_RESVAL = 1'h 0;
+  parameter logic [0:0] HEMAIA_CLK_RST_CONTROLLER_CLOCK_VALID_REGISTER_VALID_C8_RESVAL = 1'h 0;
+  parameter logic [0:0] HEMAIA_CLK_RST_CONTROLLER_CLOCK_VALID_REGISTER_VALID_C9_RESVAL = 1'h 0;
+  parameter logic [0:0] HEMAIA_CLK_RST_CONTROLLER_CLOCK_VALID_REGISTER_VALID_C10_RESVAL = 1'h 0;
+  parameter logic [0:0] HEMAIA_CLK_RST_CONTROLLER_CLOCK_VALID_REGISTER_VALID_C11_RESVAL = 1'h 0;
+  parameter logic [0:0] HEMAIA_CLK_RST_CONTROLLER_CLOCK_VALID_REGISTER_VALID_C12_RESVAL = 1'h 0;
+  parameter logic [0:0] HEMAIA_CLK_RST_CONTROLLER_CLOCK_VALID_REGISTER_VALID_C13_RESVAL = 1'h 0;
+  parameter logic [0:0] HEMAIA_CLK_RST_CONTROLLER_CLOCK_VALID_REGISTER_VALID_C14_RESVAL = 1'h 0;
+  parameter logic [0:0] HEMAIA_CLK_RST_CONTROLLER_CLOCK_VALID_REGISTER_VALID_C15_RESVAL = 1'h 0;
+  parameter logic [0:0] HEMAIA_CLK_RST_CONTROLLER_CLOCK_VALID_REGISTER_VALID_C16_RESVAL = 1'h 0;
+  parameter logic [0:0] HEMAIA_CLK_RST_CONTROLLER_CLOCK_VALID_REGISTER_VALID_C17_RESVAL = 1'h 0;
+  parameter logic [0:0] HEMAIA_CLK_RST_CONTROLLER_CLOCK_VALID_REGISTER_VALID_C18_RESVAL = 1'h 0;
+  parameter logic [0:0] HEMAIA_CLK_RST_CONTROLLER_CLOCK_VALID_REGISTER_VALID_C19_RESVAL = 1'h 0;
+  parameter logic [0:0] HEMAIA_CLK_RST_CONTROLLER_CLOCK_VALID_REGISTER_VALID_C20_RESVAL = 1'h 0;
+  parameter logic [0:0] HEMAIA_CLK_RST_CONTROLLER_CLOCK_VALID_REGISTER_VALID_C21_RESVAL = 1'h 0;
+  parameter logic [0:0] HEMAIA_CLK_RST_CONTROLLER_CLOCK_VALID_REGISTER_VALID_C22_RESVAL = 1'h 0;
+  parameter logic [0:0] HEMAIA_CLK_RST_CONTROLLER_CLOCK_VALID_REGISTER_VALID_C23_RESVAL = 1'h 0;
+  parameter logic [0:0] HEMAIA_CLK_RST_CONTROLLER_CLOCK_VALID_REGISTER_VALID_C24_RESVAL = 1'h 0;
+  parameter logic [0:0] HEMAIA_CLK_RST_CONTROLLER_CLOCK_VALID_REGISTER_VALID_C25_RESVAL = 1'h 0;
+  parameter logic [0:0] HEMAIA_CLK_RST_CONTROLLER_CLOCK_VALID_REGISTER_VALID_C26_RESVAL = 1'h 0;
+  parameter logic [0:0] HEMAIA_CLK_RST_CONTROLLER_CLOCK_VALID_REGISTER_VALID_C27_RESVAL = 1'h 0;
+  parameter logic [0:0] HEMAIA_CLK_RST_CONTROLLER_CLOCK_VALID_REGISTER_VALID_C28_RESVAL = 1'h 0;
+  parameter logic [0:0] HEMAIA_CLK_RST_CONTROLLER_CLOCK_VALID_REGISTER_VALID_C29_RESVAL = 1'h 0;
+  parameter logic [0:0] HEMAIA_CLK_RST_CONTROLLER_CLOCK_VALID_REGISTER_VALID_C30_RESVAL = 1'h 0;
+  parameter logic [0:0] HEMAIA_CLK_RST_CONTROLLER_CLOCK_VALID_REGISTER_VALID_C31_RESVAL = 1'h 0;
+  parameter logic [31:0] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_VALID_RESVAL = 32'h 0;
+  parameter logic [0:0] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_VALID_VALID_C0_RESVAL = 1'h 0;
+  parameter logic [0:0] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_VALID_VALID_C1_RESVAL = 1'h 0;
+  parameter logic [0:0] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_VALID_VALID_C2_RESVAL = 1'h 0;
+  parameter logic [0:0] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_VALID_VALID_C3_RESVAL = 1'h 0;
+  parameter logic [0:0] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_VALID_VALID_C4_RESVAL = 1'h 0;
+  parameter logic [0:0] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_VALID_VALID_C5_RESVAL = 1'h 0;
+  parameter logic [0:0] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_VALID_VALID_C6_RESVAL = 1'h 0;
+  parameter logic [0:0] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_VALID_VALID_C7_RESVAL = 1'h 0;
+  parameter logic [0:0] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_VALID_VALID_C8_RESVAL = 1'h 0;
+  parameter logic [0:0] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_VALID_VALID_C9_RESVAL = 1'h 0;
+  parameter logic [0:0] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_VALID_VALID_C10_RESVAL = 1'h 0;
+  parameter logic [0:0] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_VALID_VALID_C11_RESVAL = 1'h 0;
+  parameter logic [0:0] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_VALID_VALID_C12_RESVAL = 1'h 0;
+  parameter logic [0:0] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_VALID_VALID_C13_RESVAL = 1'h 0;
+  parameter logic [0:0] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_VALID_VALID_C14_RESVAL = 1'h 0;
+  parameter logic [0:0] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_VALID_VALID_C15_RESVAL = 1'h 0;
+  parameter logic [0:0] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_VALID_VALID_C16_RESVAL = 1'h 0;
+  parameter logic [0:0] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_VALID_VALID_C17_RESVAL = 1'h 0;
+  parameter logic [0:0] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_VALID_VALID_C18_RESVAL = 1'h 0;
+  parameter logic [0:0] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_VALID_VALID_C19_RESVAL = 1'h 0;
+  parameter logic [0:0] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_VALID_VALID_C20_RESVAL = 1'h 0;
+  parameter logic [0:0] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_VALID_VALID_C21_RESVAL = 1'h 0;
+  parameter logic [0:0] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_VALID_VALID_C22_RESVAL = 1'h 0;
+  parameter logic [0:0] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_VALID_VALID_C23_RESVAL = 1'h 0;
+  parameter logic [0:0] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_VALID_VALID_C24_RESVAL = 1'h 0;
+  parameter logic [0:0] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_VALID_VALID_C25_RESVAL = 1'h 0;
+  parameter logic [0:0] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_VALID_VALID_C26_RESVAL = 1'h 0;
+  parameter logic [0:0] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_VALID_VALID_C27_RESVAL = 1'h 0;
+  parameter logic [0:0] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_VALID_VALID_C28_RESVAL = 1'h 0;
+  parameter logic [0:0] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_VALID_VALID_C29_RESVAL = 1'h 0;
+  parameter logic [0:0] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_VALID_VALID_C30_RESVAL = 1'h 0;
+  parameter logic [0:0] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_VALID_VALID_C31_RESVAL = 1'h 0;
 
   // Register index
   typedef enum int {
@@ -675,11 +1168,44 @@ package hemaia_clk_rst_controller_reg_pkg;
     HEMAIA_CLK_RST_CONTROLLER_CLOCK_DIVISION_REGISTER_C28_C31,
     HEMAIA_CLK_RST_CONTROLLER_PLL_TEST_EN_REGISTER,
     HEMAIA_CLK_RST_CONTROLLER_PLL_TEST_SEL_REGISTER,
-    HEMAIA_CLK_RST_CONTROLLER_PLL_TEST_OUT_REGISTER
+    HEMAIA_CLK_RST_CONTROLLER_PLL_TEST_OUT_REGISTER,
+    HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_VALID,
+    HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C0,
+    HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C1,
+    HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C2,
+    HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C3,
+    HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C4,
+    HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C5,
+    HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C6,
+    HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C7,
+    HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C8,
+    HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C9,
+    HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C10,
+    HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C11,
+    HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C12,
+    HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C13,
+    HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C14,
+    HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C15,
+    HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C16,
+    HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C17,
+    HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C18,
+    HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C19,
+    HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C20,
+    HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C21,
+    HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C22,
+    HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C23,
+    HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C24,
+    HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C25,
+    HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C26,
+    HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C27,
+    HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C28,
+    HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C29,
+    HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C30,
+    HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C31
   } hemaia_clk_rst_controller_id_e;
 
   // Register width information to check illegal writes
-  parameter logic [3:0] HEMAIA_CLK_RST_CONTROLLER_PERMIT [13] = '{
+  parameter logic [3:0] HEMAIA_CLK_RST_CONTROLLER_PERMIT [46] = '{
     4'b 1111, // index[ 0] HEMAIA_CLK_RST_CONTROLLER_RESET_REGISTER
     4'b 1111, // index[ 1] HEMAIA_CLK_RST_CONTROLLER_CLOCK_VALID_REGISTER
     4'b 1111, // index[ 2] HEMAIA_CLK_RST_CONTROLLER_CLOCK_DIVISION_REGISTER_C0_C3
@@ -692,7 +1218,40 @@ package hemaia_clk_rst_controller_reg_pkg;
     4'b 1111, // index[ 9] HEMAIA_CLK_RST_CONTROLLER_CLOCK_DIVISION_REGISTER_C28_C31
     4'b 1111, // index[10] HEMAIA_CLK_RST_CONTROLLER_PLL_TEST_EN_REGISTER
     4'b 1111, // index[11] HEMAIA_CLK_RST_CONTROLLER_PLL_TEST_SEL_REGISTER
-    4'b 1111  // index[12] HEMAIA_CLK_RST_CONTROLLER_PLL_TEST_OUT_REGISTER
+    4'b 1111, // index[12] HEMAIA_CLK_RST_CONTROLLER_PLL_TEST_OUT_REGISTER
+    4'b 1111, // index[13] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_VALID
+    4'b 0001, // index[14] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C0
+    4'b 0001, // index[15] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C1
+    4'b 0001, // index[16] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C2
+    4'b 0001, // index[17] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C3
+    4'b 0001, // index[18] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C4
+    4'b 0001, // index[19] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C5
+    4'b 0001, // index[20] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C6
+    4'b 0001, // index[21] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C7
+    4'b 0001, // index[22] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C8
+    4'b 0001, // index[23] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C9
+    4'b 0001, // index[24] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C10
+    4'b 0001, // index[25] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C11
+    4'b 0001, // index[26] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C12
+    4'b 0001, // index[27] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C13
+    4'b 0001, // index[28] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C14
+    4'b 0001, // index[29] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C15
+    4'b 0001, // index[30] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C16
+    4'b 0001, // index[31] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C17
+    4'b 0001, // index[32] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C18
+    4'b 0001, // index[33] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C19
+    4'b 0001, // index[34] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C20
+    4'b 0001, // index[35] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C21
+    4'b 0001, // index[36] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C22
+    4'b 0001, // index[37] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C23
+    4'b 0001, // index[38] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C24
+    4'b 0001, // index[39] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C25
+    4'b 0001, // index[40] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C26
+    4'b 0001, // index[41] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C27
+    4'b 0001, // index[42] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C28
+    4'b 0001, // index[43] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C29
+    4'b 0001, // index[44] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C30
+    4'b 0001  // index[45] HEMAIA_CLK_RST_CONTROLLER_DOMAIN_DIVISION_C31
   };
 
 endpackage

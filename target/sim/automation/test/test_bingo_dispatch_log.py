@@ -62,9 +62,12 @@ class DispatchLogTests(unittest.TestCase):
         monitor = text[start:end]
         self.assertIn('$test$plusargs("bingo_dispatch_log")', monitor)
         self.assertIn("(|bingo_cerf_fb_en) || (|bingo_risk_late) || dispatch_log_en", monitor)
-        self.assertIn("i_bingo_hw_manager.ready_queue_pop[core][cluster]", monitor)
+        # the bingo paths are defined once, at the top of the block
+        self.assertIn("`define QUAD_CTRL_BINGO_READY_POP      i_bingo_hw_manager.ready_queue_pop\n", text)
+        self.assertIn("`define QUAD_CTRL_BINGO_DONE_PUSH      i_bingo_hw_manager.done_q_push\n", text)
+        self.assertIn("`QUAD_CTRL_BINGO_READY_POP[core][cluster]", monitor)
         self.assertIn("&& dispatch_log_en &&\n"
-                      "            i_bingo_hw_manager.done_q_push[core][cluster]", monitor)
+                      "            `QUAD_CTRL_BINGO_DONE_PUSH[core][cluster]", monitor)
         self.assertIn("[BINGO_DISPATCH] %0t chip=%0d task=%0d core=%0d cluster=%0d", monitor)
         self.assertIn("[BINGO_DONE] %0t chip=%0d task=%0d core=%0d cluster=%0d", monitor)
 

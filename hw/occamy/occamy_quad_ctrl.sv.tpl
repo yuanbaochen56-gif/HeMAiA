@@ -618,6 +618,18 @@ module ${name}_quad_ctrl
   );
 
 `ifndef SYNTHESIS
+  // The bingo internals the logs below read by hierarchical name. bingo keeps
+  // these names for it (see the declarations in bingo_hw_manager_top and
+  // bingo_hw_manager_ctrl); a rename there must be made here too.
+`define QUAD_CTRL_BINGO_RISK_EPOCH_END i_bingo_hw_manager.i_ctrl.risk_epoch_end
+`define QUAD_CTRL_BINGO_RISK_CNT       i_bingo_hw_manager.i_ctrl.risk_cnt_q
+`define QUAD_CTRL_BINGO_RISK_CLEAR     i_bingo_hw_manager.risk_clear
+`define QUAD_CTRL_BINGO_CORE_FENCED    i_bingo_hw_manager.core_fenced
+`define QUAD_CTRL_BINGO_WD_LATE        i_bingo_hw_manager.wd_late
+`define QUAD_CTRL_BINGO_READY_POP      i_bingo_hw_manager.ready_queue_pop
+`define QUAD_CTRL_BINGO_READY_DATA     i_bingo_hw_manager.ready_queue_data_out
+`define QUAD_CTRL_BINGO_DONE_PUSH      i_bingo_hw_manager.done_q_push
+`define QUAD_CTRL_BINGO_DONE_DATA      i_bingo_hw_manager.done_q_data_in
   // With degradation or late-beat monitoring enabled, log actual dispatches.
   // Check cleared branches and tasks routed away from an at-risk slot.
   cfg_t bingo_risk_clear_log_q;
@@ -634,27 +646,36 @@ module ${name}_quad_ctrl
   for (genvar core = 0; core < BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER; core++) begin : gen_bingo_dispatch_core_log
     for (genvar cluster = 0; cluster < NrClustersPerQuad; cluster++) begin : gen_bingo_dispatch_cluster_log
       always @(posedge ${quad_ctrl_axi_lite_xbar.clk}) begin
-        if (${quad_ctrl_axi_lite_xbar.rst} && i_bingo_hw_manager.i_ctrl.risk_epoch_end &&
-            (i_bingo_hw_manager.i_ctrl.risk_cnt_q[core][cluster] != 0) &&
-            !i_bingo_hw_manager.risk_clear[core][cluster] &&
-            !i_bingo_hw_manager.core_fenced[core][cluster] &&
-            !i_bingo_hw_manager.wd_late[core][cluster])
+        if (${quad_ctrl_axi_lite_xbar.rst} && `QUAD_CTRL_BINGO_RISK_EPOCH_END &&
+            (`QUAD_CTRL_BINGO_RISK_CNT[core][cluster] != 0) &&
+            !`QUAD_CTRL_BINGO_RISK_CLEAR[core][cluster] &&
+            !`QUAD_CTRL_BINGO_CORE_FENCED[core][cluster] &&
+            !`QUAD_CTRL_BINGO_WD_LATE[core][cluster])
           $display("[BINGO_RISK_DECAY] %0t core=%0d cluster=%0d count=%0d -> count=%0d",
-                   $time, core, cluster, i_bingo_hw_manager.i_ctrl.risk_cnt_q[core][cluster],
-                   i_bingo_hw_manager.i_ctrl.risk_cnt_q[core][cluster] >> 1);
+                   $time, core, cluster, `QUAD_CTRL_BINGO_RISK_CNT[core][cluster],
+                   `QUAD_CTRL_BINGO_RISK_CNT[core][cluster] >> 1);
         if (${quad_ctrl_axi_lite_xbar.rst} && ((|bingo_cerf_fb_en) || (|bingo_risk_late) || dispatch_log_en) &&
-            i_bingo_hw_manager.ready_queue_pop[core][cluster])
+            `QUAD_CTRL_BINGO_READY_POP[core][cluster])
           $display("[BINGO_DISPATCH] %0t chip=%0d task=%0d core=%0d cluster=%0d",
-                   $time, chip_id_i, i_bingo_hw_manager.ready_queue_data_out[core][cluster].task_id,
+                   $time, chip_id_i, `QUAD_CTRL_BINGO_READY_DATA[core][cluster].task_id,
                    core, cluster);
         if (${quad_ctrl_axi_lite_xbar.rst} && dispatch_log_en &&
-            i_bingo_hw_manager.done_q_push[core][cluster])
+            `QUAD_CTRL_BINGO_DONE_PUSH[core][cluster])
           $display("[BINGO_DONE] %0t chip=%0d task=%0d core=%0d cluster=%0d",
-                   $time, chip_id_i, i_bingo_hw_manager.done_q_data_in[core][cluster].task_id,
+                   $time, chip_id_i, `QUAD_CTRL_BINGO_DONE_DATA[core][cluster].task_id,
                    core, cluster);
       end
     end
   end
+`undef QUAD_CTRL_BINGO_RISK_EPOCH_END
+`undef QUAD_CTRL_BINGO_RISK_CNT
+`undef QUAD_CTRL_BINGO_RISK_CLEAR
+`undef QUAD_CTRL_BINGO_CORE_FENCED
+`undef QUAD_CTRL_BINGO_WD_LATE
+`undef QUAD_CTRL_BINGO_READY_POP
+`undef QUAD_CTRL_BINGO_READY_DATA
+`undef QUAD_CTRL_BINGO_DONE_PUSH
+`undef QUAD_CTRL_BINGO_DONE_DATA
   // Simulation-only packet log of the remote link (address and 64-bit packet of
   // every AXI-Lite write it sends and receives, and the write responses).
   always @(posedge ${quad_ctrl_axi_lite_xbar.clk}) begin : bingo_remote_link_log

@@ -18,7 +18,7 @@ class EventLogTests(unittest.TestCase):
         root = Path(__file__).resolve().parents[4]
         api = (root / "target/sw/host/runtime/libbingo/src/bingo_api.c").read_text()
         start = api.index("void bingo_evlog_enable(")
-        end = api.index("// The task will be initized", start)
+        end = api.index("// The task will be initialized", start)
         functions = api[start:end].replace('asm volatile("fence" ::: "memory");',
                                            '__asm__ __volatile__("" ::: "memory");')
         source = r'''

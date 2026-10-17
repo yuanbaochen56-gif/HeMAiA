@@ -902,9 +902,9 @@ uint32_t bingo_c6_sw_cerf_evt(void) {
 }
 #endif
 
-// The task will be initized directly on a .h file generated from the mini compiler
+// The task will be initialized directly on a .h file generated from the mini compiler
 // So the whole scheduling process will be handled by the hardware scheduler
-// The host-side work is just in the begining to write the task_list_ptr and #num_tasks to the quad ctrl reg
+// The host-side work is just in the beginning to write the task_list_ptr and #num_tasks to the quad ctrl reg
 // Then the HW scheduler will read the task list from the memory and schedule the tasks
 // The Host core will also hooked with th ARA core for the simd
 // So its work is just to read the ready queue and write to the done queue when the simd is done
@@ -913,7 +913,7 @@ void bingo_hw_scheduler_init(uint64_t dev_arg_base_addr, uint64_t dev_kernel_bas
     // See target/sw/device/runtime/src/bingo.h for details
     writew(2, (uintptr_t)chiplet_addr_transform((uint64_t)soc_ctrl_kernel_tab_scratch_addr(3)));
     // For the dev_arg_base_addr, dev_kernel_base_addr, global_task_id_to_dev_task_id_base_addr
-    // We use those list when we get a globak task id and need to get the arg/kernel ptr for the device
+    // We use those list when we get a global task id and need to get the arg/kernel ptr for the device
     // The host core will write those list to the clusters' TCDM to let the device access them directly
     // instead of going to the main memory
     // Essentially we are doing the SW Cache here for the device to reduce the main memory access

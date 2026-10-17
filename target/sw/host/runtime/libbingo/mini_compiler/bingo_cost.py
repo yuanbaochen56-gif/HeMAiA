@@ -25,7 +25,8 @@ Every number is in ticks, rounded up.
 
 Calibration: the healthy runs of the thesis evaluation on bingo 6eea1fd / HeMAiA
 aec4a53f..e54e051e (full scene set, the learned-threshold sweeps, the scheduling and
-four-cluster runs): 65 runs, 894 device executions. Durations are watchdog ticks
+four-cluster runs): 62 runs, 869 device executions (repeated runs of one image
+counted once). Durations are watchdog ticks
 (cycles at a level slower than normal count normal/level). Runs with an injected
 fault, an image without heartbeats or the SDC device runtime are not used.
 Leave-one-workload-out on hemaia_ci (PM on): 479 estimates, 4.6 % below the actual

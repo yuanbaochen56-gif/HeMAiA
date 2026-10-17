@@ -20,7 +20,8 @@ Where an estimate comes from (estimate()):
   - cold execution, the first one of a kernel on its core in an offload (the core
     fetches the kernel's code): the slowest cold execution of the same kernel and
     size key, otherwise the GEMM model's cold value, otherwise warm + the kernel's
-    cold term (the largest cold - warm difference of a calibrated size), otherwise
+    cold term (the largest cold - warm difference of a calibrated size, for a copy
+    without a warm row of its size the model's warm value), otherwise
     none;
   - kernels in NO_ESTIMATE (their time depends on data or on another task) and
     host tasks (the host slot is not watched) get none;
@@ -57,9 +58,13 @@ from small GEMMs only; the array term there is not validated by a large GEMM.
 Calibration: the healthy runs of the thesis evaluation on bingo 6eea1fd / HeMAiA
 aec4a53f..e54e051e (full scene set, the learned-threshold sweeps, the scheduling and
 four-cluster runs): 62 runs, 869 device executions (repeated runs of one image
-counted once); and the gemm_stacked_2cluster
-runs of the TCDM experiment (HeMAiA 42a71e9b, bingo 99459d5, TCDM 512 KiB and 1 MiB,
-GEMMs up to 256x1024x256, copies up to 256 KiB): 6 runs, 72 executions. Durations
+counted once); the GEMMs of the gemm_stacked_2cluster runs of the TCDM experiment
+(HeMAiA 42a71e9b, bingo 99459d5, TCDM 512 KiB and 1 MiB, up to 256x1024x256): 6 runs,
+24 executions; and the own times of copies from 4 KiB to 256 KiB, both directions, one
+cluster at a time (dma_sizes_2cluster phase A, task-time image, 2026-10-18): 28
+executions. The TCDM experiment's copies ran with both clusters copying at once, so
+their times include the wait on the shared port that the graph now adds; they are
+not table rows. Durations
 are watchdog ticks (cycles at a level slower than normal count normal/level). Runs
 with an injected fault, an image without heartbeats or the SDC device runtime are not
 used. Leave-one-workload-out on hemaia_ci (PM on, E13 runs): 479 estimates, 4.6 %
@@ -113,15 +118,21 @@ CALIBRATION = {
             ('__snax_bingo_kernel_gemm_full', 'M=8 K=128 N=1'): 1449,
             ('__snax_bingo_kernel_idma_1d_copy', 'size=1024 L3>L1'): 124,
             ('__snax_bingo_kernel_idma_1d_copy', 'size=128 L1>L3'): 119,
-            ('__snax_bingo_kernel_idma_1d_copy', 'size=16384 L1>L3'): 496,
+            ('__snax_bingo_kernel_idma_1d_copy', 'size=131072 L1>L3'): 2112,
+            ('__snax_bingo_kernel_idma_1d_copy', 'size=131072 L3>L1'): 2141,
+            ('__snax_bingo_kernel_idma_1d_copy', 'size=16384 L1>L3'): 320,
+            ('__snax_bingo_kernel_idma_1d_copy', 'size=16384 L3>L1'): 348,
             ('__snax_bingo_kernel_idma_1d_copy', 'size=256 L3>L1'): 100,
-            ('__snax_bingo_kernel_idma_1d_copy', 'size=262144 L3>L1'): 8410,
-            ('__snax_bingo_kernel_idma_1d_copy', 'size=32768 L1>L3'): 952,
+            ('__snax_bingo_kernel_idma_1d_copy', 'size=262144 L1>L3'): 4159,
+            ('__snax_bingo_kernel_idma_1d_copy', 'size=262144 L3>L1'): 4190,
+            ('__snax_bingo_kernel_idma_1d_copy', 'size=32768 L1>L3'): 575,
+            ('__snax_bingo_kernel_idma_1d_copy', 'size=32768 L3>L1'): 605,
             ('__snax_bingo_kernel_idma_1d_copy', 'size=4096 L1>L3'): 157,
-            ('__snax_bingo_kernel_idma_1d_copy', 'size=4096 L3>L1'): 150,
             ('__snax_bingo_kernel_idma_1d_copy', 'size=64 L3>L1'): 92,
-            ('__snax_bingo_kernel_idma_1d_copy', 'size=65536 L3>L1'): 2170,
-            ('__snax_bingo_kernel_idma_1d_copy', 'size=8192 L3>L1'): 272,
+            ('__snax_bingo_kernel_idma_1d_copy', 'size=65536 L1>L3'): 1086,
+            ('__snax_bingo_kernel_idma_1d_copy', 'size=65536 L3>L1'): 1117,
+            ('__snax_bingo_kernel_idma_1d_copy', 'size=8192 L1>L3'): 191,
+            ('__snax_bingo_kernel_idma_1d_copy', 'size=8192 L3>L1'): 221,
         },
         cold={
             ('__snax_bingo_kernel_exit', ''): 8473,
@@ -134,10 +145,9 @@ CALIBRATION = {
             ('__snax_bingo_kernel_idma_1d_copy', 'size=128 L3>L1'): 482,
             ('__snax_bingo_kernel_idma_1d_copy', 'size=128 L3>L3'): 482,
             ('__snax_bingo_kernel_idma_1d_copy', 'size=256 L3>L1'): 510,
-            ('__snax_bingo_kernel_idma_1d_copy', 'size=262144 L3>L1'): 8647,
+            ('__snax_bingo_kernel_idma_1d_copy', 'size=4096 L3>L1'): 573,
             ('__snax_bingo_kernel_idma_1d_copy', 'size=512 L3>L1'): 455,
             ('__snax_bingo_kernel_idma_1d_copy', 'size=64 L3>L1'): 332,
-            ('__snax_bingo_kernel_idma_1d_copy', 'size=65536 L3>L1'): 2407,
             ('__snax_bingo_kernel_int32_add', 'n=32'): 4222,
             ('__snax_bingo_kernel_int32_add', 'n=512'): 64925,
         },
@@ -146,8 +156,8 @@ CALIBRATION = {
             '__snax_bingo_kernel_idma_1d_copy': 410,
         },
         models={
-            'copy L1>L3': (114.94, 0.0256, 32768),
-            'copy L3>L1': (91.08, 0.0318, 262144),
+            'copy L1>L3': (116.23, 0.0155, 262144),
+            'copy L3>L1': (107.26, 0.0156, 262144),
         },
         gemm=dict(warm=1180, cold=2595)),
     "hemaia_ci_4cluster": dict(
@@ -175,7 +185,7 @@ CALIBRATION = {
         },
         cold_term={
             '__snax_bingo_kernel_gemm_full': 1077,
-            '__snax_bingo_kernel_idma_1d_copy': 317,
+            '__snax_bingo_kernel_idma_1d_copy': 486,
             '__snax_bingo_kernel_xdma_d_to_row_major_e4_M32N32': 2672,
         },
         models={

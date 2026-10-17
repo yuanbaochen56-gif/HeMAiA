@@ -124,6 +124,23 @@ class EstimateTests(unittest.TestCase):
             self.assertIsNone(cost.estimate(kernel, "x", "size=64", 64, False, ci)[0])
         self.assertIsNone(cost.estimate(COPY, "copy", "size=256 L3>L1", 256, False, None)[0])
 
+    def test_large_copies_are_calibrated_both_ways(self):
+        """Own times of 4 KiB .. 256 KiB copies (one cluster at a time): measured sizes,
+        the model up to 2x beyond (512 KiB, the L1 of a cluster), nothing beyond."""
+        ci = "hemaia_ci"
+        for direction in ("L3>L1", "L1>L3"):
+            self.assertEqual(cost.CALIBRATION[ci]["models"][f"copy {direction}"][2], 262144)
+            value, source = cost.estimate(COPY, "copy", f"size=262144 {direction}", 262144, False, ci)
+            self.assertEqual(source, "measured")
+            self.assertLess(value, 5000)                           # own time, no other cluster's
+            value, source = cost.estimate(COPY, "copy", f"size=524288 {direction}", 524288, False, ci)
+            self.assertEqual(source, "model")
+            self.assertIsNone(cost.estimate(COPY, "copy", f"size=1048576 {direction}", 1 << 20, False, ci)[0])
+        # a cold copy of a size without a warm row: the cold term covers the cold 4 KiB copy
+        cal = cost.CALIBRATION[ci]
+        a, b, _ = cal["models"]["copy L3>L1"]
+        self.assertGreaterEqual(a + b * 4096 + cal["cold_term"][COPY], cal["cold"][(COPY, "size=4096 L3>L1")])
+
     def test_gemm_cycles(self):
         self.assertEqual(cost.gemm_cycles("M=8 K=512 N=8"), 8 * 8 * 512)
         self.assertEqual(cost.gemm_cycles("M=2 K=4 N=2"), 2 * 2 * 32)            # write-back bound

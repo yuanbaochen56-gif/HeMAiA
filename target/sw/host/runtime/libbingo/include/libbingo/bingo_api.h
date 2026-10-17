@@ -486,6 +486,10 @@ void bingo_close_all_clusters(bingo_task_t **task_list, uint32_t num_tasks);
 // stale 0 (which would otherwise cause a spurious initial RAISE doorbell).
 #define BINGO_PM_IDLE_POWER_LEVEL   25
 #define BINGO_PM_NORMAL_POWER_LEVEL 6
+// Power domain of a slot that belongs to none (the host slot of cluster 0 and
+// the tied-off slots of the other clusters): any value of 32 or more does
+// (bingo_hw_manager_pkg::PmMaxDomains)
+#define BINGO_PM_NO_DOMAIN          99
 // Recovery boost: level of a domain whose core runs a dead core's tasks (a
 // smaller clock divider than the normal level); 0 = off
 #ifndef BINGO_PM_BOOST_POWER_LEVEL

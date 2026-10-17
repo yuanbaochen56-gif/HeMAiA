@@ -791,10 +791,7 @@ void bingo_hw_scheduler_init_pm(){
             idx = cluster * (N_CORES_PER_CLUSTER + 1) + core;
             if (core == N_CORES_PER_CLUSTER){
                 // Host or tied-off slot, not part of a managed power domain
-                // In Bingo HW scheduler, it will read this value and compare it with the 32
-                // to decide whether this is a valid domain or not
-                // We set to 99 to indicate it is invalid
-                core_power_domain = 99;
+                core_power_domain = BINGO_PM_NO_DOMAIN;
             } else {
                 core_power_domain = cluster + 1; // Cluster i
             }

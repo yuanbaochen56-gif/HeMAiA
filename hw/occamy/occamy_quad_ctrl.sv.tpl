@@ -138,8 +138,9 @@ module ${name}_quad_ctrl
   logic                                  bingo_wd_est_we;
   logic [31:0]                           bingo_wd_est_data;
   logic [31:0]                           bingo_wd_budget;
-  // Substitute choice (bingo_hw_manager_pkg::sub_cfg_t): spare clusters
+  // Substitute choice (bingo_hw_manager_pkg::sub_cfg_t): spare clusters, partitions
   logic [31:0]                           bingo_sub_spare;
+  logic [31:0]                           bingo_sub_part;
   // Boost choice: policy, credit per lost core, minimum load
   cfg_t                                  bingo_boost_policy;
   // CERF degradation table (index: core type) and the types that fired
@@ -279,6 +280,7 @@ module ${name}_quad_ctrl
     .bingo_hw_manager_wd_est_data_o           (bingo_wd_est_data                   ),
     .bingo_hw_manager_wd_budget_o             (bingo_wd_budget                     ),
     .bingo_hw_manager_sub_spare_o             (bingo_sub_spare                     ),
+    .bingo_hw_manager_sub_part_o              (bingo_sub_part                      ),
     .bingo_hw_manager_risk_clear_o            (bingo_risk_clear                    ),
     .bingo_hw_manager_risk_i                  (bingo_risk                          ),
     .bingo_evlog_enable_o                     (bingo_evlog_enable                  ),
@@ -472,7 +474,7 @@ module ${name}_quad_ctrl
     .wd_est_we_i                               (bingo_wd_est_we                              ),
     .wd_est_data_i                             (bingo_wd_est_data                            ),
     .wd_budget_i                               (bingo_wd_budget                              ),
-    .sub_cfg_i                                 ('{spare: bingo_sub_spare}                    ),
+    .sub_cfg_i                                 ('{spare: bingo_sub_spare, partition: bingo_sub_part}),
     .bingo_hw_manager_risk_clear_i             (bingo_risk_clear                             ),
     .bingo_hw_manager_risk_o                   (bingo_risk                                   ),
     .bingo_hw_manager_cluster_access_i         (bingo_cluster_access_i                       ),

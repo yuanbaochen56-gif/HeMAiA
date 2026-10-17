@@ -35,9 +35,18 @@ class SubstituteChoiceTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             watchdog.test_cfg_bytes(dict(watchdog.test_cfg_defaults(2), sub_spare=1))
 
+    def test_partition_word(self):
+        cfg = watchdog.scenario_test_cfg(self.scene(sub_part_clear=0xFFFF_DDEE))
+        data = watchdog.test_cfg_bytes(cfg)
+        self.assertEqual(watchdog.test_cfg_offset("sub_part_clear"), 364)
+        self.assertEqual(int.from_bytes(data[364:368], "little"), 0xFFFF_DDEE)
+        with self.assertRaises(ValueError):
+            watchdog.scenario_test_cfg(dict(watchdog.SCENARIOS["tch0"], image_flags="-DBINGO_WD_LATE",
+                                            sub_part_clear=1))
+
     def test_default_is_zero(self):
         data = watchdog.test_cfg_bytes(watchdog.scenario_test_cfg(self.scene()))
-        self.assertEqual(int.from_bytes(data[368:372], "little"), 0)
+        self.assertEqual(int.from_bytes(data[364:372], "little"), 0)
 
 
     def test_four_cluster_rule_takes_the_spare_first(self):
@@ -49,6 +58,10 @@ class SubstituteChoiceTests(unittest.TestCase):
         self.assertEqual(substitute(1, 1, {(1, 1), (1, 3)}, spare=0x8), 0)
         self.assertEqual(substitute(1, 3, {(1, 3)}, spare=0x8), 0)
         self.assertEqual(substitute(1, 2, {(1, 2)}), 0)
+        # partitions {0, 1} and {2, 3}: word 0x2211 (clear 0xFFFF_DDEE)
+        self.assertEqual(substitute(1, 2, {(1, 2)}, partitions=0x2211), 3)
+        self.assertIsNone(substitute(1, 2, {(1, 2), (1, 3)}, partitions=0x2211))
+        self.assertEqual(substitute(1, 1, {(1, 1)}, spare=0x8, partitions=0x2211), 0)
 
 
 if __name__ == "__main__":

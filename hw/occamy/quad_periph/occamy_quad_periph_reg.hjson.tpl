@@ -752,5 +752,13 @@
         { bits: "31:0", name: "SPARE", resval: "0", desc: "Bit c: cluster c is a spare." }
       ]
     },
+    { name: "BINGO_SUB_PART",
+      desc: "Bingo substitute choice (bingo_hw_manager_slot_table): the partitions of every cluster, four bits per cluster (cluster c at [4c+3:4c]). A core of another cluster takes over the tasks of a fenced or parked core only if the two clusters share a partition; without one in its partitions the core is stuck (CERF degradation, or level 3). All ones = one partition. Write it before the first fence or park.",
+      swaccess: "rw",
+      hwaccess: "hro",
+      fields: [
+        { bits: "31:0", name: "PARTITION", resval: "0xffffffff", desc: "Bits [4c+3:4c]: the partitions of cluster c." }
+      ]
+    },
   ]
 }

@@ -982,6 +982,8 @@ void bingo_hw_scheduler_init(uint64_t dev_arg_base_addr, uint64_t dev_kernel_bas
 #endif
 #ifdef BINGO_SUB_CFG
     bingo_sub_spare_set(bingo_test_cfg.sub_spare);
+    // the word holds the bits cleared from all ones, so 0 keeps one partition
+    bingo_sub_part_set(~bingo_test_cfg.sub_part_clear);
 #endif
     bingo_evlog_enable(bingo_test_cfg.evlog_enable);
     if (bingo_test_cfg.cerf_fb_enable) {
@@ -1201,6 +1203,10 @@ void bingo_wd_budget_set(uint32_t ctrl) {
 }
 void bingo_sub_spare_set(uint32_t cluster_mask) {
     writew(cluster_mask, (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_bingo_sub_spare_addr()));
+    asm volatile("fence" ::: "memory");
+}
+void bingo_sub_part_set(uint32_t partitions) {
+    writew(partitions, (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_bingo_sub_part_addr()));
     asm volatile("fence" ::: "memory");
 }
 void bingo_wd_est_set(uint32_t type, uint32_t task_class, uint32_t entry) {

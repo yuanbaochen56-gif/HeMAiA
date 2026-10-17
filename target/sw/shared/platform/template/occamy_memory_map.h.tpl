@@ -356,6 +356,9 @@ inline uintptr_t quad_ctrl_bingo_wd_budget_addr(){
 inline uintptr_t quad_ctrl_bingo_sub_spare_addr(){
     return QUAD_AXI_LITE_NARROW_PERIPHERALS_BASE_ADDR + OCCAMY_QUAD_PERIPH_BINGO_SUB_SPARE_REG_OFFSET;
 }
+inline uintptr_t quad_ctrl_bingo_sub_part_addr(){
+    return QUAD_AXI_LITE_NARROW_PERIPHERALS_BASE_ADDR + OCCAMY_QUAD_PERIPH_BINGO_SUB_PART_REG_OFFSET;
+}
 
 inline uintptr_t quad_ctrl_boost_power_level_addr(){
     return QUAD_AXI_LITE_NARROW_PERIPHERALS_BASE_ADDR + OCCAMY_QUAD_PERIPH_BOOST_POWER_LEVEL_REG_OFFSET;

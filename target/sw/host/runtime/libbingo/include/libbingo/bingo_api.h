@@ -617,6 +617,11 @@ void bingo_wd_budget_set(uint32_t ctrl);
 // substitute of a fenced or parked core, bit c for cluster c (e.g. a cluster
 // the program leaves empty). Write it before the first fence or park.
 void bingo_sub_spare_set(uint32_t cluster_mask);
+// Substitute choice (BINGO_SUB_PART, all ones = one partition): four bits per
+// cluster (cluster c at [4c+3:4c]), the partitions it belongs to; a core of
+// another cluster takes over a core's tasks only if the two clusters share one.
+// Write it before the first fence or park.
+void bingo_sub_part_set(uint32_t partitions);
 
 void bingo_hw_scheduler_init(uint64_t dev_arg_base_addr, uint64_t dev_kernel_base_addr, uint32_t num_dev_tasks, uint64_t global_task_id_to_dev_task_id_base_addr, uint32_t num_total_tasks, uint64_t bingo_hw_scheduler_task_desc_list_base, uint32_t bingo_hw_scheduler_num_task_desc);
 

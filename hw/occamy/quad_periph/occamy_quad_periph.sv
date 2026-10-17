@@ -72,8 +72,9 @@ module occamy_quad_periph import occamy_quad_periph_reg_pkg::*; #(
   output logic [31:0] bingo_hw_manager_wd_est_data_o,
   // Total-time budget (BINGO_WD_BUDGET)
   output logic [31:0] bingo_hw_manager_wd_budget_o,
-  // Substitute choice: spare clusters (BINGO_SUB_SPARE)
+  // Substitute choice: spare clusters (BINGO_SUB_SPARE), partitions (BINGO_SUB_PART)
   output logic [31:0] bingo_hw_manager_sub_spare_o,
+  output logic [31:0] bingo_hw_manager_sub_part_o,
   output reg_data_t   bingo_hw_manager_risk_clear_o,
   input  reg_data_t   bingo_hw_manager_risk_i,
   output logic       bingo_evlog_enable_o,
@@ -181,6 +182,7 @@ module occamy_quad_periph import occamy_quad_periph_reg_pkg::*; #(
                                            reg2hw.bingo_wd_est.task_class.q, 2'b0,
                                            reg2hw.bingo_wd_est.entry.q};
   assign bingo_hw_manager_sub_spare_o = reg2hw.bingo_sub_spare.q;
+  assign bingo_hw_manager_sub_part_o  = reg2hw.bingo_sub_part.q;
   assign bingo_hw_manager_wd_budget_o = {
       reg2hw.bingo_wd_budget.bfloor.q, 5'b0, reg2hw.bingo_wd_budget.frac_b.q,
       reg2hw.bingo_wd_budget.sh_b.q, reg2hw.bingo_wd_budget.action.q, reg2hw.bingo_wd_budget.en.q

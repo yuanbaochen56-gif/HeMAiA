@@ -348,7 +348,7 @@ def t1_image_flags(sc: dict) -> str:
     if fault2 and len({f.split("=")[0] for f in fault2}) != 3:
         raise ValueError("BINGO_WD_FAULT2 needs GID, CLUSTER and CORE")
     flags = [f for f in flags if f not in fault2]
-    if set(flags) - {"-DBINGO_WD_NO_HEARTBEAT", "-DBINGO_WD_NOP_HEARTBEAT", "-DBINGO_C6_SW_CERF", "-DBINGO_WD_ADAPT", "-DBINGO_WD_LATE", "-DBINGO_SDC", "-DBINGO_SDC_QUIET", "-DBINGO_SDC_RECOVER", "-DBINGO_FENCE_FB", "-DBINGO_TASK_TIME", "-DBINGO_SUB_CFG"}:
+    if set(flags) - {"-DBINGO_WD_NO_HEARTBEAT", "-DBINGO_WD_NOP_HEARTBEAT", "-DBINGO_C6_SW_CERF", "-DBINGO_WD_ADAPT", "-DBINGO_WD_LATE", "-DBINGO_SDC", "-DBINGO_SDC_QUIET", "-DBINGO_SDC_RECOVER", "-DBINGO_FENCE_FB", "-DBINGO_TASK_TIME", "-DBINGO_SUB_CFG", "-DBINGO_DMA_BEAT"}:
         raise ValueError("unsupported T1 image_flags")
     if "-DBINGO_SDC_QUIET" in flags and "-DBINGO_SDC" not in flags:
         raise ValueError("BINGO_SDC_QUIET requires BINGO_SDC")

@@ -11,6 +11,37 @@
 #pragma once
 
 #include "../macros.h"
+#include "bingo_hw_heartbeat.h"
+
+// Waiting for the iDMA. With BINGO_DMA_BEAT the DM core beats the bingo watchdog on
+// every poll of the DMA's busy status, as the xDMA and GEMM wait loops do: a copy
+// that waits behind another cluster's long transfer on the shared L3 port is not a
+// core without progress. A transfer that never ends then keeps beating, and only the
+// total-time budget (BINGO_WD_BUDGET) catches it, so the beats come with the images
+// that have the budget: task-time images (BINGO_TASK_TIME) wait this way, others
+// only with an explicit -DBINGO_DMA_BEAT. Without it the plain snrt_dma_wait_all().
+#if defined(BINGO_TASK_TIME) && !defined(BINGO_DMA_BEAT)
+#define BINGO_DMA_BEAT
+#endif
+
+static inline void bingo_idma_wait_all(void) {
+#ifdef BINGO_DMA_BEAT
+    register uint32_t busy asm("t0");
+    do {
+        bingo_hw_manager_heartbeat(1);
+        // dmstati t0, 2  # 2=status.busy (as snrt_dma_wait_all)
+        asm volatile(
+            ".word (0b0000100 << 25) | \
+                   (  0b00010 << 20) | \
+                   (    0b000 << 12) | \
+                   (      (5) <<  7) | \
+                   (0b0101011 <<  0)   \n"
+            : "=r"(busy));
+    } while (busy);
+#else
+    snrt_dma_wait_all();
+#endif
+}
 
 SNAX_LIB_DEFINE uint32_t __snax_bingo_kernel_idma_1d_copy(void *arg)
 {
@@ -26,7 +57,7 @@ SNAX_LIB_DEFINE uint32_t __snax_bingo_kernel_idma_1d_copy(void *arg)
         snrt_dma_start_1d_wideptr(dst_addr, src_addr, data_size);
         BINGO_TRACE_MARKER(BINGO_TRACE_IDMA_CFG_END);
         BINGO_TRACE_MARKER(BINGO_TRACE_IDMA_RUN_START);
-        snrt_dma_wait_all();
+        bingo_idma_wait_all();
         BINGO_TRACE_MARKER(BINGO_TRACE_IDMA_RUN_END);
         IDMA_DEBUG_PRINT("IDMA copy completed\r\n");
         sp->return_value = (uint32_t)dst_addr;
@@ -60,7 +91,7 @@ SNAX_LIB_DEFINE uint32_t __snax_bingo_kernel_idma_broadcast(void *arg)
         snrt_dma_start_1d_wideptr(dst_addr_broadcast, src_addr, data_size);
         BINGO_TRACE_MARKER(BINGO_TRACE_IDMA_CFG_END);
         BINGO_TRACE_MARKER(BINGO_TRACE_IDMA_RUN_START);
-        snrt_dma_wait_all();
+        bingo_idma_wait_all();
         BINGO_TRACE_MARKER(BINGO_TRACE_IDMA_RUN_END);
         IDMA_DEBUG_PRINT("IDMA copy completed\r\n");
         IDMA_DEBUG_PRINT("SRC ADDR = %lx\r\n", src_addr);
@@ -114,7 +145,7 @@ SNAX_LIB_DEFINE uint32_t __snax_bingo_kernel_idma_pairwise_swap(void *arg)
                                   elem_bytes, pair_bytes, pair_bytes, pairs);
         BINGO_TRACE_MARKER(BINGO_TRACE_IDMA_CFG_END);
         BINGO_TRACE_MARKER(BINGO_TRACE_IDMA_RUN_START);
-        snrt_dma_wait_all();
+        bingo_idma_wait_all();
         BINGO_TRACE_MARKER(BINGO_TRACE_IDMA_RUN_END);
         IDMA_DEBUG_PRINT("IDMA pairwise swap done (%u pairs, %u-byte elems)\r\n", pairs, elem_bytes);
         sp->return_value = (uint32_t)dst_addr;

@@ -2290,6 +2290,22 @@ def judge_scene(name: str, sc: dict, test_cfg: Optional[dict], runner: HeMAiASim
     return problems
 
 
+# Scenes that an evaluation script judges, not the generic checks of this driver
+# (which they may fail by design): (which scenes, the script). The driver's PASS /
+# FAIL stays as it is; result.md and the summary only say where the verdict is.
+# Kept out of SCENARIOS, so the scene table does not change.
+EXTERNAL_JUDGES = (
+    (lambda sc: sc.get("c3"), "bingo_c3.classify (the fault class of the C3 sweep)"),
+    (lambda sc: sc.get("c6") and sc.get("c6_mode") == "none",
+     "bingo_c6.classify_c6 (fail-stop: the run is not expected to end)"),
+)
+
+
+def external_judge(sc: dict):
+    """The evaluation script that judges the scene, or None."""
+    return next((judge for match, judge in EXTERNAL_JUDGES if match(sc)), None)
+
+
 def write_scene_result(name: str, sc: dict, cfg: str, task: dict, image_flags: str,
                        runner: HeMAiASimRunner, log_path: Path, log_text: str,
                        problems: List[str], out_dir: Path) -> None:
@@ -2308,6 +2324,8 @@ def write_scene_result(name: str, sc: dict, cfg: str, task: dict, image_flags: s
                   f"- image ID: `{runner.test_cfg_record['image_id']}`",
                   f"- changed bank lines: {runner.test_cfg_record['changed_bank_line_count']}",
                   "- configuration: `" + json.dumps(runner.test_cfg_record["configuration"], sort_keys=True) + "`"]
+    if external_judge(sc):
+        lines.append(f"- judged by: {external_judge(sc)}; the driver's verdict above does not decide this scene")
     (out_dir / "result.md").write_text("\n".join(lines) + "\n")
     print(f"[{name}] {status}" + "".join(f"\n  - {p}" for p in problems))
 
@@ -2378,6 +2396,8 @@ def main() -> None:
     print("\n===== summary =====")
     for name, ok in results.items():
         print(f"{name}: {'PASS' if ok else 'FAIL'}  ({SCENARIOS[name]['desc']})")
+        if external_judge(SCENARIOS[name]):
+            print(f"  judged by {external_judge(SCENARIOS[name])}, not by this verdict")
     sys.exit(0 if all(results.values()) else 1)
 
 

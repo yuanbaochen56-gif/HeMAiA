@@ -146,6 +146,17 @@ def _gemm_replay_hazard(args):
 
 _EXIT_KERNELS = ("__snax_bingo_kernel_exit", "__host_bingo_kernel_exit")
 
+# Descriptor field widths the hardware fixes; keep them in sync with
+# bingo_hw_manager_top's ChipIdWidth and TaskIdWidth (and HeMAiA occamy_quad_ctrl's
+# BingoTaskIdWidth = 12, and the remote_link layout check in bingo_hw_manager_top)
+DESC_CHIP_ID_WIDTH = 8
+DESC_TASK_ID_WIDTH = 12
+
+
+def _idx_width(n: int) -> int:
+    """Bits of an index 0 .. n-1 (at least one), as cf_math_pkg::idx_width."""
+    return max(1, (n - 1).bit_length())
+
 # Explicit known kernels only. Unknown kernels and bare addresses remain opt-in.
 _REPLAY_SAFETY_KERNELS = {
     ("__snax_bingo_kernel_int32_add", SnaxBingoKernelInt32AddArgs): _add_replay_hazard,
@@ -1717,10 +1728,43 @@ class BingoDFG(DmrSupport, DiGraphWrapper[BingoNode]):
     # ----------------------------------------------------------------
     # Node Packing / Unpacking
     # ----------------------------------------------------------------
+    def _descriptor_fields(self) -> tuple:
+        """The fields of a task descriptor from bit 0 up, as (name, width): the layout
+        of bingo_hw_manager_task_desc_full_t (bingo_hw_manager_top). The A7 class bits
+        follow them (_wd_class_shift). bingo_pack_node and bingo_unpack_node both
+        walk this table."""
+        cluster_id_width = _idx_width(self.num_clusters_per_chiplet)
+        core_id_width = _idx_width(self.num_cores_per_cluster)
+        num_cores = self.num_cores_per_cluster
+        return (
+            # conditional execution (CERF)
+            ("cond_exec_invert", 1),
+            ("cond_exec_group_id", 5),
+            ("cond_exec_en", 1),
+            # 00 normal, 01 dummy, 10 gating, 11 normal with the replay forbidden
+            ("task_type", 2),
+            ("task_id", DESC_TASK_ID_WIDTH),
+            ("assigned_chiplet_id", DESC_CHIP_ID_WIDTH),
+            ("assigned_cluster_id", cluster_id_width),
+            ("assigned_core_id", core_id_width),
+            # dep_check_info; the tag is always there to match the RTL struct (0 when
+            # identity-aware deps are off)
+            ("dep_check_en", 1),
+            ("dep_check_code", num_cores),
+            ("dep_check_tag", self.dep_tag_width),
+            # dep_set_info
+            ("dep_set_en", 1),
+            ("dep_set_all", 1),
+            ("dep_set_chiplet_id", DESC_CHIP_ID_WIDTH),
+            ("dep_set_cluster_id", cluster_id_width),
+            ("dep_set_code", num_cores),
+            ("dep_set_tag", self.dep_tag_width),
+            # a device exit routed away from its assigned slot retires in hardware
+            ("is_exit", 1),
+        )
+
     def _wd_class_shift(self) -> int:
-        return (41 + 2 * max(1, (self.num_clusters_per_chiplet - 1).bit_length()) +
-                max(1, (self.num_cores_per_cluster - 1).bit_length()) +
-                2 * self.num_cores_per_cluster + 2 * self.dep_tag_width)
+        return sum(width for _, width in self._descriptor_fields())
 
     def _wd_classes(self, extra_node=None, *, diagnostics=None) -> dict:
         """Number distinct kernels separately for each chiplet and core type.
@@ -1872,21 +1916,10 @@ class BingoDFG(DmrSupport, DiGraphWrapper[BingoNode]):
         return out
 
     def bingo_pack_node(self, node: BingoNode, *, wd_adapt: bool = False) -> int:
-        """Pack the normal node into a 64-bit integer."""
-        import math
-        
-        def get_idx_width(n):
-            return math.ceil(math.log2(n)) if n > 1 else 1
-
-        # Parameters
-        chip_id_width = 8
-        task_id_width = 12
-        # Use the class members for dimensions
+        """Pack the normal node into a 64-bit integer (_descriptor_fields)."""
         num_clusters = self.num_clusters_per_chiplet
         num_cores = self.num_cores_per_cluster
-        
-        cluster_id_width = get_idx_width(num_clusters)
-        core_id_width = get_idx_width(num_cores)
+        cluster_id_width = _idx_width(num_clusters)
 
         # Every value must fit its field: a larger one spills into the next field
         # of the descriptor, and the hardware does not check them. A dummy either
@@ -1895,11 +1928,11 @@ class BingoDFG(DmrSupport, DiGraphWrapper[BingoNode]):
         def check(what, value, limit):
             if not 0 <= value < limit:
                 raise ValueError(f"Node {node.node_id}: {what} {value} out of range 0 .. {limit - 1}")
-        check("task id", node.node_id, 1 << task_id_width)
-        check("chiplet id", node.assigned_chiplet_id, 1 << chip_id_width)
+        check("task id", node.node_id, 1 << DESC_TASK_ID_WIDTH)
+        check("chiplet id", node.assigned_chiplet_id, 1 << DESC_CHIP_ID_WIDTH)
         check("cluster id", node.assigned_cluster_id, num_clusters)
         check("core id", node.assigned_core_id, num_cores)
-        check("dep set chiplet id", node.dep_set_chiplet_id, 1 << chip_id_width)
+        check("dep set chiplet id", node.dep_set_chiplet_id, 1 << DESC_CHIP_ID_WIDTH)
         check("dep set cluster id", node.dep_set_cluster_id,
               num_clusters if node.dep_set_enable else 1 << cluster_id_width)
         for core_id in node.dep_check_list:
@@ -1913,191 +1946,55 @@ class BingoDFG(DmrSupport, DiGraphWrapper[BingoNode]):
             raise ValueError(f"Node {node.node_id}: a dummy must either check or set its dependencies "
                              f"(check {node.dep_check_enable}, set {node.dep_set_enable})")
 
-        # Initialize the packed value
+        def core_mask(core_ids):
+            mask = 0
+            for core_id in core_ids:
+                mask |= 1 << core_id
+            return mask
+
+        task_type_map = {"normal": 3 if self._node_no_replay(node) else 0, "dummy": 1, "gating": 2}
+        values = {
+            "cond_exec_invert": int(node.cond_exec_invert),
+            "cond_exec_group_id": node.cond_exec_group_id,
+            "cond_exec_en": int(node.cond_exec_en),
+            "task_type": task_type_map.get(node.node_type, 0),
+            "task_id": node.node_id,
+            "assigned_chiplet_id": node.assigned_chiplet_id,
+            "assigned_cluster_id": node.assigned_cluster_id,
+            "assigned_core_id": node.assigned_core_id,
+            "dep_check_en": 1 if node.dep_check_enable else 0,
+            "dep_check_code": core_mask(node.dep_check_list),
+            "dep_check_tag": node.dep_check_tag or 0,
+            "dep_set_en": 1 if node.dep_set_enable else 0,
+            "dep_set_all": 1 if node.remote_dep_set_all else 0,
+            "dep_set_chiplet_id": node.dep_set_chiplet_id,
+            "dep_set_cluster_id": node.dep_set_cluster_id,
+            "dep_set_code": core_mask(node.dep_set_list),
+            "dep_set_tag": node.dep_set_tag or 0,
+            "is_exit": int(node.kernel_name == "__snax_bingo_kernel_exit"),
+        }
         packed_val = 0
         current_shift = 0
+        for name, width in self._descriptor_fields():
+            packed_val |= values[name] << current_shift
+            current_shift += width
 
-        # 1. cond_exec_invert (1 bit) — DARTS Tier 1
-        packed_val |= (int(node.cond_exec_invert) << current_shift)
-        current_shift += 1
-
-        # 2. cond_exec_group_id (5 bits) — DARTS Tier 1
-        packed_val |= (node.cond_exec_group_id << current_shift)
-        current_shift += 5
-
-        # 3. cond_exec_en (1 bit) — DARTS Tier 1
-        packed_val |= (int(node.cond_exec_en) << current_shift)
-        current_shift += 1
-
-        # 4. task_type (2 bits) — expanded from 1 bit
-        # 00: Normal, 01: Dummy, 10: Gating, 11: Normal, replay forbidden
-        no_replay = self._node_no_replay(node)
-        task_type_map = {"normal": 3 if no_replay else 0, "dummy": 1, "gating": 2}
-        task_type_val = task_type_map.get(node.node_type, 0)
-        packed_val |= (task_type_val << current_shift)
-        current_shift += 2
-        
-        # 2. task_id (12 bits)
-        packed_val |= (node.node_id << current_shift)
-        current_shift += task_id_width
-        
-        # 3. assigned_chiplet_id (8 bits)
-        packed_val |= (node.assigned_chiplet_id << current_shift)
-        current_shift += chip_id_width
-        
-        # 4. assigned_cluster_id (cluster_id_width bits)
-        packed_val |= (node.assigned_cluster_id << current_shift)
-        current_shift += cluster_id_width
-        
-        # 5. assigned_core_id (core_id_width bits)
-        packed_val |= (node.assigned_core_id << current_shift)
-        current_shift += core_id_width
-        
-        # 6. dep_check_info
-        
-        # dep_check_en (1 bit)
-        dep_check_en_val = 1 if node.dep_check_enable else 0
-        packed_val |= (dep_check_en_val << current_shift)
-        current_shift += 1
-        
-        # dep_check_code (num_cores bits)
-        dep_check_code_val = 0
-        for core_id in node.dep_check_list:
-            dep_check_code_val |= (1 << core_id)
-        packed_val |= (dep_check_code_val << current_shift)
-        current_shift += num_cores
-
-        # dep_check_tag (dep_tag_width bits) — MSB of dep_check_info; always present
-        # to match the RTL struct (0 when identity-aware deps are disabled).
-        packed_val |= ((node.dep_check_tag or 0) << current_shift)
-        current_shift += self.dep_tag_width
-
-        # 7. dep_set_info
-        
-        # dep_set_en (1 bit)
-        dep_set_en_val = 1 if node.dep_set_enable else 0
-        packed_val |= (dep_set_en_val << current_shift)
-        current_shift += 1
-        
-        # dep_set_all_chiplet (1 bit)
-        dep_set_all_val = 1 if node.remote_dep_set_all else 0
-        packed_val |= (dep_set_all_val << current_shift)
-        current_shift += 1
-        
-        # dep_set_chiplet_id (8 bits)
-        packed_val |= (node.dep_set_chiplet_id << current_shift)
-        current_shift += chip_id_width
-        
-        # dep_set_cluster_id (cluster_id_width bits)
-        packed_val |= (node.dep_set_cluster_id << current_shift)
-        current_shift += cluster_id_width
-        
-        # dep_set_code (num_cores bits)
-        dep_set_code_val = 0
-        for core_id in node.dep_set_list:
-            dep_set_code_val |= (1 << core_id)
-        packed_val |= (dep_set_code_val << current_shift)
-        current_shift += num_cores
-
-        # dep_set_tag (dep_tag_width bits) — MSB of dep_set_info; always present.
-        packed_val |= ((node.dep_set_tag or 0) << current_shift)
-        current_shift += self.dep_tag_width
-
-        # Device exits routed away from their assigned slot retire in hardware.
-        packed_val |= (int(node.kernel_name == "__snax_bingo_kernel_exit") << current_shift)
-        current_shift += 1
-
-        # Check if we exceeded 64 bits
         if current_shift > 64:
             raise ValueError(f"Packed task descriptor exceeds 64 bits: {current_shift} bits used.")
         if wd_adapt:
             packed_val |= self._wd_classes(node)[node] << current_shift
-            
+
         return packed_val
     def bingo_unpack_node(self, packed_val: int) -> dict:
-        """Unpack the 64-bit integer into node fields."""
-        import math
-        
-        def get_idx_width(n):
-            return math.ceil(math.log2(n)) if n > 1 else 1
-
-        # Parameters
-        chip_id_width = 8
-        task_id_width = 12
-        num_clusters = self.num_clusters_per_chiplet
-        num_cores = self.num_cores_per_cluster
-        
-        cluster_id_width = get_idx_width(num_clusters)
-        core_id_width = get_idx_width(num_cores)
-        
-        current_shift = 0
+        """Unpack the 64-bit integer into node fields (_descriptor_fields)."""
         fields = {}
-
-        # 1. cond_exec_invert (1 bit) — DARTS Tier 1
-        fields['cond_exec_invert'] = (packed_val >> current_shift) & 0x1
-        current_shift += 1
-
-        # 2. cond_exec_group_id (5 bits) — DARTS Tier 1
-        fields['cond_exec_group_id'] = (packed_val >> current_shift) & 0x1F
-        current_shift += 5
-
-        # 3. cond_exec_en (1 bit) — DARTS Tier 1
-        fields['cond_exec_en'] = (packed_val >> current_shift) & 0x1
-        current_shift += 1
-
-        # 4. task_type (2 bits) — 00=normal, 01=dummy, 10=gating, 11=no-replay normal
-        fields['task_type'] = (packed_val >> current_shift) & 0x3
-        fields['node_type'] = {0: "normal", 1: "dummy", 2: "gating", 3: "normal"}[fields['task_type']]
-        fields['non_idempotent'] = fields['task_type'] == 3
-        current_shift += 2
-        
-        # 2. task_id (12 bits)
-        fields['task_id'] = (packed_val >> current_shift) & ((1 << task_id_width) - 1)
-        current_shift += task_id_width
-        
-        # 3. assigned_chiplet_id (8 bits)
-        fields['assigned_chiplet_id'] = (packed_val >> current_shift) & ((1 << chip_id_width) - 1)
-        current_shift += chip_id_width
-        
-        # 4. assigned_cluster_id
-        fields['assigned_cluster_id'] = (packed_val >> current_shift) & ((1 << cluster_id_width) - 1)
-        current_shift += cluster_id_width
-        
-        # 5. assigned_core_id
-        fields['assigned_core_id'] = (packed_val >> current_shift) & ((1 << core_id_width) - 1)
-        current_shift += core_id_width
-        
-        # 6. dep_check_info
-        fields['dep_check_en'] = (packed_val >> current_shift) & 0x1
-        current_shift += 1
-        
-        fields['dep_check_code'] = (packed_val >> current_shift) & ((1 << num_cores) - 1)
-        current_shift += num_cores
-
-        fields['dep_check_tag'] = (packed_val >> current_shift) & ((1 << self.dep_tag_width) - 1)
-        current_shift += self.dep_tag_width
-
-        # 7. dep_set_info
-        fields['dep_set_en'] = (packed_val >> current_shift) & 0x1
-        current_shift += 1
-        
-        fields['dep_set_all'] = (packed_val >> current_shift) & 0x1
-        current_shift += 1
-        
-        fields['dep_set_chiplet_id'] = (packed_val >> current_shift) & ((1 << chip_id_width) - 1)
-        current_shift += chip_id_width
-        
-        fields['dep_set_cluster_id'] = (packed_val >> current_shift) & ((1 << cluster_id_width) - 1)
-        current_shift += cluster_id_width
-        
-        fields['dep_set_code'] = (packed_val >> current_shift) & ((1 << num_cores) - 1)
-        current_shift += num_cores
-
-        fields['dep_set_tag'] = (packed_val >> current_shift) & ((1 << self.dep_tag_width) - 1)
-        current_shift += self.dep_tag_width
-
-        fields['is_exit'] = (packed_val >> current_shift) & 0x1
-        current_shift += 1
+        current_shift = 0
+        for name, width in self._descriptor_fields():
+            fields[name] = (packed_val >> current_shift) & ((1 << width) - 1)
+            current_shift += width
+            if name == "task_type":
+                fields['node_type'] = {0: "normal", 1: "dummy", 2: "gating", 3: "normal"}[fields['task_type']]
+                fields['non_idempotent'] = fields['task_type'] == 3
         fields['wd_class'] = ((packed_val >> current_shift) & 7) if 64 - current_shift >= 3 else 0
 
         return fields

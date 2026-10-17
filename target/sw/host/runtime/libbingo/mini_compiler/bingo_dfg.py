@@ -1838,10 +1838,15 @@ class BingoDFG(DmrSupport, DiGraphWrapper[BingoNode]):
 
     def _task_time_estimates(self) -> dict:
         """Estimate of every device task (bingo_cost.estimate, bingo_cost.interval), in
-        watchdog ticks: node -> dict(cold, e_tot, e_int, source, key). A task is cold while no
-        unconditional task of its kernel ran before it on its core in the
+        watchdog ticks: node -> dict(cold, e_tot, e_int, own, wait, source, key). A task is
+        cold while no unconditional task of its kernel ran before it on its core in the
         descriptor order (each core runs its tasks in that order): the first task
-        of a kernel, and every conditional one up to the first unconditional one."""
+        of a kernel, and every conditional one up to the first unconditional one.
+        Every task may wait on the port of a shared memory (its code in
+        bingo_cost.CODE_LEVEL, a copy's operands, bingo_cost.shared_levels) for the
+        copies of the other clusters of its chiplet that use that memory and are not
+        ordered with it in the graph: wait = the sum of their own estimates, added to
+        E_tot and E_int; no estimate when one of those copies has none."""
         seen, out = set(), {}
         for node in self._bingo_topological_order():
             if not node.kernel_name or node.node_type == "dummy":
@@ -1856,7 +1861,26 @@ class BingoDFG(DmrSupport, DiGraphWrapper[BingoNode]):
             e_tot, source = bingo_cost.estimate(node.kernel_name, family, key, work, cold,
                                                 self._task_time_platform)
             e_int = bingo_cost.interval(node.kernel_name, key, e_tot, cold, self._task_time_platform, ints)
-            out[node] = dict(cold=cold, e_tot=e_tot, e_int=e_int, source=source, key=key)
+            out[node] = dict(cold=cold, e_tot=e_tot, e_int=e_int, own=e_tot, wait=0, source=source, key=key,
+                             levels=bingo_cost.shared_levels(node.kernel_name, key))
+        copies = [node for node, est in out.items() if est["levels"]]
+        ordered = {other: nx.descendants(self, other) | nx.ancestors(self, other) for other in copies}
+        for node, est in out.items():
+            if est["own"] is None:
+                continue
+            levels, waits = est["levels"] | {bingo_cost.CODE_LEVEL}, []
+            for other in copies:
+                if (other.assigned_chiplet_id == node.assigned_chiplet_id and
+                        other.assigned_cluster_id != node.assigned_cluster_id and
+                        levels & out[other]["levels"] and node not in ordered[other]):
+                    waits.append(out[other]["own"])
+            if None in waits:
+                est.update(e_tot=None, e_int=None, source="no estimate of a copy it may wait for on a shared port")
+            elif waits:
+                est["wait"] = sum(waits)
+                est["e_tot"] += est["wait"]
+                est["e_int"] += est["wait"]
+                est["source"] += f" + shared port {est['wait']}"
         return out
 
     def _task_time_classes(self, extra_node=None, *, diagnostics=None) -> dict:

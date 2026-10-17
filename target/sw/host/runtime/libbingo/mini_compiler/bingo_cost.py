@@ -6,8 +6,9 @@ ticks: manager clock cycles, counted at the normal power level
   E_tot  ticks from its dispatch to its done;
   E_int  the longest interval without progress (dispatch, heartbeat or done)
          (interval()): the fixed part F of a GEMM under the GEMM model (its array
-         phase beats); else E_tot >> S, S from the kernel's heartbeat structure, 0
-         when unknown (E_int = E_tot, loose but safe).
+         phase beats); the fixed part of a copy (task-time images beat while the
+         iDMA transfers, BINGO_DMA_BEAT in idma.h); else E_tot >> S, S from the
+         kernel's heartbeat structure, 0 when unknown (E_int = E_tot, loose but safe).
 
 Where an estimate comes from (estimate()):
   - warm execution: the slowest warm execution of the same kernel and size key in
@@ -22,7 +23,20 @@ Where an estimate comes from (estimate()):
     cold term (the largest cold - warm difference of a calibrated size), otherwise
     none;
   - kernels in NO_ESTIMATE (their time depends on data or on another task) and
-    host tasks (the host slot is not watched) get none.
+    host tasks (the host slot is not watched) get none;
+  - every task adds the wait on the shared port of the chiplet's memory (the graph adds
+    it, BingoDFG._task_time_estimates) to both numbers: every cluster's iDMA and
+    instruction cache refills reach the L3 through one wide port, and the iDMA keeps
+    many bursts outstanding, so a transfer that started first is served (almost)
+    entirely before another cluster's request. A copy waits for its own transfer and a
+    core stalls on a code fetch (no beat is possible) for as long as the other
+    cluster's transfer (TCDM experiment 2026-10-17: a cold 1 KiB copy, estimate 479,
+    waited 4216 ticks behind the other cluster's 256 KiB copy; with beating waits its
+    kernel start still stalled 3615 ticks). The wait is the sum of the own estimates of
+    the copies with an operand there (shared_levels()) on the other clusters of the
+    chiplet that may run at the same time (not ordered with the task in the graph);
+    no estimate when one of them has none. On a port that serves its requests one
+    after the other or shares its bandwidth, a task ends no later than that.
 A missing estimate is always safe: the watchdog then keeps its other thresholds.
 Every number is in ticks, rounded up.
 
@@ -63,6 +77,11 @@ from bisect import bisect_left
 import math
 
 EXIT_KERNELS = ("__snax_bingo_kernel_exit", "__host_bingo_kernel_exit")
+COPY_KERNEL = "__snax_bingo_kernel_idma_1d_copy"
+# Memories every cluster's iDMA reaches through one shared port (the wait on it);
+# the device code (instruction cache refills) is in CODE_LEVEL
+SHARED_LEVELS = ("L2", "L3")
+CODE_LEVEL = "L3"
 NO_ESTIMATE = ("__snax_bingo_kernel_sdc_compare",)
 EXTRAPOLATE = 2.0
 PM_OFF_FACTOR = 2
@@ -212,6 +231,15 @@ def task_key(kernel: str, ints: dict, src_level: str | None = None, dst_level: s
     return k, " ".join(f"{a}={ints[a]}" for a in sorted(ints)), None
 
 
+def shared_levels(kernel: str, key: str) -> frozenset:
+    """The shared memories (SHARED_LEVELS) a copy reads or writes, from its size key
+    ("size=<bytes> <src>><dst>"); empty for other kernels."""
+    parts = key.split(" ") if kernel == COPY_KERNEL and key else []
+    if len(parts) != 2 or ">" not in parts[1]:
+        return frozenset()
+    return frozenset(level for level in parts[1].split(">") if level in SHARED_LEVELS)
+
+
 def model_key(kernel: str, family: str, key: str) -> str:
     """Model group: the family, for copies with the direction."""
     if family == "copy":
@@ -250,7 +278,7 @@ def node_key(node):
     """(family, size key, work, ints) of a node, from the compiler's objects."""
     ints = args_ints(node.kernel_args)
     src = dst = None
-    if node.kernel_name == "__snax_bingo_kernel_idma_1d_copy":
+    if node.kernel_name == COPY_KERNEL:
         src = mem_level(getattr(node.kernel_args, "src_addr", None), node.assigned_cluster_id)
         dst = mem_level(getattr(node.kernel_args, "dst_addr", None), node.assigned_cluster_id)
     family, key, work = task_key(node.kernel_name, ints, src, dst)
@@ -324,17 +352,27 @@ def estimate(kernel: str, family: str, key: str, work, cold: bool, platform: str
 
 
 def interval(kernel: str, key: str, e_tot, cold: bool, platform: str | None, ints: dict):
-    """E_int (ticks) of a task with estimate E_tot, or None without one: for a GEMM
-    under the GEMM model its fixed part F (the array phase beats, so the longest
-    interval without progress lies in the fixed part; F is the largest calibrated
-    residual, hence at least every calibrated execution's E_int), capped at E_tot;
-    else E_tot >> interval_shift(), rounded up."""
+    """E_int (ticks) of a task with estimate E_tot, or None without one, capped at E_tot:
+    - a GEMM under the GEMM model: its fixed part F (the array phase beats, so the
+      longest interval without progress lies in the fixed part; every traced
+      calibrated GEMM stayed below F: hemaia_ci cold 2502 < 2595, warm 917 < 1180);
+    - a copy: the fixed part of its direction's family model (the intercept a, plus
+      the cold term when cold), as the task-time images beat while the iDMA transfers
+      (idma.h): only the code before and after the transfer has no beat;
+    - else E_tot >> interval_shift(), rounded up.
+    The wait on a shared port (BingoDFG._task_time_estimates) comes on top."""
     if e_tot is None:
         return None
-    if platform in CALIBRATION and kernel == GEMM_KERNEL and gemm_cycles(key) is not None:
-        fixed = CALIBRATION[platform].get("gemm", {}).get("cold" if cold else "warm")
+    cal = CALIBRATION.get(platform, {})
+    if kernel == GEMM_KERNEL and gemm_cycles(key) is not None:
+        fixed = cal.get("gemm", {}).get("cold" if cold else "warm")
         if fixed is not None:
             return min(e_tot, math.ceil(fixed))
+    if kernel == COPY_KERNEL and key:
+        model = cal.get("models", {}).get(model_key(kernel, "copy", key))
+        extra = cal.get("cold_term", {}).get(kernel) if cold else 0
+        if model is not None and extra is not None:
+            return min(e_tot, math.ceil(model[0] + extra))
     return -(-e_tot // (1 << interval_shift(kernel, ints)))
 
 

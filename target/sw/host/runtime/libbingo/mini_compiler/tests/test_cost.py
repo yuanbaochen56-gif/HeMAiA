@@ -169,7 +169,13 @@ class EstimateTests(unittest.TestCase):
                          min(2596, cal["cold"]))
         # outside the GEMM model: E_tot >> interval_shift
         self.assertEqual(cost.interval(GEMM, "M=1 K=16 N=1 quantization_enable=1", 3000, False, ci, {}), 3000)
-        self.assertEqual(cost.interval(COPY, "size=262144 L3>L1", 8410, False, ci, dict(size=262144)), 8410)
+        # a copy: the fixed part of its direction's model (+ the cold term), capped at E_tot
+        a = cost.CALIBRATION[ci]["models"]["copy L3>L1"][0]
+        self.assertEqual(cost.interval(COPY, "size=262144 L3>L1", 8410, False, ci, dict(size=262144)), math.ceil(a))
+        self.assertEqual(cost.interval(COPY, "size=262144 L3>L1", 8410, True, ci, dict(size=262144)),
+                         math.ceil(a + cost.CALIBRATION[ci]["cold_term"][COPY]))
+        self.assertEqual(cost.interval(COPY, "size=64 L3>L1", 50, False, ci, dict(size=64)), 50)
+        self.assertEqual(cost.interval(COPY, "size=128 L3>L3", 482, True, ci, dict(size=128)), 482)   # no model
         self.assertEqual(cost.interval(ADD, "n=512", 64925, True, ci, dict(num_elements=512)), 32463)
         self.assertIsNone(cost.interval(COPY, "size=64 L3>L1", None, False, ci, dict(size=64)))
         self.assertEqual(cost.interval(GEMM, "M=8 K=512 N=8", 16524, True, None, {}), 16524)
@@ -239,8 +245,10 @@ class GeneratedCodeTests(unittest.TestCase):
         est = graph._task_time_estimates()
         self.assertEqual((est[first]["cold"], est[second]["cold"], est[other_cluster]["cold"], est[gemm]["cold"]),
                          (True, False, True, True))
-        self.assertEqual((est[first]["e_tot"], est[second]["e_tot"]), (510, 100))
-        self.assertEqual(est[gemm]["e_tot"], 2596)
+        # own estimates (the copy of cluster 1 adds its wait on the L3 port to E_tot)
+        self.assertEqual((est[first]["own"], est[second]["own"]), (510, 100))
+        self.assertEqual(est[gemm]["own"], 2596)
+        self.assertEqual(est[gemm]["e_tot"], 2596 + est[other_cluster]["own"])
 
     def test_conditional_tasks_stay_cold(self):
         graph = self.graph()
@@ -265,7 +273,11 @@ class GeneratedCodeTests(unittest.TestCase):
                       f"(BINGO_TASK_TIME_SCALE({4 * e}u) & ~keep);", text)
         self.assertNotIn("if (", text)                     # branch-free: same host time
         self.assertIn('__asm__ volatile("" : "+r"(keep));', text)  # GCC keeps the masks
-        self.assertIn("bingo_wd_type_set(2, BINGO_TASK_TIME_SCALE(1020u), BINGO_TASK_TIME_SCALE(2040u));", text)
+        # the cold 256 B copy (E_tot 510): E_int = the fixed part of the copy model (the
+        # transfer beats), capped at E_tot
+        a = cost.CALIBRATION["hemaia_ci"]["models"]["copy L3>L1"][0]
+        e = min(510, math.ceil(a + cost.CALIBRATION["hemaia_ci"]["cold_term"][COPY]))
+        self.assertIn(f"bingo_wd_type_set(2, BINGO_TASK_TIME_SCALE({2 * e}u), BINGO_TASK_TIME_SCALE({4 * e}u));", text)
         # a copy without an estimate takes the bound of its type away
         self.copy(graph, 1 << 20)
         stream = io.StringIO()
@@ -339,13 +351,14 @@ class GeneratedCodeTests(unittest.TestCase):
         graph.bingo_add_edge(small, medium)
         graph.bingo_add_edge(medium, large)
         est = graph._task_time_estimates()
-        self.assertEqual(est[large]["e_tot"], 8410)                      # measured worst case
-        self.assertEqual(est[large]["e_int"], 8410)                      # beats only at its ends
+        self.assertEqual(est[large]["e_tot"], est[large]["own"])          # alone: no wait
+        a = cost.CALIBRATION["hemaia_ci"]["models"]["copy L3>L1"][0]
+        self.assertEqual(est[large]["e_int"], math.ceil(a))              # the transfer beats
         classes = graph._wd_classes()
         self.assertEqual(len({classes[small], classes[medium], classes[large]}), 3)
         table = graph._task_time_table
-        self.assertEqual(table[(2, classes[large])], (8410, 0))
-        self.assertEqual(table[(2, classes[small])], (479, 0))           # the first copy is cold
+        self.assertEqual(table[(2, classes[large])], (est[large]["e_tot"], 3))
+        self.assertEqual(table[(2, classes[small])][0], 479)             # the first copy is cold
 
     def test_large_gemm_bucket_shift_covers_the_fixed_part(self):
         """A large GEMM's E_int is the fixed part, far below E_tot: the bucket keeps a
@@ -426,6 +439,86 @@ class GeneratedCodeTests(unittest.TestCase):
             self.assertEqual(bingo_fence_fb.host_is_cheaper(node, graph), "")
         with patch.dict(cost.HOST_US, {("__host_bingo_kernel_add_i32", 32): 100.0}):
             self.assertIn("is not below 0.8 x", bingo_fence_fb.host_is_cheaper(node, graph))
+
+    def test_shared_levels(self):
+        self.assertEqual(cost.shared_levels(COPY, "size=1024 L3>L1"), {"L3"})
+        self.assertEqual(cost.shared_levels(COPY, "size=1024 L1>L3"), {"L3"})
+        self.assertEqual(cost.shared_levels(COPY, "size=64 L2>L3"), {"L2", "L3"})
+        self.assertEqual(cost.shared_levels(COPY, "size=64 L1>L1r"), frozenset())
+        self.assertEqual(cost.shared_levels(COPY, ""), frozenset())
+        self.assertEqual(cost.shared_levels(GEMM, "M=1 K=16 N=1"), frozenset())
+
+    def chains(self, graph, sizes, clusters):
+        out = []
+        for cluster in clusters:
+            chain = [self.copy(graph, size, cluster) for size in sizes]
+            for a, b in zip(chain, chain[1:]):
+                graph.bingo_add_edge(a, b)
+            out.append(chain)
+        return out
+
+    def test_copies_wait_for_the_other_clusters_copies_on_the_l3_port(self):
+        """The small-then-large chains of both clusters (dma_small_large_2cluster): a
+        copy may wait for every copy of the other cluster's chain."""
+        graph = self.graph()
+        chains = self.chains(graph, (1024, 16384, 262144), (0, 1))
+        est = graph._task_time_estimates()
+        self.assertEqual(est[chains[0][0]]["own"], 479)                 # the cold 1 KiB copy
+        a = cost.CALIBRATION["hemaia_ci"]["models"]["copy L3>L1"][0]
+        for cluster in (0, 1):
+            others = sum(est[node]["own"] for node in chains[1 - cluster])
+            for node in chains[cluster]:
+                e = est[node]
+                fixed = math.ceil(a + (cost.CALIBRATION["hemaia_ci"]["cold_term"][COPY] if e["cold"] else 0))
+                self.assertEqual(e["wait"], others)
+                self.assertEqual(e["e_tot"], e["own"] + others)
+                self.assertEqual(e["e_int"], min(fixed, e["own"]) + others)  # a code fetch may wait too
+                self.assertIn("shared port", e["source"])
+        # the table entry (the budget) of the small copy's class covers its wait
+        classes = graph._wd_classes()
+        e_tot, s = graph._task_time_table[(2, classes[chains[0][0]])]
+        self.assertGreaterEqual(e_tot, est[chains[0][0]]["e_tot"])
+        self.assertGreaterEqual(cost.decode(cost.encode(e_tot)) >> s, est[chains[0][0]]["e_int"])
+
+    def test_ordered_tasks_and_l1_copies_do_not_wait(self):
+        """An ordered pair does not wait, and a copy between L1s keeps nobody waiting;
+        any other task waits (its code comes from the L3)."""
+        graph = self.graph()
+        first, second = self.copy(graph, 262144, 0), self.copy(graph, 1024, 1)
+        graph.bingo_add_edge(first, second)
+        local = BingoNode(0, 1, 1, kernel_name=COPY, kernel_args=SnaxBingoKernelIdma1dCopyArgs(
+            BingoMemAlloc("l1a", 256, "L1", 0, 0), BingoMemAlloc("l1b", 256, "L1", 0, 1), 256))
+        graph.bingo_add_node(local)
+        gemm = self.gemm(graph, 1)
+        est = graph._task_time_estimates()
+        self.assertEqual(est[local]["key"], "size=256 L1r>L1")
+        self.assertEqual([est[n]["wait"] for n in (first, second)], [0, 0])
+        self.assertEqual(est[second]["e_tot"], est[second]["own"])
+        self.assertEqual(est[gemm]["wait"], est[first]["own"])
+        graph.bingo_add_edge(first, gemm)
+        self.assertEqual(graph._task_time_estimates()[gemm]["wait"], 0)
+
+    def test_a_copy_without_estimate_on_the_port_takes_the_estimate_away(self):
+        graph = self.graph()
+        small, huge = self.copy(graph, 1024, 0), self.copy(graph, 1 << 20, 1)
+        est = graph._task_time_estimates()
+        self.assertIsNone(est[huge]["e_tot"])                           # beyond the calibration
+        self.assertEqual(est[small]["own"], 479)
+        self.assertIsNone(est[small]["e_tot"])
+        self.assertIsNone(est[small]["e_int"])
+
+    def test_four_clusters_wait_for_the_copies_of_every_other_cluster(self):
+        types = {(cluster, core): kind for cluster in range(4) for core, kind in ((0, 1), (1, 2), (2, 0))}
+        with patch.dict(os.environ, {"BINGO_TASK_TIME": "1"}, clear=False):
+            os.environ.pop("BINGO_PLATFORM_CFG", None)
+            graph = BingoDFG(1, 4, 2, True, [0], core_type_ids=types)
+        graph._task_time_platform = "hemaia_ci_4cluster"
+        chains = self.chains(graph, (512, 512), range(4))
+        est = graph._task_time_estimates()
+        for cluster in range(4):
+            node = chains[cluster][1]
+            others = sum(est[n]["own"] for c in range(4) if c != cluster for n in chains[c])
+            self.assertEqual(est[node]["e_tot"], est[node]["own"] + others)
 
 
 if __name__ == "__main__":

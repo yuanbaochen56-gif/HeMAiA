@@ -4,37 +4,58 @@ The watchdog (bingo_hw_manager_watchdog) times every busy device slot in watchdo
 ticks: manager clock cycles, counted at the normal power level
 (bingo_hw_manager_wd_tick; BINGO_WD_TICK_PS in occamy.h). A task gets two numbers:
   E_tot  ticks from its dispatch to its done;
-  E_int  the longest interval without progress (dispatch, heartbeat or done),
-         E_int = E_tot >> S. S comes from the kernel's heartbeat structure; 0 when
-         unknown (E_int = E_tot, loose but safe).
+  E_int  the longest interval without progress (dispatch, heartbeat or done)
+         (interval()): the fixed part F of a GEMM under the GEMM model (its array
+         phase beats); else E_tot >> S, S from the kernel's heartbeat structure, 0
+         when unknown (E_int = E_tot, loose but safe).
 
 Where an estimate comes from (estimate()):
   - warm execution: the slowest warm execution of the same kernel and size key in
     the calibration runs of the platform (a measured worst healthy context);
-    otherwise the kernel family's T = a + b * work, an upper envelope of the
-    calibrated warm worst cases, fitted to at least two sizes and used up to
-    EXTRAPOLATE times beyond the largest; otherwise none;
+    otherwise, for gemm_full, the GEMM model below; otherwise the kernel family's
+    T = a + b * work, the lowest line on or above the calibrated warm worst cases
+    of at least two sizes, used up to EXTRAPOLATE times beyond the largest;
+    otherwise none;
   - cold execution, the first one of a kernel on its core in an offload (the core
     fetches the kernel's code): the slowest cold execution of the same kernel and
-    size key, otherwise warm + the kernel's cold term (the largest cold - warm
-    difference of a calibrated size), otherwise none;
+    size key, otherwise the GEMM model's cold value, otherwise warm + the kernel's
+    cold term (the largest cold - warm difference of a calibrated size), otherwise
+    none;
   - kernels in NO_ESTIMATE (their time depends on data or on another task) and
     host tasks (the host slot is not watched) get none.
 A missing estimate is always safe: the watchdog then keeps its other thresholds.
 Every number is in ticks, rounded up.
 
+GEMM model (gemm_full with an int32 output and no mode flag, GEMM_MODE_KEYS): the
+array takes one tile step (meshRow x tileSize x meshCol MACs) per cycle and writes
+one output tile back in GEMM_WRITEBACK[shape] cycles (meshRow * meshCol * 32 bit over
+the 1024-bit serial port), overlapped with the next output tile's steps, so it works
+Mt * Nt * max(Kt, GEMM_WRITEBACK[shape]) cycles of the cluster clock (M/K/N are tile
+counts). Everything else (runtime, argument parsing, streamer and CSR configuration,
+mostly L3 latency of code and constant tables) is a fixed part F per platform, warm
+and cold, the largest calibrated residual. E_tot = F + GEMM_TICKS_PER_CYCLE * cycles.
+Measured on hemaia_ci (TCDM experiment 2026-10-17, 32x32x32 .. 256x1024x256 elements):
+fixed part 5619..5635 cycles cold and 2257..2263 warm at every size, array phase
+the cycles above + 63..145. Fitted on the E13 runs alone it estimated every larger
+size 1.007 .. 1.153x the actual time (none below). On hemaia_ci_4cluster F comes
+from small GEMMs only; the array term there is not validated by a large GEMM.
+
 Calibration: the healthy runs of the thesis evaluation on bingo 6eea1fd / HeMAiA
 aec4a53f..e54e051e (full scene set, the learned-threshold sweeps, the scheduling and
 four-cluster runs): 62 runs, 869 device executions (repeated runs of one image
-counted once). Durations are watchdog ticks
-(cycles at a level slower than normal count normal/level). Runs with an injected
-fault, an image without heartbeats or the SDC device runtime are not used.
-Leave-one-workload-out on hemaia_ci (PM on): 479 estimates, 4.6 % below the actual
-time, the worst 1.24x below (a cold 1 KiB copy); hemaia_ci_4cluster 1.31x. A
-calibration does not carry over to another platform (2 -> 4 clusters: up to 3.4x
-below) or device runtime (SDC: 3.3x), so each has its own table and the generated
-code refuses other ones. PM off (cores stay at the boot divider, ticks not scaled):
-1.3 .. 1.85x slower; the generated code doubles the estimates (no estimate below).
+counted once); and the gemm_stacked_2cluster
+runs of the TCDM experiment (HeMAiA 42a71e9b, bingo 99459d5, TCDM 512 KiB and 1 MiB,
+GEMMs up to 256x1024x256, copies up to 256 KiB): 6 runs, 72 executions. Durations
+are watchdog ticks (cycles at a level slower than normal count normal/level). Runs
+with an injected fault, an image without heartbeats or the SDC device runtime are not
+used. Leave-one-workload-out on hemaia_ci (PM on, E13 runs): 479 estimates, 4.6 %
+below the actual time, the worst 1.24x below (a cold 1 KiB copy); hemaia_ci_4cluster
+1.31x. A small copy does not predict a large one's bandwidth (L1 -> L3: the small-size
+line was 1.7 .. 2.1x below at 16 .. 32 KiB), hence the large-copy runs. A calibration
+does not carry over to another platform (2 -> 4 clusters: up to 3.4x below) or device
+runtime (SDC: 3.3x), so each has its own table and the generated code refuses other
+ones. PM off (cores stay at the boot divider, ticks not scaled): 1.3 .. 1.85x slower;
+the generated code doubles the estimates (no estimate below).
 """
 from __future__ import annotations
 
@@ -51,30 +72,53 @@ CLASSES = 7
 CAL_TICK_PS = 28000
 CAL_NORMAL_LEVEL = 6
 
+# GEMM model: cluster cycles at the normal level (12 ns) per watchdog tick (28 ns),
+# write-back cycles of one int32 output tile per array shape (32x32, 1x32, 16x16
+# outputs over the 1024-bit serial port), and the arguments that leave the model
+GEMM_KERNEL = "__snax_bingo_kernel_gemm_full"
+GEMM_TICKS_PER_CYCLE = 12000 / 28000
+GEMM_WRITEBACK = {0: 32, 1: 1, 2: 8}
+GEMM_MODE_KEYS = ("quantization_enable", "accumPrevC", "int32tofp16_enable", "int4_a_enable",
+                  "int4_b_enable", "transpose_A", "transpose_B")
+
 # platform -> geometry (clusters per chiplet, Snitch cores per cluster) and the
 # calibration: warm / cold worst cases per (kernel, size key), cold terms per kernel,
-# family models (a, b, largest calibrated work)
+# family models (a, b, largest calibrated work), the GEMM model's fixed parts
 CALIBRATION = {
     "hemaia_ci": dict(
         geometry=(2, 2),
         warm={
             ('__snax_bingo_kernel_gemm_full', 'M=1 K=16 N=1'): 1193,
+            ('__snax_bingo_kernel_gemm_full', 'M=2 K=32 N=2'): 1086,
+            ('__snax_bingo_kernel_gemm_full', 'M=4 K=64 N=1'): 1122,
+            ('__snax_bingo_kernel_gemm_full', 'M=8 K=128 N=1'): 1449,
             ('__snax_bingo_kernel_idma_1d_copy', 'size=1024 L3>L1'): 124,
             ('__snax_bingo_kernel_idma_1d_copy', 'size=128 L1>L3'): 119,
+            ('__snax_bingo_kernel_idma_1d_copy', 'size=16384 L1>L3'): 496,
             ('__snax_bingo_kernel_idma_1d_copy', 'size=256 L3>L1'): 100,
+            ('__snax_bingo_kernel_idma_1d_copy', 'size=262144 L3>L1'): 8410,
+            ('__snax_bingo_kernel_idma_1d_copy', 'size=32768 L1>L3'): 952,
             ('__snax_bingo_kernel_idma_1d_copy', 'size=4096 L1>L3'): 157,
+            ('__snax_bingo_kernel_idma_1d_copy', 'size=4096 L3>L1'): 150,
             ('__snax_bingo_kernel_idma_1d_copy', 'size=64 L3>L1'): 92,
+            ('__snax_bingo_kernel_idma_1d_copy', 'size=65536 L3>L1'): 2170,
+            ('__snax_bingo_kernel_idma_1d_copy', 'size=8192 L3>L1'): 272,
         },
         cold={
             ('__snax_bingo_kernel_exit', ''): 8473,
             ('__snax_bingo_kernel_gemm_full', 'M=1 K=16 N=1'): 2523,
             ('__snax_bingo_kernel_gemm_full', 'M=1 K=2 N=1 array_shape_idx=1'): 2596,
+            ('__snax_bingo_kernel_gemm_full', 'M=2 K=512 N=2'): 3362,
+            ('__snax_bingo_kernel_gemm_full', 'M=4 K=1024 N=4'): 9506,
+            ('__snax_bingo_kernel_gemm_full', 'M=8 K=512 N=8'): 16524,
             ('__snax_bingo_kernel_idma_1d_copy', 'size=1024 L3>L1'): 479,
             ('__snax_bingo_kernel_idma_1d_copy', 'size=128 L3>L1'): 482,
             ('__snax_bingo_kernel_idma_1d_copy', 'size=128 L3>L3'): 482,
             ('__snax_bingo_kernel_idma_1d_copy', 'size=256 L3>L1'): 510,
+            ('__snax_bingo_kernel_idma_1d_copy', 'size=262144 L3>L1'): 8647,
             ('__snax_bingo_kernel_idma_1d_copy', 'size=512 L3>L1'): 455,
             ('__snax_bingo_kernel_idma_1d_copy', 'size=64 L3>L1'): 332,
+            ('__snax_bingo_kernel_idma_1d_copy', 'size=65536 L3>L1'): 2407,
             ('__snax_bingo_kernel_int32_add', 'n=32'): 4222,
             ('__snax_bingo_kernel_int32_add', 'n=512'): 64925,
         },
@@ -83,9 +127,10 @@ CALIBRATION = {
             '__snax_bingo_kernel_idma_1d_copy': 410,
         },
         models={
-            'copy L1>L3': (116.98, 0.0096, 4096),
-            'copy L3>L1': (90.92, 0.0324, 1024),
-        }),
+            'copy L1>L3': (114.94, 0.0256, 32768),
+            'copy L3>L1': (91.08, 0.0318, 262144),
+        },
+        gemm=dict(warm=1180, cold=2595)),
     "hemaia_ci_4cluster": dict(
         geometry=(4, 2),
         warm={
@@ -115,11 +160,11 @@ CALIBRATION = {
             '__snax_bingo_kernel_xdma_d_to_row_major_e4_M32N32': 2672,
         },
         models={
-            'copy L1>L3': (274.06, 0.0485, 16384),
-            'copy L3>L1': (80.01, 0.1425, 1024),
-            'gemm': (852.21, 81.875, 16),
+            'copy L1>L3': (188.46, 0.059, 16384),
+            'copy L3>L1': (56.41, 0.1886, 1024),
             'layout': (3738.96, 231.0, 4),
-        }),
+        },
+        gemm=dict(warm=2108, cold=2557)),
 }
 # Host kernels (the host backup of a device kernel, bingo_fence_fb), microseconds
 HOST_US = {
@@ -212,9 +257,37 @@ def node_key(node):
     return family, key, work, ints
 
 
+def gemm_cycles(key: str):
+    """Array cycles of a gemm_full size key under the GEMM model, or None when the
+    model does not apply (a mode flag set, an unknown array shape, no M/K/N)."""
+    try:
+        args = {name: int(value) for name, value in (item.split("=", 1) for item in key.split())}
+    except ValueError:
+        return None
+    if any(args.get(name, 0) for name in GEMM_MODE_KEYS):
+        return None
+    shape = args.get("array_shape_idx", 0)
+    m, k, n = args.get("M", 0), args.get("K", 0), args.get("N", 0)
+    if shape not in GEMM_WRITEBACK or min(m, k, n) <= 0:
+        return None
+    return m * n * max(k, GEMM_WRITEBACK[shape])
+
+
+def gemm_estimate(cal: dict, kernel: str, key: str, cold: bool):
+    """E_tot of the GEMM model (fixed part + array cycles), or None."""
+    fixed = cal.get("gemm", {}).get("cold" if cold else "warm")
+    cycles = gemm_cycles(key) if kernel == GEMM_KERNEL else None
+    if fixed is None or cycles is None:
+        return None
+    return fixed + GEMM_TICKS_PER_CYCLE * cycles
+
+
 def warm_estimate(cal: dict, kernel: str, family: str, key: str, work):
     if (kernel, key) in cal["warm"]:
         return cal["warm"][(kernel, key)], "measured"
+    if kernel == GEMM_KERNEL:
+        value = gemm_estimate(cal, kernel, key, False)
+        return (value, "gemm model") if value is not None else (None, "none")
     model = cal["models"].get(model_key(kernel, family, key))
     if model is None or work is None or work > EXTRAPOLATE * model[2]:
         return None, "none"
@@ -233,6 +306,9 @@ def estimate(kernel: str, family: str, key: str, work, cold: bool, platform: str
     if cold:
         if (kernel, key) in cal["cold"]:
             return math.ceil(cal["cold"][(kernel, key)]), "measured (cold)"
+        value = gemm_estimate(cal, kernel, key, True)
+        if value is not None:
+            return math.ceil(value), "gemm model (cold)"
         value, source = warm_estimate(cal, kernel, family, key, work)
         if value is None:
             return None, "no measurement and no model"
@@ -245,6 +321,21 @@ def estimate(kernel: str, family: str, key: str, work, cold: bool, platform: str
     if value is None:
         return None, "no measurement and no model"
     return math.ceil(value), source
+
+
+def interval(kernel: str, key: str, e_tot, cold: bool, platform: str | None, ints: dict):
+    """E_int (ticks) of a task with estimate E_tot, or None without one: for a GEMM
+    under the GEMM model its fixed part F (the array phase beats, so the longest
+    interval without progress lies in the fixed part; F is the largest calibrated
+    residual, hence at least every calibrated execution's E_int), capped at E_tot;
+    else E_tot >> interval_shift(), rounded up."""
+    if e_tot is None:
+        return None
+    if platform in CALIBRATION and kernel == GEMM_KERNEL and gemm_cycles(key) is not None:
+        fixed = CALIBRATION[platform].get("gemm", {}).get("cold" if cold else "warm")
+        if fixed is not None:
+            return min(e_tot, math.ceil(fixed))
+    return -(-e_tot // (1 << interval_shift(kernel, ints)))
 
 
 # ---------------------------------------------------------------- hardware format

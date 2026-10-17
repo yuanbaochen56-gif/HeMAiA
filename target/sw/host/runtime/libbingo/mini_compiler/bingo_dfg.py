@@ -1837,8 +1837,8 @@ class BingoDFG(DmrSupport, DiGraphWrapper[BingoNode]):
         return result
 
     def _task_time_estimates(self) -> dict:
-        """Estimate of every device task (bingo_cost.estimate), in watchdog ticks:
-        node -> dict(cold, e_tot, s, e_int, source, key). A task is cold while no
+        """Estimate of every device task (bingo_cost.estimate, bingo_cost.interval), in
+        watchdog ticks: node -> dict(cold, e_tot, e_int, source, key). A task is cold while no
         unconditional task of its kernel ran before it on its core in the
         descriptor order (each core runs its tasks in that order): the first task
         of a kernel, and every conditional one up to the first unconditional one."""
@@ -1855,10 +1855,8 @@ class BingoDFG(DmrSupport, DiGraphWrapper[BingoNode]):
             family, key, work, ints = bingo_cost.node_key(node)
             e_tot, source = bingo_cost.estimate(node.kernel_name, family, key, work, cold,
                                                 self._task_time_platform)
-            s = bingo_cost.interval_shift(node.kernel_name, ints) if e_tot is not None else 0
-            out[node] = dict(cold=cold, e_tot=e_tot, s=s,
-                             e_int=None if e_tot is None else -(-e_tot // (1 << s)),
-                             source=source, key=key)
+            e_int = bingo_cost.interval(node.kernel_name, key, e_tot, cold, self._task_time_platform, ints)
+            out[node] = dict(cold=cold, e_tot=e_tot, e_int=e_int, source=source, key=key)
         return out
 
     def _task_time_classes(self, extra_node=None, *, diagnostics=None) -> dict:
@@ -2615,12 +2613,12 @@ class BingoDFG(DmrSupport, DiGraphWrapper[BingoNode]):
                 "    e = (e - shift) & ~under;\n"
                 "    return ((entry & 0x30fu) | (e << 4)) & keep;\n"
                 "}\n#else\n#define bingo_task_time_entry(entry) (entry)\n#endif\n")
-        f.write("//   node  chip/cluster/core  kernel  size  cold  E_tot  S  source\n")
+        f.write("//   node  chip/cluster/core  kernel  size  cold  E_tot  E_int  source\n")
         for node, est in sorted(self._task_time_estimates().items(), key=lambda kv: kv[0].node_id):
             f.write(f"//   {node.node_id:4d}  {node.assigned_chiplet_id:02x}/{node.assigned_cluster_id}/"
                     f"{node.assigned_core_id}  {node.kernel_name.removeprefix('__snax_bingo_kernel_')}  "
                     f"{est['key'] or '-'}  {int(est['cold'])}  {est['e_tot'] if est['e_tot'] is not None else '-'}  "
-                    f"{est['s']}  {est['source']}\n")
+                    f"{est['e_int'] if est['e_int'] is not None else '-'}  {est['source']}\n")
         f.write("#endif\n\n")
 
     def _emit_task_time_launch(self, f, chiplet_id):

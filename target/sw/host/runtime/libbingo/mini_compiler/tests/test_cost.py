@@ -1,6 +1,7 @@
 """Task-time estimates (bingo_cost.py) and their use in the generated code."""
 import io
 import itertools
+import math
 import os
 from pathlib import Path
 import sys
@@ -111,14 +112,67 @@ class EstimateTests(unittest.TestCase):
                          (119 + 410, "measured + cold term"))
         value, source = cost.estimate(COPY, "copy", "size=2048 L3>L1", 2048, False, ci)
         self.assertEqual(source, "model")
-        self.assertEqual(value, -(-(90.92 + 0.0324 * 2048) // 1))
-        self.assertEqual(cost.estimate(COPY, "copy", "size=4096 L3>L1", 4096, False, ci)[0], None)
-        self.assertEqual(cost.estimate(GEMM, "gemm", "M=9 K=9 N=9", 729, False, ci)[0], None)
+        a, b, w_max = cost.CALIBRATION[ci]["models"]["copy L3>L1"]
+        self.assertEqual(value, math.ceil(a + b * 2048))
+        self.assertEqual(w_max, 262144)                    # the large copies are calibrated
+        self.assertEqual(cost.estimate(COPY, "copy", "size=1048576 L3>L1", 1 << 20, False, ci)[0], None)
+        self.assertEqual(cost.estimate(GEMM, "gemm", "M=9 K=9 N=9 quantization_enable=1", 729, False, ci)[0],
+                         None)
         # a warm execution of a size measured only cold takes the cold value
         self.assertEqual(cost.estimate(ADD, "eltwise", "n=512", 512, False, ci), (64925, "measured (cold)"))
         for kernel in ("__snax_bingo_kernel_sdc_compare", "__host_bingo_kernel_idma", ""):
             self.assertIsNone(cost.estimate(kernel, "x", "size=64", 64, False, ci)[0])
         self.assertIsNone(cost.estimate(COPY, "copy", "size=256 L3>L1", 256, False, None)[0])
+
+    def test_gemm_cycles(self):
+        self.assertEqual(cost.gemm_cycles("M=8 K=512 N=8"), 8 * 8 * 512)
+        self.assertEqual(cost.gemm_cycles("M=2 K=4 N=2"), 2 * 2 * 32)            # write-back bound
+        self.assertEqual(cost.gemm_cycles("M=1 K=2 N=1 array_shape_idx=1"), 2)   # 1x32 outputs: 1 cycle
+        self.assertEqual(cost.gemm_cycles("M=1 K=4 N=1 array_shape_idx=2"), 8)   # 16x16 outputs: 8 cycles
+        for key in ("M=1 K=16 N=1 quantization_enable=1", "M=1 K=16 N=1 accumPrevC=1",
+                    "M=1 K=16 N=1 transpose_A=1", "M=1 K=16 N=1 array_shape_idx=3", "M=1 K=16", "",
+                    "M=x K=16 N=1"):
+            self.assertIsNone(cost.gemm_cycles(key), key)
+
+    def test_gemm_model(self):
+        ci, cal = "hemaia_ci", cost.CALIBRATION["hemaia_ci"]["gemm"]
+        tpc = cost.GEMM_TICKS_PER_CYCLE
+        # a measured size keeps its measured worst case
+        self.assertEqual(cost.estimate(GEMM, "gemm", "M=8 K=128 N=1", 1024, False, ci), (1449, "measured"))
+        self.assertEqual(cost.estimate(GEMM, "gemm", "M=8 K=512 N=8", 32768, True, ci), (16524, "measured (cold)"))
+        # an unseen size: fixed part + array cycles, warm and cold
+        self.assertEqual(cost.estimate(GEMM, "gemm", "M=4 K=256 N=4", 4096, False, ci),
+                         (math.ceil(cal["warm"] + tpc * 4096), "gemm model"))
+        self.assertEqual(cost.estimate(GEMM, "gemm", "M=4 K=256 N=4", 4096, True, ci),
+                         (math.ceil(cal["cold"] + tpc * 4096), "gemm model (cold)"))
+        four = cost.CALIBRATION["hemaia_ci_4cluster"]["gemm"]
+        self.assertEqual(cost.estimate(GEMM, "gemm", "M=8 K=512 N=8", 32768, False, "hemaia_ci_4cluster")[0],
+                         math.ceil(four["warm"] + tpc * 32768))
+
+    def test_gemm_model_covers_the_calibrated_worst_cases(self):
+        """The fixed parts are the largest calibrated residuals: the model is not below
+        any measured worst case of a size it applies to (the tables round up by < 1)."""
+        for platform, cal in cost.CALIBRATION.items():
+            for table, cold in (("warm", False), ("cold", True)):
+                for (kernel, key), measured in cal[table].items():
+                    if kernel != GEMM or cost.gemm_cycles(key) is None:
+                        continue
+                    model = cost.gemm_estimate(cal, kernel, key, cold)
+                    self.assertGreaterEqual(model, measured - 1, (platform, key, cold))
+
+    def test_interval(self):
+        ci, cal = "hemaia_ci", cost.CALIBRATION["hemaia_ci"]["gemm"]
+        # GEMM: the fixed part (the array phase beats), capped at E_tot
+        self.assertEqual(cost.interval(GEMM, "M=8 K=512 N=8", 16524, True, ci, {}), cal["cold"])
+        self.assertEqual(cost.interval(GEMM, "M=4 K=256 N=4", 2936, False, ci, {}), cal["warm"])
+        self.assertEqual(cost.interval(GEMM, "M=1 K=2 N=1 array_shape_idx=1", 2596, True, ci, {}),
+                         min(2596, cal["cold"]))
+        # outside the GEMM model: E_tot >> interval_shift
+        self.assertEqual(cost.interval(GEMM, "M=1 K=16 N=1 quantization_enable=1", 3000, False, ci, {}), 3000)
+        self.assertEqual(cost.interval(COPY, "size=262144 L3>L1", 8410, False, ci, dict(size=262144)), 8410)
+        self.assertEqual(cost.interval(ADD, "n=512", 64925, True, ci, dict(num_elements=512)), 32463)
+        self.assertIsNone(cost.interval(COPY, "size=64 L3>L1", None, False, ci, dict(size=64)))
+        self.assertEqual(cost.interval(GEMM, "M=8 K=512 N=8", 16524, True, None, {}), 16524)
 
     def test_interval_shift(self):
         self.assertEqual(cost.interval_shift(ADD, dict(num_elements=32)), 0)
@@ -203,15 +257,17 @@ class GeneratedCodeTests(unittest.TestCase):
         stream = io.StringIO()
         graph._emit_task_time_launch(stream, 0)
         text = stream.getvalue()
+        # the cold GEMM (E_tot 2596): E_int = the GEMM model's cold fixed part
+        e = min(2596, cost.CALIBRATION["hemaia_ci"]["gemm"]["cold"])
         self.assertIn("bingo_test_cfg.wd_type_h[1] = (bingo_test_cfg.wd_type_h[1] & keep) | "
-                      "(BINGO_TASK_TIME_SCALE(5192u) & ~keep);", text)
+                      f"(BINGO_TASK_TIME_SCALE({2 * e}u) & ~keep);", text)
         self.assertIn("bingo_test_cfg.wd_type_c[1] = (bingo_test_cfg.wd_type_c[1] & keep) | "
-                      "(BINGO_TASK_TIME_SCALE(10384u) & ~keep);", text)
+                      f"(BINGO_TASK_TIME_SCALE({4 * e}u) & ~keep);", text)
         self.assertNotIn("if (", text)                     # branch-free: same host time
         self.assertIn('__asm__ volatile("" : "+r"(keep));', text)  # GCC keeps the masks
         self.assertIn("bingo_wd_type_set(2, BINGO_TASK_TIME_SCALE(1020u), BINGO_TASK_TIME_SCALE(2040u));", text)
         # a copy without an estimate takes the bound of its type away
-        self.copy(graph, 1 << 16)
+        self.copy(graph, 1 << 20)
         stream = io.StringIO()
         graph._emit_task_time_launch(stream, 0)
         self.assertIn("// core type 2: no bound", stream.getvalue())
@@ -244,7 +300,7 @@ class GeneratedCodeTests(unittest.TestCase):
         first, warm = self.copy(graph, 256), self.copy(graph, 256)     # 510 cold, 100 warm
         graph.bingo_add_edge(first, warm)
         gemm = self.gemm(graph)                                          # 2596 cold
-        unknown = self.copy(graph, 1 << 16)                             # no estimate
+        unknown = self.copy(graph, 1 << 20)                             # no estimate
         graph.bingo_add_edge(warm, unknown)
         classes = graph._wd_classes()
         # type 2: the kernel without estimate first (class 1), then the buckets
@@ -273,6 +329,40 @@ class GeneratedCodeTests(unittest.TestCase):
         e_tot, s = graph._task_time_table[(2, 1)]
         self.assertEqual((e_tot, s), (64925, 1))
         self.assertGreaterEqual(cost.decode(cost.encode(e_tot)) >> s, -(-64925 // 2))
+
+    def test_small_and_large_copies_get_their_own_classes(self):
+        """1 KiB, 16 KiB and 256 KiB copies in one chain on one core: each size has an
+        estimate and a bucket of its own, so a learned small copy never sets the bound
+        of a large one (with one class per kernel it would: test below)."""
+        graph = self.graph()
+        small, medium, large = self.copy(graph, 1024), self.copy(graph, 16384), self.copy(graph, 262144)
+        graph.bingo_add_edge(small, medium)
+        graph.bingo_add_edge(medium, large)
+        est = graph._task_time_estimates()
+        self.assertEqual(est[large]["e_tot"], 8410)                      # measured worst case
+        self.assertEqual(est[large]["e_int"], 8410)                      # beats only at its ends
+        classes = graph._wd_classes()
+        self.assertEqual(len({classes[small], classes[medium], classes[large]}), 3)
+        table = graph._task_time_table
+        self.assertEqual(table[(2, classes[large])], (8410, 0))
+        self.assertEqual(table[(2, classes[small])], (479, 0))           # the first copy is cold
+
+    def test_large_gemm_bucket_shift_covers_the_fixed_part(self):
+        """A large GEMM's E_int is the fixed part, far below E_tot: the bucket keeps a
+        shift S > 0 that still covers it."""
+        graph = self.graph()
+        node = BingoNode(0, 0, 0, kernel_name=GEMM, kernel_args=SnaxBingoKernelGemmFullArgs(
+            0, 0, 0, 0, 8, 1024, 8, 0, 0, 0, 0))
+        graph.bingo_add_node(node)
+        est = graph._task_time_estimates()[node]
+        cal = cost.CALIBRATION["hemaia_ci"]["gemm"]
+        self.assertEqual(est["source"], "gemm model (cold)")
+        self.assertEqual(est["e_tot"], math.ceil(cal["cold"] + cost.GEMM_TICKS_PER_CYCLE * 8 * 8 * 1024))
+        self.assertEqual(est["e_int"], cal["cold"])
+        graph._wd_classes()
+        e_tot, shift = graph._task_time_table[(1, 1)]
+        self.assertGreater(shift, 0)
+        self.assertGreaterEqual(cost.decode(cost.encode(e_tot)) >> shift, cal["cold"])
 
     def test_classes_unchanged_without_task_time(self):
         graph = self.graph(task_time=False)

@@ -1216,11 +1216,29 @@ class BingoDFG(DmrSupport, DiGraphWrapper[BingoNode]):
 
         If a cell needs more than ``2**tag_width`` tags, raise (reduce the cell's
         concurrency in placement, or widen DepTagWidth).
+
+        In steps: _dep_tag_cells (the set->check edges per cell), _dep_tag_broadcasts
+        (their shape), _dep_tag_reserve_broadcasts, _dep_tag_happens_before (the
+        order the chain cover uses) and _dep_tag_cover_cells (the local tags).
         """
         max_tags = 1 << tag_width
         topo = self._bingo_topological_order()
         pos = {n: i for i, n in enumerate(topo)}
+        cells, set_edges = self._dep_tag_cells()
+        bcast, bcast_landing = self._dep_tag_broadcasts(set_edges)
+        reserved = self._dep_tag_reserve_broadcasts(bcast, bcast_landing, max_tags, tag_width)
+        hb = self._dep_tag_happens_before(topo)
+        self._dep_tag_cover_cells(cells, bcast, reserved, hb, pos, max_tags, tag_width)
 
+    @staticmethod
+    def _dep_tag_cell(u, v) -> tuple:
+        """The dep-matrix cell of the set->check edge (u, v): (consumer chiplet,
+        consumer cluster, R = consumer core, C = producer core)."""
+        return (v.assigned_chiplet_id, v.assigned_cluster_id,
+                v.assigned_core_id, u.assigned_core_id)
+
+    def _dep_tag_cells(self) -> tuple:
+        """The set->check edges per cell and per set node, in edge order."""
         cells: dict = {}                      # (chip, cl, R, C) -> [(set_node, check_node), ...]
         set_edges: dict = {}                  # set_node -> [(set_node, check_node), ...]
         check_edge_count: dict = {}
@@ -1244,12 +1262,14 @@ class BingoDFG(DmrSupport, DiGraphWrapper[BingoNode]):
             raise NotImplementedError(
                 "dep-tag allocation: a dep_check op drains multiple producer edges "
                 f"(needs HW broadcast-check); not supported: {multi_check}")
+        return cells, set_edges
 
-        # Broadcast groups: a set node driving >1 set->check edge. Its single
-        # dep_set_tag must cover one (cluster, R, C) position replicated across the
-        # distinct target chiplets, so verify the edges form exactly that shape.
-        cell_of = lambda u, v: (v.assigned_chiplet_id, v.assigned_cluster_id,
-                                v.assigned_core_id, u.assigned_core_id)
+    def _dep_tag_broadcasts(self, set_edges: dict) -> tuple:
+        """Broadcast groups: a set node driving >1 set->check edge, and the cells
+        each lands in. Its single dep_set_tag must cover one (cluster, R, C)
+        position replicated across the distinct target chiplets, so verify the
+        edges form exactly that shape."""
+        cell_of = self._dep_tag_cell
         bcast = {u: el for u, el in set_edges.items() if len(el) > 1}
         for u, el in bcast.items():
             positions = {(v.assigned_cluster_id, v.assigned_core_id, u.assigned_core_id)
@@ -1261,10 +1281,14 @@ class BingoDFG(DmrSupport, DiGraphWrapper[BingoNode]):
                     "a uniform per-chiplet broadcast (its edges must share one "
                     "(cluster, R, C) and land on distinct chiplets); a single shared "
                     "tag cannot represent it.")
-
-        # Reserve one tag per broadcast group. Two groups that land in a common cell
-        # must differ -> greedy-colour them on the share-a-cell conflict graph.
         bcast_landing = {u: {cell_of(_u, v) for (_u, v) in el} for u, el in bcast.items()}
+        return bcast, bcast_landing
+
+    def _dep_tag_reserve_broadcasts(self, bcast: dict, bcast_landing: dict, max_tags: int,
+                                    tag_width: int) -> dict:
+        """Reserve one tag per broadcast group, in node id order, and write it into
+        the set node and its checks. Two groups that land in a common cell must
+        differ -> greedy-colour them on the share-a-cell conflict graph."""
         reserved: dict = {}                   # broadcast set_node -> reserved tag
         for u in sorted(bcast, key=lambda n: n.node_id):
             taken = {reserved[w] for w in reserved
@@ -1278,14 +1302,16 @@ class BingoDFG(DmrSupport, DiGraphWrapper[BingoNode]):
             u.dep_set_tag = tag
             for (_u, v) in bcast[u]:
                 v.dep_check_tag = tag
+        return reserved
 
-        # Same-core HOL reachability: at runtime each core dispatches its tasks in
-        # topological (= push) order, so a same-core node that comes later is
-        # effectively reachable from an earlier one. Add those consecutive same-core
-        # edges to a SCRATCH graph used only for tag-reuse reachability (no real
-        # edges, dep info unchanged). This collapses same-core (diagonal R==C) cells
-        # -- which are serialized by the core queue -- to a chain, so they need few
-        # tags instead of one per edge.
+    def _dep_tag_happens_before(self, topo: list):
+        """The happens-before graph of the tag reuse: the DFG edges plus same-core
+        HOL reachability. At runtime each core dispatches its tasks in topological
+        (= push) order, so a same-core node that comes later is effectively
+        reachable from an earlier one. Those consecutive same-core edges go into
+        this SCRATCH graph only (no real edges, dep info unchanged). This collapses
+        same-core (diagonal R==C) cells -- which are serialized by the core queue --
+        to a chain, so they need few tags instead of one per edge."""
         hb = nx.DiGraph()
         hb.add_nodes_from(self.nodes())
         hb.add_edges_from(self.edges())
@@ -1296,43 +1322,48 @@ class BingoDFG(DmrSupport, DiGraphWrapper[BingoNode]):
         for seq in by_core_hb.values():
             for i in range(len(seq) - 1):
                 hb.add_edge(seq[i], seq[i + 1])
+        return hb
 
-        def min_chain_cover(edges: list) -> dict:
-            """Map each edge index -> chain id (0-based) via min chain-cover."""
-            n = len(edges)
-            # reach[a] = nodes reachable from edge a's consumer (its drain point)
-            reach = [nx.descendants(hb, cv) for (_su, cv) in edges]
-            B = nx.Graph()
-            for a in range(n):
-                B.add_node(("L", a)); B.add_node(("R", a))
-            for a in range(n):
-                for b in range(n):
-                    if a == b:
-                        continue
-                    # a precedes b (may share a tag) iff edge a's drain happens
-                    # before edge b's set: they meet at one node (a's consumer IS
-                    # b's producer), or b's producer is reachable from a's consumer
-                    # in the happens-before (incl. same-core HOL) order.
-                    if edges[b][0] is edges[a][1] or edges[b][0] in reach[a]:
-                        B.add_edge(("L", a), ("R", b))
-            match = _deterministic_bipartite_matching(B, n)
-            succ, has_pred = {}, set()
-            for node, m in match.items():
-                if node[0] == "L":
-                    succ[node[1]] = m[1]; has_pred.add(m[1])
-            chain_of, n_chains = {}, 0
-            for a in range(n):
-                if a in has_pred:
-                    continue                   # not a chain head
-                cur = a
-                while True:
-                    chain_of[cur] = n_chains
-                    cur = succ.get(cur)
-                    if cur is None:
-                        break
-                n_chains += 1
-            return chain_of
+    @staticmethod
+    def _dep_tag_min_chain_cover(hb, edges: list) -> dict:
+        """Map each edge index -> chain id (0-based) via min chain-cover."""
+        n = len(edges)
+        # reach[a] = nodes reachable from edge a's consumer (its drain point)
+        reach = [nx.descendants(hb, cv) for (_su, cv) in edges]
+        B = nx.Graph()
+        for a in range(n):
+            B.add_node(("L", a)); B.add_node(("R", a))
+        for a in range(n):
+            for b in range(n):
+                if a == b:
+                    continue
+                # a precedes b (may share a tag) iff edge a's drain happens
+                # before edge b's set: they meet at one node (a's consumer IS
+                # b's producer), or b's producer is reachable from a's consumer
+                # in the happens-before (incl. same-core HOL) order.
+                if edges[b][0] is edges[a][1] or edges[b][0] in reach[a]:
+                    B.add_edge(("L", a), ("R", b))
+        match = _deterministic_bipartite_matching(B, n)
+        succ, has_pred = {}, set()
+        for node, m in match.items():
+            if node[0] == "L":
+                succ[node[1]] = m[1]; has_pred.add(m[1])
+        chain_of, n_chains = {}, 0
+        for a in range(n):
+            if a in has_pred:
+                continue                   # not a chain head
+            cur = a
+            while True:
+                chain_of[cur] = n_chains
+                cur = succ.get(cur)
+                if cur is None:
+                    break
+            n_chains += 1
+        return chain_of
 
+    def _dep_tag_cover_cells(self, cells: dict, bcast: dict, reserved: dict, hb, pos: dict,
+                             max_tags: int, tag_width: int) -> None:
+        """The local (single-edge) tags of every cell, in cell order."""
         for key, all_edges in cells.items():
             # Broadcast edges already carry their reserved tag; chain-cover only the
             # local (single-edge) producers, drawing tags from the pool MINUS the
@@ -1341,7 +1372,7 @@ class BingoDFG(DmrSupport, DiGraphWrapper[BingoNode]):
             skip = {reserved[u] for (u, _v) in all_edges if u in bcast}
             avail = [t for t in range(max_tags) if t not in skip]
             edges.sort(key=lambda e: (pos[e[0]], pos[e[1]]))
-            chain_of = min_chain_cover(edges)
+            chain_of = self._dep_tag_min_chain_cover(hb, edges)
             n_chains = len(set(chain_of.values())) if chain_of else 0
             if n_chains > len(avail):
                 raise ValueError(

@@ -42,7 +42,7 @@ dependencies:
   hemaia_clk_rst_controller:  { path: hw/vendor/kuleuven_micas_hemaia_clk_rst_controller                                  }
   floo_noc:                   { git:  https://github.com/KULeuven-MICAS/FlooNoC.git,                    rev:     main    }
   # Watchdog/remap on yuanbao fork
-  bingo_hw_manager:           { git: "https://github.com/yuanbaochen56-gif/bingo_hw_manager.git", rev: "170a30dcc3f3e206e9debe41085ed39b19533bfd" }
+  bingo_hw_manager:           { git: "https://github.com/yuanbaochen56-gif/bingo_hw_manager.git", rev: "795aa98619e38d84179dc6779212f4d9a43a0619" }
 
 workspace:
   package_links:

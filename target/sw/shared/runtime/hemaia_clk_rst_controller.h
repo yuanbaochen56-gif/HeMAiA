@@ -43,6 +43,14 @@
 //   divisor  6  →  83.33 MHz
 //   divisor 16  →  31.25 MHz
 //
+// Two masters program these clocks: the host with the helpers below (the
+// packed CLOCK_DIVISION_REGISTER_* bytes and CLOCK_VALID_REGISTER) and, when
+// its power manager is on, the bingo HW manager for the cluster domains. The
+// manager uses the controller's other register set, one division register per
+// domain (DOMAIN_DIVISION_C<i>, DOMAIN_DIVISION_VALID), so the read-modify-
+// write below never writes back one of its levels and it never writes a byte
+// of a host clock (s1_quadrant.bingo_pm_division_per_domain, default true).
+//
 // All helpers below program the LOCAL chip only — they OR
 // get_current_chip_baseaddress() into the controller register address.
 // To program a remote chip's divider, build the same MMIO address with

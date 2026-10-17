@@ -1,0 +1,14 @@
+// Copyright 2026 KU Leuven.
+// Licensed under the Apache License, Version 2.0, see LICENSE for details.
+// SPDX-License-Identifier: Apache-2.0
+
+{
+    // hemaia_ci has two clusters; guard_cluster_count() skips other cfgs
+    num_clusters: 2
+    // copies that alternate between the two DM cores, one after another, so the
+    // PM changes the level of one cluster domain or the other at every copy
+    chain_len: 40
+    chunk_size: 256
+    // times the host reprograms its own clock meanwhile
+    retune_count: 300
+}

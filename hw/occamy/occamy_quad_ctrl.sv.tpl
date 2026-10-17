@@ -365,6 +365,10 @@ module ${name}_quad_ctrl
     // Power-domain counters of the cluster domains (libbingo: cluster c is domain 1 + c)
     .PmCountBase                       (1),
     .PmCountDomains                    (NrClustersPerQuad),
+    // The PM writes only its domains' own division registers of the clock/reset
+    // controller (s1_quadrant.bingo_pm_division_per_domain, default true), not
+    // the packed ones the host's clock helpers read, change and write back
+    .PmDivisionPerDomain               (1'b${bingo_pm_division_per_domain}),
     .READY_AND_DONE_QUEUE_INTERFACE_TYPE(1), // 1: CSR 0: AXI LITE
     .TASK_QUEUE_TYPE                    (1), // 1: AXI Lite Master 0: Default AXI Lite Slave 
     .NUM_CORES_PER_CLUSTER    (BINGO_HW_MANAGER_NR_CORE_PER_CLUSTER    ),

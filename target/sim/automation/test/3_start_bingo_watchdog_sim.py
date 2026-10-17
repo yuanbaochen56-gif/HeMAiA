@@ -2118,7 +2118,8 @@ def scene_runner(sc: dict, test_cfg: Optional[dict], cfg: str, out_dir: Path,
         fail_on_task_failure=False,
         timeout_seconds=sc["sim_timeout_s"],
         extra_mounts=[Path(args.bingo_repo)],
-        plusargs=["+bingo_dispatch_log"] if sc.get("dispatch_log", False) or sc.get("pm_count") else [],
+        plusargs=(["+bingo_dispatch_log"] if sc.get("dispatch_log", False) or sc.get("pm_count") else [])
+                 + list(sc.get("plusargs", [])),
     )
     if "evlog_enable" in sc:
         runner.plusargs.append("+evlog_check")

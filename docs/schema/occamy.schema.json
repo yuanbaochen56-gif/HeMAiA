@@ -311,6 +311,11 @@
                     "description": "Accelerator reset: one more channel at the end of the clock and reset controller's RESET_REGISTER resets the quadrant (bingo HW manager included) and all of its clusters together, without the host. The SoC-quadrant AXI ports are isolated around the reset. Single chip only. Default false: the quadrant shares the host reset.",
                     "default": false
                 },
+                "bingo_pm_division_per_domain": {
+                    "type": "boolean",
+                    "description": "Bingo HW manager PmDivisionPerDomain: the power manager (DFS) programs a clock with the domain's own division register of the clock/reset controller (DOMAIN_DIVISION_C<i>, DOMAIN_DIVISION_VALID) instead of the packed registers (CLOCK_DIVISION_REGISTER_*, CLOCK_VALID_REGISTER), so it never writes a byte of the host's clocks and the host's read-modify-write of a packed register never writes back one of its levels. Same bus timing either way. Default true; false writes the packed registers as before.",
+                    "default": true
+                },
                 "bingo_substitute_level_mask": {
                     "type": "integer",
                     "description": "Bingo HW manager SubstituteLevelMask: where a fenced core's tasks may go. Bit 0: a core of the same cluster, bit 1: a core of another cluster, bit 2: another chiplet through bingo_hw_manager_remote_link (level 3). Default 1 (level 1 only).",

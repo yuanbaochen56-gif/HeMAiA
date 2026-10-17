@@ -613,6 +613,10 @@ void bingo_wd_est_set(uint32_t type, uint32_t task_class, uint32_t entry);
 // [6:5] FRAC_B (a done after (1 + FRAC_B/4) x estimate is late), [31:12] BFLOOR;
 // [11:7] reserved and written as zero.
 void bingo_wd_budget_set(uint32_t ctrl);
+// Substitute choice (BINGO_SUB_SPARE, 0 = none): clusters searched first for the
+// substitute of a fenced or parked core, bit c for cluster c (e.g. a cluster
+// the program leaves empty). Write it before the first fence or park.
+void bingo_sub_spare_set(uint32_t cluster_mask);
 
 void bingo_hw_scheduler_init(uint64_t dev_arg_base_addr, uint64_t dev_kernel_base_addr, uint32_t num_dev_tasks, uint64_t global_task_id_to_dev_task_id_base_addr, uint32_t num_total_tasks, uint64_t bingo_hw_scheduler_task_desc_list_base, uint32_t bingo_hw_scheduler_num_task_desc);
 

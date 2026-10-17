@@ -744,5 +744,13 @@
         { bits: "31:12", name: "BFLOOR", resval: "0", desc: "Smallest budget in watchdog ticks." }
       ]
     },
+    { name: "BINGO_SUB_SPARE",
+      desc: "Bingo substitute choice (bingo_hw_manager_slot_table): clusters searched first for the substitute of a fenced or parked slot, one bit per cluster (e.g. a cluster the program leaves empty as a cold spare). 0 = none. Write it before the first fence or park.",
+      swaccess: "rw",
+      hwaccess: "hro",
+      fields: [
+        { bits: "31:0", name: "SPARE", resval: "0", desc: "Bit c: cluster c is a spare." }
+      ]
+    },
   ]
 }

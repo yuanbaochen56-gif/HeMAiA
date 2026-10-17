@@ -8,8 +8,8 @@
 
 // Test-only, little-endian image data. Each row spans sixteen 64-bit banks.
 #define BINGO_TEST_CFG_MAGIC 0x42475431u
-#if (defined(BINGO_WD_LATE) || defined(BINGO_SDC) || defined(BINGO_FENCE_FB) || defined(BINGO_TASK_TIME)) && \
-    !defined(BINGO_WD_ADAPT)
+#if (defined(BINGO_WD_LATE) || defined(BINGO_SDC) || defined(BINGO_FENCE_FB) || defined(BINGO_TASK_TIME) || \
+     defined(BINGO_SUB_CFG)) && !defined(BINGO_WD_ADAPT)
 #define BINGO_WD_ADAPT
 #endif
 #if defined(BINGO_FENCE_FB) && (defined(BINGO_SDC) || defined(BINGO_WD_LATE))
@@ -71,8 +71,9 @@ typedef struct __attribute__((aligned(128))) {
     uint32_t fault_sdc_offset;      // BINGO_SDC
     uint32_t fault_sdc_mask;        // BINGO_SDC
     uint32_t fence_fb;              // BINGO_FENCE_FB
-    uint32_t wd_adapt_reserved[19];
+    uint32_t wd_adapt_reserved[18];
     // Fields added later take the reserved words from the end of the row
+    uint32_t sub_spare;             // BINGO_SUB_CFG: BINGO_SUB_SPARE
     uint32_t fault_beat_period;     // BINGO_TASK_TIME: an injected stall beats every n core cycles (0: silent)
     uint32_t wd_budget;             // BINGO_TASK_TIME: BINGO_WD_BUDGET
     uint32_t task_time;             // BINGO_TASK_TIME: [3:0] estimates / 2^n, [4] none
@@ -96,7 +97,7 @@ typedef struct __attribute__((aligned(128))) {
 _Static_assert(sizeof(bingo_test_cfg_t) == 384, "v3 test configuration must fit three rows");
 _Static_assert(offsetof(bingo_test_cfg_t, wd_adapt) == 256 && offsetof(bingo_test_cfg_t, wd_late) == 260 &&
                offsetof(bingo_test_cfg_t, sdc_enable) == 268 && offsetof(bingo_test_cfg_t, fence_fb) == 292 &&
-               offsetof(bingo_test_cfg_t, fault_beat_period) == 372 &&
+               offsetof(bingo_test_cfg_t, sub_spare) == 368 && offsetof(bingo_test_cfg_t, fault_beat_period) == 372 &&
                offsetof(bingo_test_cfg_t, wd_budget) == 376 && offsetof(bingo_test_cfg_t, task_time) == 380,
                "v3 offsets are fixed: the driver packs one layout for every v3 image");
 #else

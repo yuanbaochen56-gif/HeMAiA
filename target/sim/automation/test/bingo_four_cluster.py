@@ -4,8 +4,9 @@ victim follows another.
 A scene with takeover_victims = [(chip, core, cluster), ...] (in fence order) is
 judged by the substitute rule of the hardware (bingo_hw_manager_substitute_sel):
 a task of logical slot (core, L) runs on (core, L) while that core lives;
-otherwise on the same core of the lowest-numbered other cluster that is still
-alive (the clusters of hemaia_ci_4cluster are identical, so the same core index
+otherwise on the same core of the lowest-numbered spare cluster (sub_spare of a
+BINGO_SUB_CFG scene) that is still alive, else of the lowest-numbered other
+cluster that is still alive (the clusters of hemaia_ci_4cluster are identical, so the same core index
 is the same core type, and a cluster has one core of each device type). The
 fence set at the time of each [BINGO_REPLAY] / [BINGO_REMAP] decides where the
 task must go. The logical cluster of a task comes from the generated graph.
@@ -31,13 +32,15 @@ def graph_slots(graph_csv) -> Dict[int, Tuple[int, int]]:
         return {int(r["ID"]): (int(r["Cluster"]), int(r["Core"])) for r in csv.DictReader(stream)}
 
 
-def substitute(core: int, logical: int, fenced: set) -> Optional[int]:
-    """Cluster that runs logical slot (core, logical) with the cores in `fenced` dead."""
+def substitute(core: int, logical: int, fenced: set, spare: int = 0) -> Optional[int]:
+    """Cluster that runs logical slot (core, logical) with the cores in `fenced` dead,
+    the spare clusters (bit mask) first."""
     if (core, logical) not in fenced:
         return logical
-    for cl in range(NUM_CLUSTERS):
-        if cl != logical and (core, cl) not in fenced:
-            return cl
+    for first in (True, False):
+        for cl in range(NUM_CLUSTERS):
+            if cl != logical and (core, cl) not in fenced and (not first or spare >> cl & 1):
+                return cl
     return None
 
 
@@ -77,7 +80,7 @@ def takeover_chain_problems(sc: dict, log_text: str, graph_csv) -> List[str]:
             problems.append(f"{kind} of task {task}: not in the generated graph")
             continue
         logical = slots[task][0]
-        want = substitute(logical_core, logical, fenced_at(time))
+        want = substitute(logical_core, logical, fenced_at(time), sc.get("sub_spare", 0))
         if (core, cluster) != (logical_core, want):
             problems.append(f"{kind} of task {task} (logical core {logical_core} cluster {logical}) at {time} "
                             f"to core {core} cluster {cluster}, expected cluster {want}")

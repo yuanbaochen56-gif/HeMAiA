@@ -1,0 +1,13 @@
+// Copyright 2025 KU Leuven.
+// Licensed under the Apache License, Version 2.0, see LICENSE for details.
+// SPDX-License-Identifier: Apache-2.0
+//
+// Copy sizes in bytes: each cluster's DM core copies small, medium and large
+// L3 -> L1 one after another, then stores the last 1 KiB of the large buffer.
+{
+    // hemaia_ci has two clusters; guard_cluster_count() skips other cfgs
+    num_clusters: 2
+    small: 1024
+    medium: 16384
+    large: 262144
+}

@@ -273,6 +273,21 @@ inline void write_bingo_hw_manager_heartbeat(uint32_t value){
     bingo_hw_manager_heartbeat(value);
 }
 
+// Fault injection for the watchdog tests, compiled out of a default build. Where
+// the fault comes from:
+//   BINGO_TEST_CFG 1    the T1 data at run time (bingo_test_cfg_t), handed to
+//                       bingo_hw_offload_manager as arguments: fault_gid,
+//                       fault_stall_cycles, fault_cluster / fault_core (UINT32_MAX:
+//                       any), fault_pre_stall_cycles, fault_after_kernel; with
+//                       BINGO_WD_LATE also fault_pre_stall_from, with BINGO_SDC the
+//                       SDC fields, with BINGO_TASK_TIME fault_beat_period (a stall
+//                       that keeps beating). BINGO_WD_FAULT2_GID adds a second
+//                       fault fixed at compile time.
+//   BINGO_WD_FAULT_GID  the BINGO_WD_FAULT_* macros, fixed at compile time
+//   neither             no fault
+// Either way the core that matches stalls before the kernel (or after it with
+// fault_after_kernel / BINGO_WD_FAULT_AFTER_KERNEL) on the fault task, and for
+// fault_pre_stall_cycles before each of its other tasks.
 #if BINGO_TEST_CFG
 inline void bingo_wd_fault_stall(uint32_t cycles){
     uint32_t start, now;

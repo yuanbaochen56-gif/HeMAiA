@@ -85,7 +85,7 @@ typedef struct __attribute__((aligned(128))) {
     uint32_t sub_spare;             // BINGO_SUB_CFG: BINGO_SUB_SPARE
     uint32_t fault_beat_period;     // BINGO_TASK_TIME: an injected stall beats every n core cycles (0: silent)
     uint32_t wd_budget;             // BINGO_TASK_TIME: BINGO_WD_BUDGET
-    uint32_t task_time;             // BINGO_TASK_TIME: [3:0] estimates / 2^n, [4] none
+    uint32_t task_time;             // BINGO_TASK_TIME: [3:0] estimates / 2^n, [4] none, [5] EST_FLOOR off
 #endif
 } bingo_test_cfg_t;
 

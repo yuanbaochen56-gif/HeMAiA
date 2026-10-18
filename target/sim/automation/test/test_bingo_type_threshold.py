@@ -83,12 +83,14 @@ class TypeThresholdTests(unittest.TestCase):
         self.assertEqual(watchdog.t1_image_flags(dict(sc, t1=True)), "-DBINGO_TASK_TIME -DBINGO_WD_ADAPT")
         with self.assertRaises(ValueError):
             watchdog.t1_image_flags(dict(sc, t1=True, image_flags="-DBINGO_TASK_TIME -DBINGO_SDC"))
-        # the task_time word: last word of the v3 row; [3:0] shift, [4] no estimates
+        # the task_time word: last word of the v3 row; [3:0] shift, [4] no estimates,
+        # [5] EST_FLOOR off
         cfg = watchdog.scenario_test_cfg(dict(sc, task_time=0x13))
         data = watchdog.test_cfg_bytes(cfg)
         self.assertEqual((len(data), watchdog.test_cfg_offset("task_time")), (384, 380))
         self.assertEqual(int.from_bytes(data[380:384], "little"), 0x13)
-        for bad in (0x20, -1, 1.0):
+        self.assertEqual(int.from_bytes(watchdog.test_cfg_bytes(dict(cfg, task_time=0x20))[380:384], "little"), 0x20)
+        for bad in (0x40, -1, 1.0):
             with self.assertRaises(ValueError):
                 watchdog.test_cfg_bytes(dict(cfg, task_time=bad))
         with self.assertRaises(ValueError):
@@ -113,6 +115,31 @@ class TypeThresholdTests(unittest.TestCase):
                "[BINGO_BUDGET_FENCE] 99 core=0 cluster=0 type=1 class=1\n"
                "[BINGO_WD] 100 chip=0 core=0 cluster=0 dead_suspect=1 fenced=1\n")
         self.assertIn((100, 3, 0, 0, 4), simulation_events(log, 3))
+
+    def test_task_time_init_sets_the_estimate_floor(self):
+        # task-time images: the init's budget word has EST_FLOOR [7] set unless the
+        # T1 task_time word's [5] is set or the image has -DBINGO_WD_EST_FLOOR=0
+        api = (ROOT / "target/sw/host/runtime/libbingo/src/bingo_api.c").read_text()
+        header = (ROOT / "target/sw/host/runtime/libbingo/include/libbingo/bingo_api.h").read_text()
+        self.assertIn("#ifndef BINGO_WD_EST_FLOOR\n#define BINGO_WD_EST_FLOOR 1\n#endif", header)
+        self.assertIn("#ifndef BINGO_WD_BUDGET\n#define BINGO_WD_BUDGET 0\n#endif", header)
+        self.assertIn("bingo_wd_budget_set(bingo_task_time_budget(bingo_test_cfg.wd_budget, "
+                      "bingo_test_cfg.task_time >> 5));", api)
+        self.assertIn("bingo_wd_budget_set(bingo_task_time_budget(BINGO_WD_BUDGET, 0));", api)
+        self.assertEqual(api.count("bingo_wd_budget_set("), 3)    # the two inits and the setter
+        body = re.search(r"static uint32_t bingo_task_time_budget\([^)]*\) \{[\s\S]*?\n\}", api).group(0)
+        cases = {"1": [(0, 0, 0x80), (0x7D004B, 0, 0x7D00CB), (0x7D004B, 1, 0x7D004B), (0x80, 1, 0x80),
+                       (0x7D004B, 0x3F >> 5, 0x7D004B), (0x7D004B, 0x1F >> 5, 0x7D00CB)],
+                 "0": [(0, 0, 0), (0x7D004B, 0, 0x7D004B), (0x80, 0, 0x80), (0x7D004B, 1, 0x7D004B)]}
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for floor, rows in cases.items():
+                checks = "".join(f"    assert(bingo_task_time_budget({b}u, {o}u) == {e}u);\n" for b, o, e in rows)
+                (root / "api.c").write_text("#include <stdint.h>\n#include <assert.h>\n" + body +
+                                            "\nint main(void) {\n" + checks + "    return 0;\n}\n")
+                subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra", "-Werror", f"-DBINGO_WD_EST_FLOOR={floor}",
+                                str(root / "api.c"), "-o", str(root / "api")], check=True)
+                subprocess.run([str(root / "api")], check=True)
 
     def host_pairing(self, text, *, kernel="__host_bingo_kernel_exit", checker=True):
         with tempfile.TemporaryDirectory() as directory:

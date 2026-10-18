@@ -610,7 +610,8 @@ void bingo_fence_fb_set(uint32_t type_mask);
 // entry [7:0] the time from dispatch to done in watchdog ticks, (16 + m) << e with
 // e = [7:4], m = [3:0], 0 = no estimate; [9:8] S, the longest interval without
 // progress being that time >> S. Until a class is learned, the learned watchdog
-// bounds start from its estimate. Write it before the first task is dispatched.
+// bounds start from its estimate; with EST_FLOOR (below) it stays their lower
+// bound. Write it before the first task is dispatched.
 void bingo_wd_est_set(uint32_t type, uint32_t task_class, uint32_t entry);
 // Total-time budget against those estimates (BINGO_WD_BUDGET, 0 = off): [0] EN,
 // [1] ACTION (0 one late beat, 1 a fence), [4:2] SH_B (budget = estimate << SH_B),
@@ -618,6 +619,16 @@ void bingo_wd_est_set(uint32_t type, uint32_t task_class, uint32_t entry);
 // estimate also bounds the learned watchdog bounds from below), [31:12] BFLOOR;
 // [11:8] reserved and written as zero.
 void bingo_wd_budget_set(uint32_t ctrl);
+// Task-time images (BINGO_TASK_TIME): the init writes BINGO_WD_BUDGET (default
+// build; a test image its T1 wd_budget word) with EST_FLOOR set, unless
+// BINGO_WD_EST_FLOOR is 0 or, in a test image, [5] of the T1 task_time word is
+// set (experiments): then [7] stays as the budget word has it.
+#ifndef BINGO_WD_BUDGET
+#define BINGO_WD_BUDGET 0
+#endif
+#ifndef BINGO_WD_EST_FLOOR
+#define BINGO_WD_EST_FLOOR 1
+#endif
 // Substitute choice (BINGO_SUB_SPARE, 0 = none): clusters searched first for the
 // substitute of a fenced or parked core, bit c for cluster c (e.g. a cluster
 // the program leaves empty). Write it before the first fence or park.

@@ -899,6 +899,17 @@ uint32_t bingo_c6_sw_cerf_evt(void) {
 }
 #endif
 
+#ifdef BINGO_TASK_TIME
+// The BINGO_WD_BUDGET word of a task-time image: budget with EST_FLOOR [7] set,
+// so the compiler's estimates also bound the learned watchdog bounds from below
+// (a class without an estimate is not affected); floor_off [0] set or
+// BINGO_WD_EST_FLOOR 0 leaves [7] as budget has it. Branch-free: the host takes
+// the same time either way.
+static uint32_t bingo_task_time_budget(uint32_t budget, uint32_t floor_off) {
+    return budget | (((BINGO_WD_EST_FLOOR != 0) & ~floor_off & 1u) << 7);
+}
+#endif
+
 // The task will be initialized directly on a .h file generated from the mini compiler
 // So the whole scheduling process will be handled by the hardware scheduler
 // The host-side work is just in the beginning to write the task_list_ptr and #num_tasks to the quad ctrl reg
@@ -951,9 +962,9 @@ void bingo_hw_scheduler_init(uint64_t dev_arg_base_addr, uint64_t dev_kernel_bas
     //   2. proxy timeout, park request,          late / epoch / policy / confirm
     //      risk late / epoch / policy /          (BINGO_CFG: the T1 fields)
     //      confirm (BINGO_CFG: the macros)    2. wd_type H and C of every type
-    //   3. total-time budget, if              3. by image flag: wd_adapt (every
-    //      BINGO_TASK_TIME and                   version-3 image), wd_late, the
-    //      BINGO_WD_BUDGET are defined           budget, the substitute choice
+    //   3. total-time budget and              3. by image flag: wd_adapt (every
+    //      EST_FLOOR, if BINGO_TASK_TIME         version-3 image), wd_late, the
+    //      is defined                            budget, the substitute choice
     //   4. CERF degradation of one slot's     4. event log enable
     //      type, if BINGO_CERF_FB_CLUSTER     5. CERF degradation, C6 software CERF
     //   then both: task list, start, host init done.
@@ -990,7 +1001,8 @@ void bingo_hw_scheduler_init(uint64_t dev_arg_base_addr, uint64_t dev_kernel_bas
     bingo_wd_late_set(bingo_test_cfg.wd_late);
 #endif
 #ifdef BINGO_TASK_TIME
-    bingo_wd_budget_set(bingo_test_cfg.wd_budget);
+    // task_time [5]: EST_FLOOR as the wd_budget word has it
+    bingo_wd_budget_set(bingo_task_time_budget(bingo_test_cfg.wd_budget, bingo_test_cfg.task_time >> 5));
 #endif
 #ifdef BINGO_SUB_CFG
     bingo_sub_spare_set(bingo_test_cfg.sub_spare);
@@ -1007,9 +1019,10 @@ void bingo_hw_scheduler_init(uint64_t dev_arg_base_addr, uint64_t dev_kernel_bas
     bingo_c6_cerf_init();
 #endif
 #else
-#if defined(BINGO_TASK_TIME) && defined(BINGO_WD_BUDGET)
-    // Total-time budget against the compiler's estimates (off unless defined)
-    bingo_wd_budget_set(BINGO_WD_BUDGET);
+#ifdef BINGO_TASK_TIME
+    // Total-time budget against the compiler's estimates (BINGO_WD_BUDGET, off
+    // unless defined) and EST_FLOOR (on unless BINGO_WD_EST_FLOOR is 0)
+    bingo_wd_budget_set(bingo_task_time_budget(BINGO_WD_BUDGET, 0));
 #endif
 #ifdef BINGO_CERF_FB_CLUSTER
     // CERF degradation for the core type of one slot (off unless defined)

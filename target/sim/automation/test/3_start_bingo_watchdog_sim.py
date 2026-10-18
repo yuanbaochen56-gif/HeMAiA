@@ -424,8 +424,8 @@ def test_cfg_bytes(cfg: dict) -> bytes:
         if type(fence) is not int or not 0 <= fence <= 0xFFFF:
             raise ValueError("fence_fb must fit sixteen core types")
         task_time = cfg.get("task_time", 0)
-        if type(task_time) is not int or not 0 <= task_time <= 0x1F:
-            raise ValueError("task_time holds a 4-bit shift and the off bit [4]")
+        if type(task_time) is not int or not 0 <= task_time <= 0x3F:
+            raise ValueError("task_time holds a 4-bit shift, the off bit [4] and the floor-off bit [5]")
         budget = [cfg.get(field, 0) for field in ("wd_budget", "fault_beat_period")]
         if any(type(value) is not int or not 0 <= value <= 0xFFFFFFFF for value in budget):
             raise ValueError("wd_budget and fault_beat_period must be uint32 words")

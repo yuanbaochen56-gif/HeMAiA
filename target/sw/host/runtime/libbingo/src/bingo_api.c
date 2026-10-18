@@ -1210,7 +1210,7 @@ void bingo_fence_fb_set(uint32_t type_mask) {
     asm volatile("fence" ::: "memory");
 }
 void bingo_wd_budget_set(uint32_t ctrl) {
-    writew(ctrl & 0xfffff07fu, (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_bingo_wd_budget_addr()));
+    writew(ctrl & 0xfffff0ffu, (uintptr_t)chiplet_addr_transform((uint64_t)quad_ctrl_bingo_wd_budget_addr()));
     asm volatile("fence" ::: "memory");
 }
 void bingo_sub_spare_set(uint32_t cluster_mask) {

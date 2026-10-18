@@ -429,8 +429,8 @@ def test_cfg_bytes(cfg: dict) -> bytes:
         budget = [cfg.get(field, 0) for field in ("wd_budget", "fault_beat_period")]
         if any(type(value) is not int or not 0 <= value <= 0xFFFFFFFF for value in budget):
             raise ValueError("wd_budget and fault_beat_period must be uint32 words")
-        if budget[0] & 0xF80:
-            raise ValueError("wd_budget reserved bits [11:7] must be zero")
+        if budget[0] & 0xF00:
+            raise ValueError("wd_budget reserved bits [11:8] must be zero")
         sub = [cfg.get(field, 0) for field in ("sub_spare", "sub_part_clear")]
         if any(type(value) is not int or not 0 <= value <= 0xFFFFFFFF for value in sub):
             raise ValueError("sub_spare and sub_part_clear must be uint32 words")

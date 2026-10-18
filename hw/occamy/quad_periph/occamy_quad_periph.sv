@@ -200,7 +200,8 @@ module occamy_quad_periph import occamy_quad_periph_reg_pkg::*; #(
   assign bingo_hw_manager_sub_part_o  = reg2hw.bingo_sub_part.q;
   assign bingo_hw_manager_wd_budget_o = bingo_hw_manager_pkg::wd_budget_csr_t'{
       bfloor:     reg2hw.bingo_wd_budget.bfloor.q,
-      rsvd7:      5'b0,
+      rsvd8:      4'b0,
+      est_floor:  reg2hw.bingo_wd_budget.est_floor.q,
       frac_b:     reg2hw.bingo_wd_budget.frac_b.q,
       sh_b:       reg2hw.bingo_wd_budget.sh_b.q,
       action:     reg2hw.bingo_wd_budget.action.q,

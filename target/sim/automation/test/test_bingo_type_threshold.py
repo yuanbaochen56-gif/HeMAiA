@@ -94,7 +94,7 @@ class TypeThresholdTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             watchdog.scenario_test_cfg(dict(sc, image_flags="-DBINGO_WD_LATE", task_time=1))
         # the total-time budget and the beat period of an injected stall: the two words
-        # before task_time; budget bits [11:7] reserved
+        # before task_time; budget bits [11:8] reserved, [7] EST_FLOOR
         cfg = watchdog.scenario_test_cfg(dict(sc, wd_budget=0x7D004B, fault_beat_period=100))
         data = watchdog.test_cfg_bytes(cfg)
         self.assertEqual((watchdog.test_cfg_offset("fault_beat_period"), watchdog.test_cfg_offset("wd_budget")),
@@ -102,7 +102,8 @@ class TypeThresholdTests(unittest.TestCase):
         self.assertEqual(int.from_bytes(data[372:376], "little"), 100)
         self.assertEqual(int.from_bytes(data[376:380], "little"), 0x7D004B)
         with self.assertRaises(ValueError):
-            watchdog.test_cfg_bytes(dict(cfg, wd_budget=0x80))
+            watchdog.test_cfg_bytes(dict(cfg, wd_budget=0x100))
+        self.assertEqual(int.from_bytes(watchdog.test_cfg_bytes(dict(cfg, wd_budget=0x80))[376:380], "little"), 0x80)
         for field in ("wd_budget", "fault_beat_period"):
             with self.assertRaises(ValueError):
                 watchdog.scenario_test_cfg(dict(sc, image_flags="-DBINGO_WD_LATE", **{field: 1}))

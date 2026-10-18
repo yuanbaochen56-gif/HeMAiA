@@ -614,8 +614,9 @@ void bingo_fence_fb_set(uint32_t type_mask);
 void bingo_wd_est_set(uint32_t type, uint32_t task_class, uint32_t entry);
 // Total-time budget against those estimates (BINGO_WD_BUDGET, 0 = off): [0] EN,
 // [1] ACTION (0 one late beat, 1 a fence), [4:2] SH_B (budget = estimate << SH_B),
-// [6:5] FRAC_B (a done after (1 + FRAC_B/4) x estimate is late), [31:12] BFLOOR;
-// [11:7] reserved and written as zero.
+// [6:5] FRAC_B (a done after (1 + FRAC_B/4) x estimate is late), [7] EST_FLOOR (the
+// estimate also bounds the learned watchdog bounds from below), [31:12] BFLOOR;
+// [11:8] reserved and written as zero.
 void bingo_wd_budget_set(uint32_t ctrl);
 // Substitute choice (BINGO_SUB_SPARE, 0 = none): clusters searched first for the
 // substitute of a fenced or parked core, bit c for cluster c (e.g. a cluster

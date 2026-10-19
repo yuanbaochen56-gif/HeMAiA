@@ -87,7 +87,7 @@ class TestConfigurationTests(unittest.TestCase):
                           if first == 3 and name != "wd_adapt_reserved")
         variants = {(): ()} | {flags: v3_fields for flags in (
             ("BINGO_WD_ADAPT",), ("BINGO_WD_LATE",), ("BINGO_SDC",), ("BINGO_SDC", "BINGO_WD_LATE"),
-            ("BINGO_FENCE_FB",))}
+            ("BINGO_FENCE_FB",), ("BINGO_FENCE_FB", "BINGO_SDC"))}
         v2 = [name for name, _, first in watchdog.TEST_CFG_LAYOUT if first <= 2]
         for flags, v3 in variants.items():
             with self.subTest(flags=flags), tempfile.TemporaryDirectory() as directory:

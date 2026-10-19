@@ -172,9 +172,9 @@ class R1bScenarioTests(unittest.TestCase):
         self.assertEqual(plain[256:], bytes(128))
         with self.assertRaisesRegex(ValueError, "requires the BINGO_FENCE_FB image flag"):
             driver.scenario_test_cfg(dict(driver.SCENARIOS["tch0"], fence_fb=4))
-        with self.assertRaisesRegex(ValueError, "not combined"):
-            driver.t1_image_flags(dict(driver.SCENARIOS["c4_hfb_one"],
-                                       image_flags="-DBINGO_FENCE_FB -DBINGO_SDC"))
+        self.assertEqual(driver.t1_image_flags(dict(driver.SCENARIOS["c4_hfb_one"],
+                                                    image_flags="-DBINGO_FENCE_FB -DBINGO_SDC")),
+                         "-DBINGO_FENCE_FB -DBINGO_SDC -DBINGO_WD_ADAPT")
         with self.assertRaisesRegex(ValueError, "not combined"):
             driver.t1_image_flags(dict(driver.SCENARIOS["c4_hfb_one"],
                                        image_flags="-DBINGO_FENCE_FB -DBINGO_WD_LATE"))
@@ -199,6 +199,9 @@ class R1bScenarioTests(unittest.TestCase):
             (["-DBINGO_SDC", "-DBINGO_WD_LATE"],
              fixed + "offsetof(bingo_test_cfg_t, fault_pre_stall_from)==264"
                      " && offsetof(bingo_test_cfg_t, fault_sdc_mask)==288"),
+            (["-DBINGO_FENCE_FB", "-DBINGO_SDC"],
+             fixed + "offsetof(bingo_test_cfg_t, fence_fb)==292"
+                     " && offsetof(bingo_test_cfg_t, fault_sdc_mask)==288"),
         )
         with tempfile.TemporaryDirectory() as directory:
             for index, (flags, layout) in enumerate(cases):
@@ -216,13 +219,13 @@ class R1bScenarioTests(unittest.TestCase):
                 subprocess.run([str(exe)], check=True)
             source = Path(directory) / "combined.c"
             source.write_text('#include "bingo_test_cfg.h"\nint main(void) { return 0; }\n')
-            for other in ("-DBINGO_SDC", "-DBINGO_WD_LATE"):
+            for other, refused in (("-DBINGO_SDC", False), ("-DBINGO_WD_LATE", True)):
                 result = subprocess.run(
                     ["cc", "-std=c11", "-DBINGO_FENCE_FB", other,
                      "-I", str(ROOT / "target/sw/shared/runtime"), str(source), "-o",
                      str(Path(directory) / "combined")], capture_output=True, text=True)
-                self.assertNotEqual(result.returncode, 0)
-                self.assertIn("BINGO_FENCE_FB is not combined", result.stderr)
+                self.assertEqual(result.returncode != 0, refused, result.stderr)
+                self.assertEqual("BINGO_FENCE_FB is not combined" in result.stderr, refused)
 
     def test_on_fixture_passes_and_the_other_scenes_reject_it(self):
         log, uart = fence_cerf_fixture()

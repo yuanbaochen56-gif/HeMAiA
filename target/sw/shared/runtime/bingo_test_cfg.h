@@ -20,8 +20,8 @@
 #if defined(BINGO_TEST_CFG_V3) && !defined(BINGO_WD_ADAPT)
 #define BINGO_WD_ADAPT
 #endif
-#if defined(BINGO_FENCE_FB) && (defined(BINGO_SDC) || defined(BINGO_WD_LATE))
-#error BINGO_FENCE_FB is not combined with BINGO_SDC or BINGO_WD_LATE
+#if defined(BINGO_FENCE_FB) && defined(BINGO_WD_LATE)
+#error BINGO_FENCE_FB is not combined with BINGO_WD_LATE
 #endif
 #ifdef BINGO_TEST_CFG_V3
 #define BINGO_TEST_CFG_VERSION 3u

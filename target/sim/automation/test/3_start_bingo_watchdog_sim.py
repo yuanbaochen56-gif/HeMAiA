@@ -360,8 +360,8 @@ def t1_image_flags(sc: dict) -> str:
     if flags and (not sc.get("t1") or other_image or any(
             sc is SCENARIOS.get(name) for names in T1_FAMILIES.values() for name in names)):
         raise ValueError("image_flags must not belong to a same-image family")
-    if "-DBINGO_FENCE_FB" in flags and ({"-DBINGO_SDC", "-DBINGO_WD_LATE"} & set(flags)):
-        raise ValueError("BINGO_FENCE_FB is not combined with BINGO_SDC or BINGO_WD_LATE")
+    if "-DBINGO_FENCE_FB" in flags and "-DBINGO_WD_LATE" in flags:
+        raise ValueError("BINGO_FENCE_FB is not combined with BINGO_WD_LATE")
     if "-DBINGO_TASK_TIME" in flags and "-DBINGO_SDC" in flags:
         raise ValueError("BINGO_TASK_TIME is calibrated for the standard device runtime, not BINGO_SDC")
     if ("-DBINGO_WD_LATE" in flags or "-DBINGO_SDC" in flags or "-DBINGO_FENCE_FB" in flags or

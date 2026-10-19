@@ -65,12 +65,14 @@ class FenceFallbackTests(unittest.TestCase):
         return fence_fb_types(g, 0), fence_fb_report(g, 0), text
 
     def test_cost_table_holds_the_measured_points(self):
-        self.assertEqual(KERNEL_COST_US[ADD], ("num_elements", 512, 1817.088, 2290.400, 287.112))
-        self.assertEqual(KERNEL_COST_US[COPY], ("size", 256, 2.744, 9.632, 10.668))
+        self.assertEqual(KERNEL_COST_US[ADD], ("num_elements", {512: (1817.088, 2290.400, 287.112),
+                                                                4096: (14461.496, 18248.888, 2246.440)}))
+        self.assertEqual(KERNEL_COST_US[COPY], ("size", {256: (2.744, 9.632, 10.668)}))
         g = graph()
         self.assertEqual(host_is_cheaper(add_node(g)), "")
+        self.assertEqual(host_is_cheaper(add_node(g, "large", count=4096)), "")
         self.assertIn("not cheaper", host_is_cheaper(copy_node(g)))
-        self.assertIn("measured at num_elements 512, not 16", host_is_cheaper(add_node(g, "small", count=16)))
+        self.assertIn("measured at num_elements 512, 4096, not 16", host_is_cheaper(add_node(g, "small", count=16)))
         self.assertIn("measured at size 256, not 64", host_is_cheaper(copy_node(g, "c64", size=64)))
 
     def test_int32_add_with_a_backup_selects_its_type(self):
@@ -93,6 +95,16 @@ class FenceFallbackTests(unittest.TestCase):
             "#endif", "#endif", ""])
         # After the degradation table, before the first task can be dispatched
         self.assertLess(text.index("bingo_cerf_fb_enable("), text.index("bingo_fence_fb_set("))
+        self.assertEqual(text.count("bingo_fence_fb_set("), 2)
+
+    def test_large_int32_add_with_a_backup_selects_its_type(self):
+        g = graph()
+        add = add_node(g, count=4096)
+        consumer(g, add)
+        g.bingo_add_host_fallback(add)
+        types, report, text = self.decision(g)
+        self.assertEqual(types, [2])
+        self.assertEqual(report, [dict(chip=0, core_type=2, enable=True, reasons=[], kernels=[ADD])])
         self.assertEqual(text.count("bingo_fence_fb_set("), 2)
 
     def test_adds_on_both_clusters_select_the_type_once(self):
@@ -154,7 +166,7 @@ class FenceFallbackTests(unittest.TestCase):
         g.bingo_add_host_fallback(add)
         types, report, text = self.decision(g)
         self.assertEqual(types, [])
-        self.assertIn("measured at num_elements 512, not 16", report[0]["reasons"][0])
+        self.assertIn("measured at num_elements 512, 4096, not 16", report[0]["reasons"][0])
         self.assertNotIn("bingo_fence_fb", text)
 
     def test_a_task_without_a_backup_blocks_its_type(self):

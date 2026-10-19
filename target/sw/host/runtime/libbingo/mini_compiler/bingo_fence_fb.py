@@ -20,6 +20,8 @@ measurement keeps the substitute, and type 0 never substitutes.
 Costs are DISPATCH to DONE of one task on hemaia_ci, in microseconds:
 - int32 add, 512 elements: home core 1817.088 (c4_hfb_one_ok), level-2
   substitute 2290.400 (c4_hfb_one), host backup 287.112 (c4_hfb_both).
+- int32 add, 4096 elements: home core 14461.496, level-2 substitute 18248.888,
+  host backup 2246.440 (the same three scenes with num_elements 4096).
 - iDMA copy, 256 B: home core 2.744 (c4_chain_h100_ok), level-2 substitute
   9.380-9.632 (c4_chain_h100), host backup 10.668, the first one 13.356
   (p7b_chain_l1_g0_pre). The row holds the slowest substitute and the fastest
@@ -28,10 +30,11 @@ Costs are DISPATCH to DONE of one task on hemaia_ci, in microseconds:
 
 EXIT_KERNELS = ("__snax_bingo_kernel_exit", "__host_bingo_kernel_exit")
 
-# kernel -> (size argument, measured size, home core us, level-2 substitute us, host backup us)
+# kernel -> (size argument, {measured size: (home core us, level-2 substitute us, host backup us)})
 KERNEL_COST_US = {
-    "__snax_bingo_kernel_int32_add": ("num_elements", 512, 1817.088, 2290.400, 287.112),
-    "__snax_bingo_kernel_idma_1d_copy": ("size", 256, 2.744, 9.632, 10.668),
+    "__snax_bingo_kernel_int32_add": ("num_elements", {512: (1817.088, 2290.400, 287.112),
+                                                       4096: (14461.496, 18248.888, 2246.440)}),
+    "__snax_bingo_kernel_idma_1d_copy": ("size", {256: (2.744, 9.632, 10.668)}),
 }
 
 
@@ -75,12 +78,14 @@ def host_is_cheaper(node, graph=None) -> str:
         if graph is not None and getattr(graph, "task_time", False):
             return model_is_cheaper(node, graph)
         return f"{node.kernel_name}: no measured cost"
-    argument, size, home, substitute, host = row
+    argument, sizes = row
     actual = getattr(node.kernel_args, argument, None)
-    if actual != size:
+    if type(actual) is not int or actual not in sizes:
         if graph is not None and getattr(graph, "task_time", False):
             return model_is_cheaper(node, graph)
-        return f"{node.kernel_name}: measured at {argument} {size}, not {actual}"
+        measured = ", ".join(str(size) for size in sizes)
+        return f"{node.kernel_name}: measured at {argument} {measured}, not {actual}"
+    home, substitute, host = sizes[actual]
     if not host < min(home, substitute):
         return (f"{node.kernel_name}: host {host} us is not cheaper than "
                 f"home {home} us and substitute {substitute} us")

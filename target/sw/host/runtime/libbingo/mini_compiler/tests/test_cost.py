@@ -449,8 +449,8 @@ class GeneratedCodeTests(unittest.TestCase):
         graph.bingo_add_node(node)
         self.assertIn("no host estimate", bingo_fence_fb.host_is_cheaper(node, graph))
         graph.task_time = False
-        self.assertIn("measured at num_elements 512, not 32", bingo_fence_fb.host_is_cheaper(node, graph))
-        self.assertIn("measured at num_elements 512, not 32", bingo_fence_fb.host_is_cheaper(node))
+        self.assertIn("measured at num_elements 512, 4096, not 32", bingo_fence_fb.host_is_cheaper(node, graph))
+        self.assertIn("measured at num_elements 512, 4096, not 32", bingo_fence_fb.host_is_cheaper(node))
         with patch.dict(cost.HOST_US, {("__host_bingo_kernel_add_i32", 32): 10.0}):
             graph.task_time = True
             self.assertEqual(bingo_fence_fb.host_is_cheaper(node, graph), "")
